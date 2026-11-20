@@ -14,3 +14,17 @@
 - Next: Person 1 — upload screen, video → scene/jobs AI pipeline (server-side), ROI calc, jobs screen.
   Person 2 — /robot page, 3D room from Scene, K1 placeholder, scenario executor using mocks/.
 - Blocked by: nothing
+
+## [2026-11-20 11:05] Person 1 / Claude Code
+- Done: Step 2 — upload screen (no AI calls). app/upload/page.tsx: video input (video/*, camera capture,
+  max 60 s check), business type / hours per week / hourly cost (default 12) with validation, in-browser
+  extraction of 8 evenly spaced frames (<video>+<canvas>, max 768 px, JPEG 0.7), progress bar, thumbnail
+  grid + total KB, saves to sessionStorage "robohire:upload". "Analyze" button is a disabled placeholder.
+- Changed files: app/upload/page.tsx, lib/ai/extractFrames.ts (pure reusable), lib/ai/types.ts (UploadData),
+  AGENTS.md (docs change: Next.js 16 note under Stack — not a contract change).
+- AI-generated: all of the above by Claude Code (Claude Sonnet 5.5).
+- CONTRACT CHANGE: none
+- Tested: lint + build pass; in browser with ffmpeg-generated 10 s and 70 s test videos (70 s rejected with error;
+  10 s → 8 frames at 768x432, ~102 KB, sessionStorage payload correct).
+- Next: Person 1 — server-side AI pipeline (frames → scene/jobs), ROI calc, jobs screen; enable "Analyze".
+- Blocked by: nothing
