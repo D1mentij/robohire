@@ -1,4 +1,4 @@
 export * from "./types";
 export * from "./geometry";
 export * from "./loadScenarioData";
-export * from "./useWalkExecutor";
+export * from "./useScenarioExecutor";

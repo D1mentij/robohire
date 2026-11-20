@@ -7,7 +7,6 @@ import {
   isScenario,
   isScene,
   type Scenario,
-  type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
 import type { LoadedSimulationData } from "./types";
@@ -40,9 +39,10 @@ function readFromStorage(keys: readonly string[]): unknown {
 }
 
 /**
- * Loads `scene` and `scenario` from URL query params or browser storage
- * (`localStorage` / `sessionStorage`), falling back cleanly to `mockScene` and
- * `mockScenario`. Always sanitizes steps with `filterValidSteps()`.
+ * Loads `scene` and `scenario` from URL query params (`?scene=...&scenario=...`)
+ * or browser storage (`localStorage` / `sessionStorage` keys `robohire:scene`,
+ * `robohire:scenario`, `scene`, `scenario`), falling back cleanly to `mockScene`
+ * and `mockScenario`. Always sanitizes steps with `filterValidSteps()`.
  */
 export function loadSimulationData(
   searchParams?: URLSearchParams | null,
@@ -73,36 +73,12 @@ export function loadSimulationData(
     hasCustomScene || hasCustomScenario ? "custom" : "mock";
 
   const zoneIds = scene.zones.map((z) => z.id);
-  const validScenarioSteps = filterValidSteps(scenario.steps, zoneIds);
-
-  // Stage 1 focuses on `walk_to` execution (start -> "entrance" -> "counter")
-  const explicitWalkSteps = validScenarioSteps.filter(
-    (s) => s.action === "walk_to",
-  );
-
-  let rawWalkSequence: ScenarioStep[];
-  if (explicitWalkSteps.length >= 2) {
-    rawWalkSequence = explicitWalkSteps;
-  } else {
-    rawWalkSequence = [
-      ...explicitWalkSteps,
-      { action: "walk_to", target: "counter" },
-    ];
-    if (rawWalkSequence.length < 2) {
-      rawWalkSequence = [
-        { action: "walk_to", target: "entrance" },
-        { action: "walk_to", target: "counter" },
-      ];
-    }
-  }
-
-  const walkSteps = filterValidSteps(rawWalkSequence, zoneIds);
+  const steps = filterValidSteps(scenario.steps, zoneIds);
 
   return {
     scene,
     scenario,
-    validScenarioSteps,
-    walkSteps,
+    steps,
     source,
   };
 }

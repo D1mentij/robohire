@@ -9,22 +9,29 @@ export type RobotAnimationName = "Idle" | "Walking" | "Wave";
 
 export type ExecutorStatus = "idle" | "running" | "completed";
 
-export type StepPhase = "idle" | "rotating" | "walking" | "settling";
+export type StepPhase =
+  | "idle"
+  | "rotating"
+  | "walking"
+  | "waving"
+  | "pointing"
+  | "speaking"
+  | "waiting";
 
 export interface RobotPose {
   x: number;
   z: number;
   rotationY: number;
   animation: RobotAnimationName;
+  isPointing: boolean;
+  pointTarget: Vec2XZ | null;
 }
 
 export interface LoadedSimulationData {
   scene: Scene;
   scenario: Scenario;
   /** Sanitized steps for the full scenario via filterValidSteps */
-  validScenarioSteps: ScenarioStep[];
-  /** Stage 1 executable walk_to sequence (start -> entrance -> counter by default) */
-  walkSteps: ScenarioStep[];
+  steps: ScenarioStep[];
   source: "custom" | "mock";
 }
 
