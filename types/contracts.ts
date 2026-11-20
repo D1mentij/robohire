@@ -1,0 +1,174 @@
+// Single source of truth for data shared between "brain" (AI) and "body" (3D).
+// No external libs. Change only if both people agree (log it in PROGRESS.md).
+
+/**
+ * Zone on the floor. Meters; floor = XZ plane; origin (0,0) at a room corner.
+ * x,z = zone CENTER; w along X, d along Z.
+ */
+export interface Zone {
+  id: string;
+  label: string;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
+export interface Scene {
+  room: { width: number; depth: number };
+  zones: Zone[];
+}
+
+export type Fit = "good" | "partial" | "no";
+
+export interface Job {
+  id: string;
+  title: string;
+  fit: Fit;
+  score: number; // 0-100
+  why: string;
+  limits: string;
+  hours_per_week: number;
+  savings_eur_month: number;
+  payback_months: number | null;
+}
+
+export interface JobsResult {
+  business_type: string;
+  jobs: Job[];
+}
+
+export const ALLOWED_ACTIONS = [
+  "walk_to",
+  "turn_to",
+  "wave",
+  "point_to",
+  "say",
+  "wait",
+] as const;
+
+export type Action = (typeof ALLOWED_ACTIONS)[number];
+
+export interface ScenarioStep {
+  action: Action;
+  target?: string; // zone id
+  text?: string;
+  seconds?: number;
+}
+
+export interface Scenario {
+  job_id: string;
+  steps: ScenarioStep[];
+}
+
+// ---------- helpers ----------
+
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
+
+const isAction = (v: unknown): v is Action =>
+  isStr(v) && (ALLOWED_ACTIONS as readonly string[]).includes(v);
+
+// ---------- type guards ----------
+
+export function isZone(v: unknown): v is Zone {
+  return (
+    isObj(v) &&
+    isStr(v.id) &&
+    isStr(v.label) &&
+    isNum(v.x) &&
+    isNum(v.z) &&
+    isNum(v.w) &&
+    isNum(v.d)
+  );
+}
+
+export function isScene(v: unknown): v is Scene {
+  if (!isObj(v) || !isObj(v.room) || !Array.isArray(v.zones)) return false;
+  return isNum(v.room.width) && isNum(v.room.depth) && v.zones.every(isZone);
+}
+
+export function isJob(v: unknown): v is Job {
+  return (
+    isObj(v) &&
+    isStr(v.id) &&
+    isStr(v.title) &&
+    (v.fit === "good" || v.fit === "partial" || v.fit === "no") &&
+    isNum(v.score) &&
+    v.score >= 0 &&
+    v.score <= 100 &&
+    isStr(v.why) &&
+    isStr(v.limits) &&
+    isNum(v.hours_per_week) &&
+    isNum(v.savings_eur_month) &&
+    (v.payback_months === null || isNum(v.payback_months))
+  );
+}
+
+export function isJobsResult(v: unknown): v is JobsResult {
+  return (
+    isObj(v) &&
+    isStr(v.business_type) &&
+    Array.isArray(v.jobs) &&
+    v.jobs.every(isJob)
+  );
+}
+
+function isScenarioStepShape(v: unknown): v is ScenarioStep {
+  if (!isObj(v) || !isAction(v.action)) return false;
+  if (v.target !== undefined && !isStr(v.target)) return false;
+  if (v.text !== undefined && !isStr(v.text)) return false;
+  if (v.seconds !== undefined && !(isNum(v.seconds) && v.seconds >= 0))
+    return false;
+  return true;
+}
+
+export function isScenario(v: unknown): v is Scenario {
+  return (
+    isObj(v) &&
+    isStr(v.job_id) &&
+    Array.isArray(v.steps) &&
+    v.steps.every(isScenarioStepShape)
+  );
+}
+
+// ---------- step validation ----------
+
+/**
+ * Drops steps with unknown actions, missing required fields, or targets that
+ * are not existing zone ids.
+ * Required: walk_to/turn_to/point_to -> target; say -> text; wait -> seconds.
+ * wave -> nothing (target optional, but if given must be a valid zone).
+ */
+export function filterValidSteps(
+  steps: unknown[],
+  zoneIds: string[],
+): ScenarioStep[] {
+  const ids = new Set(zoneIds);
+  const out: ScenarioStep[] = [];
+  for (const raw of steps) {
+    if (!isScenarioStepShape(raw)) continue;
+    const s = raw;
+    if (s.target !== undefined && !ids.has(s.target)) continue;
+    switch (s.action) {
+      case "walk_to":
+      case "turn_to":
+      case "point_to":
+        if (s.target === undefined) continue;
+        break;
+      case "say":
+        if (s.text === undefined || s.text.trim() === "") continue;
+        break;
+      case "wait":
+        if (s.seconds === undefined) continue;
+        break;
+      case "wave":
+        break;
+    }
+    out.push(s);
+  }
+  return out;
+}

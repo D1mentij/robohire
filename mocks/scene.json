@@ -1,0 +1,10 @@
+{
+  "room": { "width": 10, "depth": 8 },
+  "zones": [
+    { "id": "entrance", "label": "Entrance", "x": 5, "z": 0.75, "w": 2, "d": 1.5 },
+    { "id": "counter", "label": "Counter", "x": 8.5, "z": 4, "w": 2, "d": 5 },
+    { "id": "tables", "label": "Tables", "x": 4.5, "z": 5.5, "w": 5, "d": 4 },
+    { "id": "menu_board", "label": "Menu board", "x": 8.5, "z": 7.25, "w": 2, "d": 1 },
+    { "id": "waiting_area", "label": "Waiting area", "x": 1.5, "z": 1.5, "w": 3, "d": 2 }
+  ]
+}

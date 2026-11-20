@@ -1,0 +1,49 @@
+{
+  "business_type": "Small café (Riga)",
+  "jobs": [
+    {
+      "id": "greeter",
+      "title": "Greeter at the entrance",
+      "fit": "good",
+      "score": 88,
+      "why": "Guests arrive all day and staff are often busy behind the counter. Greeting, waving and giving a short welcome needs only walking, gestures and speech, which K1 can do reliably.",
+      "limits": "Cannot open doors, carry trays or handle payments. Keeps to a short scripted dialogue.",
+      "hours_per_week": 20,
+      "savings_eur_month": 380,
+      "payback_months": 16
+    },
+    {
+      "id": "menu_presenter",
+      "title": "Menu and promo presenter",
+      "fit": "good",
+      "score": 82,
+      "why": "Staff repeat the daily specials and promotions to every guest. K1 can stand by the menu board, point at items and announce offers on a schedule.",
+      "limits": "Cannot take orders or answer open-ended questions about allergens. Promo text must be set in advance.",
+      "hours_per_week": 8,
+      "savings_eur_month": 220,
+      "payback_months": 27
+    },
+    {
+      "id": "table_guide",
+      "title": "Guiding guests to free tables",
+      "fit": "partial",
+      "score": 55,
+      "why": "K1 can lead guests towards the seating area and point at a table. Staff spend several minutes per hour on this at peak times.",
+      "limits": "Cannot see which tables are free without extra sensors or staff input. Narrow aisles and moving chairs make walking unreliable.",
+      "hours_per_week": 10,
+      "savings_eur_month": 150,
+      "payback_months": 40
+    },
+    {
+      "id": "dishwashing",
+      "title": "Dishwashing",
+      "fit": "no",
+      "score": 8,
+      "why": "Dishwashing takes a lot of staff time, but the work is wet, slippery and needs fine hand control.",
+      "limits": "K1 cannot do wet manipulation: it is not waterproof and its hands cannot grip wet plates and glasses safely. Not feasible today.",
+      "hours_per_week": 15,
+      "savings_eur_month": 0,
+      "payback_months": null
+    }
+  ]
+}
