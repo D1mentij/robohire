@@ -28,3 +28,14 @@
   10 s → 8 frames at 768x432, ~102 KB, sessionStorage payload correct).
 - Next: Person 1 — server-side AI pipeline (frames → scene/jobs), ROI calc, jobs screen; enable "Analyze".
 - Blocked by: nothing
+
+## [2026-11-20 11:30] Person 1 / Claude Code
+- Done: Step 2 quick fixes on /upload. (a) Buttons/inputs visible in dark mode (blue primary button with border,
+  explicit input bg/border/text for light and dark). (b) Race condition: "Extract frames" disabled while the selected
+  video is being checked ("Checking video…"); stale checks ignored via request id; submit no longer overwrites the
+  real video error (duration/format) with "Please choose a video".
+- Changed files: app/upload/page.tsx, PROGRESS.md.
+- AI-generated: by Claude Code (Claude Sonnet 5.5).
+- CONTRACT CHANGE: none
+- Next: server-side AI pipeline, ROI calc, jobs screen.
+- Blocked by: nothing

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
 import { UPLOAD_STORAGE_KEY, type UploadData } from "@/lib/ai/types";
 
@@ -15,31 +15,45 @@ export default function UploadPage() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [frames, setFrames] = useState<string[]>([]);
 
+  const [checking, setChecking] = useState(false);
+  const checkId = useRef(0);
+
   const busy = progress !== null;
   const totalKb = Math.round(frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024);
 
   async function onFile(f: File | null) {
+    const id = ++checkId.current;
     setFile(null);
     setFrames([]);
     setErrors((e) => ({ ...e, video: "" }));
-    if (!f) return;
+    if (!f) {
+      setChecking(false);
+      return;
+    }
+    setChecking(true);
     try {
       const { video, url } = await loadVideo(f);
       URL.revokeObjectURL(url);
+      if (id !== checkId.current) return; // a newer selection superseded this check
       if (video.duration > MAX_SECONDS) {
         setErrors((e) => ({ ...e, video: `Video is ${Math.round(video.duration)} s; max is ${MAX_SECONDS} s.` }));
         return;
       }
       setFile(f);
     } catch (err) {
+      if (id !== checkId.current) return;
       setErrors((e) => ({ ...e, video: err instanceof Error ? err.message : "Unsupported video" }));
+    } finally {
+      if (id === checkId.current) setChecking(false);
     }
   }
 
   async function onSubmit(ev: React.FormEvent) {
     ev.preventDefault();
+    if (checking) return;
     const errs: Record<string, string> = {};
-    if (!file) errs.video = "Please choose a video (max 60 s).";
+    // Keep the real video error (duration/format) if there is one.
+    if (!file) errs.video = errors.video || "Please choose a video (max 60 s).";
     if (!businessType.trim()) errs.businessType = "Enter a business type.";
     const hours = Number(hoursPerWeek);
     if (!(hours > 0 && hours <= 168)) errs.hoursPerWeek = "Enter hours per week (1–168).";
@@ -67,8 +81,8 @@ export default function UploadPage() {
     }
   }
 
-  const input = "w-full rounded border border-gray-300 px-3 py-2";
-  const err = (k: string) => (errors[k] ? <p className="mt-1 text-sm text-red-600">{errors[k]}</p> : null);
+  const input = "w-full rounded border border-gray-400 bg-white px-3 py-2 text-gray-900 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100";
+  const err = (k: string) => (errors[k] ? <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors[k]}</p> : null);
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-6">
@@ -78,6 +92,7 @@ export default function UploadPage() {
           <label className="mb-1 block font-medium">Video (max {MAX_SECONDS} s)</label>
           <input type="file" accept="video/*" capture="environment" disabled={busy}
             onChange={(e) => onFile(e.target.files?.[0] ?? null)} className={input} />
+          {checking && <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Checking video…</p>}
           {err("video")}
         </div>
         <div>
@@ -96,10 +111,10 @@ export default function UploadPage() {
           {err("hourlyCost")}
         </div>
         <div className="flex gap-3">
-          <button type="submit" disabled={busy} className="rounded bg-black px-4 py-2 text-white disabled:opacity-50">
-            {busy ? "Extracting…" : "Extract frames"}
+          <button type="submit" disabled={busy || checking} className="rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+            {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
           </button>
-          <button type="button" disabled title="Coming in the next step" className="rounded border px-4 py-2 opacity-50">
+          <button type="button" disabled title="Coming in the next step" className="rounded border border-gray-400 px-4 py-2 opacity-50 dark:border-gray-500">
             Analyze
           </button>
         </div>
@@ -108,13 +123,13 @@ export default function UploadPage() {
       {progress && (
         <div>
           <progress value={progress.done} max={progress.total} className="w-full" />
-          <p className="text-sm text-gray-600">Frame {progress.done} / {progress.total}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Frame {progress.done} / {progress.total}</p>
         </div>
       )}
 
       {frames.length > 0 && (
         <section>
-          <p className="mb-2 text-sm text-gray-600">{frames.length} frames, {totalKb} KB total · saved to sessionStorage</p>
+          <p className="mb-2 text-sm text-gray-600 dark:text-gray-400">{frames.length} frames, {totalKb} KB total · saved to sessionStorage</p>
           <div className="grid grid-cols-4 gap-2">
             {frames.map((f, i) => (
               // eslint-disable-next-line @next/next/no-img-element
