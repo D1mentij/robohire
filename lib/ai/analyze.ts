@@ -3,6 +3,10 @@ import type { AnalysisResult, Task, UploadData } from "./types";
 import { buildAnalysisPrompt, ANALYSIS_SCHEMA } from "./prompts";
 import { MissingKeyError, provider } from "./provider";
 
+/** Safety net: the model sometimes invents robot infrastructure. */
+const ROBOT_RE = /robot|charg|dock/i;
+const isRobotStuff = (...parts: string[]) => parts.some((p) => ROBOT_RE.test(p));
+
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const MIN_SIDE = 0.5;
@@ -37,6 +41,7 @@ export function cleanScene(scene: Scene): Scene | null {
   const seen = new Set<string>();
   const zones: Zone[] = [];
   for (const raw of scene.zones) {
+    if (isRobotStuff(raw.id, raw.label)) continue;
     let id = slug(raw.id);
     for (let i = 2; seen.has(id); i++) id = `${slug(raw.id)}_${i}`;
     seen.add(id);
@@ -80,6 +85,7 @@ function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, strin
     if (typeof t !== "object" || t === null) continue;
     const o = t as Record<string, unknown>;
     if (typeof o.title !== "string" || typeof o.zone_id !== "string") continue;
+    if (isRobotStuff(o.title, typeof o.id === "string" ? o.id : "")) continue;
     const zone_id = idMap.get(o.zone_id) ?? o.zone_id;
     if (!zoneIds.has(zone_id)) continue;
     const freq = Number(o.frequency_per_day);

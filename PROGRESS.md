@@ -87,3 +87,15 @@
 - CONTRACT CHANGE: None
 - Next: Awaiting confirmation for Step 3.
 - Blocked by: nothing
+## [2026-11-22] Person 1 / Claude Code
+- Done: Step 4 — (A) prompt fixes in lib/ai/prompts.ts: zones only from what is visible (business type only names/interprets;
+  mismatch → describe what is visible), no robot-related zones/tasks; safety-net filter in lib/ai/analyze.ts drops zones/tasks
+  whose id/title/label match robot|charg|dock. (B) lib/ai/k1-profile.json + lib/ai/k1Profile.ts (typed loader): K1 specs, can/cannot,
+  price, sources. Facts from the official page https://www.booster.tech/booster-k1/ (spec comparison section); unverifiable items
+  flagged "assumption": true.
+- Changed files: lib/ai/prompts.ts, lib/ai/analyze.ts, lib/ai/k1-profile.json, lib/ai/k1Profile.ts, PROGRESS.md.
+- AI-generated: all by Claude Code (Claude Sonnet 5.5); can/cannot lists are our interpretation of the specs, not Booster claims.
+- CONTRACT CHANGE: none
+- Tested: lint + build pass; re-run on synthetic frames ("cafe"): no robot/charging zones or tasks (default model gemini-3.8-flash worked, 7.4 s).
+  Not re-tested on the real bedroom video (frames not available to me).
+- Next: jobs/ROI using k1Profile + robohire:analysis.
