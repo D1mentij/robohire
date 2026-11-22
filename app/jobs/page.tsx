@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mockJobs, mockScenario, mockScene } from "@/mocks";
 import {
@@ -173,7 +172,7 @@ function JobCard({
     <article
       data-testid={`job-card-${job.id}`}
       data-fit={job.fit}
-      className={`flex flex-col justify-between rounded-2xl border p-6 transition ${style.cardClass}`}
+      className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
         {/* Header: Rank, Title, Fit Badge, Score, and Hire Action */}
@@ -361,23 +360,15 @@ export default function JobsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
+    <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        {/* Top Navigation & Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
+        {/* Page Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
           <div>
-            <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                ← Home
-              </Link>
-              <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
-                {mockJobs.business_type}
-              </span>
-            </div>
-            <h1 className="mt-3 text-3xl font-extrabold tracking-tight">
+            <span className="inline-block rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+              Step 2 of 3 • {mockJobs.business_type}
+            </span>
+            <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
               Matched Booster K1 Robot Jobs
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
@@ -385,22 +376,7 @@ export default function JobsPage() {
               monthly savings, and payback period.
             </p>
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <Link
-              href="/upload"
-              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              Upload Video
-            </Link>
-            <Link
-              href="/robot"
-              className="rounded-lg border border-sky-500/50 bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500"
-            >
-              3D Simulation →
-            </Link>
-          </div>
-        </header>
+        </div>
 
         {/* Sorted Job Cards List */}
         <section className="space-y-4" aria-label="Matched Robot Jobs">

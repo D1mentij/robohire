@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
 import type { ScenarioStep, Zone } from "@/types/contracts";
@@ -32,10 +31,10 @@ export default function RobotSimulationPage() {
 
   const statusBadgeClass =
     executor.status === "running"
-      ? "border-amber-400/60 bg-amber-500/20 text-amber-200"
+      ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-200"
       : executor.status === "completed"
-        ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
-        : "border-slate-600 bg-slate-800 text-slate-300";
+        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
+        : "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
 
   const statusLabel =
     executor.status === "running"
@@ -45,59 +44,51 @@ export default function RobotSimulationPage() {
         : "Idle";
 
   return (
-    <main className="relative flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
-      {/* Top HUD Bar */}
-      <header className="z-20 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-900/90 px-5 py-3 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
-          >
-            ← Home
-          </Link>
-          <div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-base font-bold tracking-tight text-white">
-                RoboHire 3D Simulation
-              </h1>
-              <span className="rounded-full border border-sky-400/50 bg-sky-500/20 px-2.5 py-0.5 text-xs font-semibold text-sky-200">
-                K1 (simulation stand-in)
-              </span>
-              <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 font-mono text-[11px] text-slate-300">
-                {simData.source === "mock" ? "Demo Mode (mocks)" : "Custom Data"}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-300">
-              Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
-              {simData.scene.zones.length} zones • Job:{" "}
-              <span className="font-mono font-semibold text-white">
-                {simData.scenario.job_id}
-              </span>{" "}
-              ({executor.steps.length} steps)
-            </p>
+    <main className="relative flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-slate-50 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100">
+      {/* Simulation Sub-Toolbar */}
+      <div className="z-20 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-2.5 backdrop-blur-md transition-colors dark:border-slate-800 dark:bg-slate-900/95">
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+              3D Workspace Simulation
+            </h1>
+            <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-200">
+              K1 (simulation stand-in)
+            </span>
+            <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              {simData.source === "mock" ? "Demo Mode (mocks)" : "Custom Data"}
+            </span>
           </div>
+          <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+            Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
+            {simData.scene.zones.length} zones • Job:{" "}
+            <span className="font-mono font-semibold text-slate-900 dark:text-white">
+              {simData.scenario.job_id}
+            </span>{" "}
+            ({executor.steps.length} steps)
+          </p>
         </div>
 
         {/* Execution Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/90 px-3 py-1.5 text-xs">
-            <span className="text-slate-400">Status:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-950/90">
+            <span className="text-slate-500 dark:text-slate-400">Status:</span>
             <span
-              className={`rounded px-2 py-0.5 font-mono text-xs font-bold ${statusBadgeClass}`}
+              className={`rounded border px-2 py-0.5 font-mono text-xs font-bold ${statusBadgeClass}`}
             >
               {statusLabel}
             </span>
             {executor.status === "running" && (
               <>
-                <span className="text-slate-600">•</span>
-                <span className="font-mono text-xs text-sky-300">
+                <span className="text-slate-400 dark:text-slate-600">•</span>
+                <span className="font-mono text-xs font-semibold text-sky-600 dark:text-sky-300">
                   {executor.phase}
                 </span>
               </>
             )}
-            <span className="text-slate-600">|</span>
-            <span className="text-slate-400">Anim:</span>
-            <span className="font-mono font-semibold text-emerald-300">
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <span className="text-slate-500 dark:text-slate-400">Anim:</span>
+            <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">
               {executor.animation}
             </span>
           </div>
@@ -105,7 +96,7 @@ export default function RobotSimulationPage() {
           <button
             type="button"
             onClick={executor.start}
-            className="cursor-pointer rounded-lg border border-emerald-400/60 bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-500 active:scale-95"
+            className="cursor-pointer rounded-xl border border-emerald-500/50 bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-500 active:scale-95"
           >
             ▶ Start
           </button>
@@ -113,7 +104,7 @@ export default function RobotSimulationPage() {
           <button
             type="button"
             onClick={executor.replay}
-            className="cursor-pointer rounded-lg border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95"
+            className="cursor-pointer rounded-xl border border-sky-400/50 bg-sky-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95"
           >
             ↻ Replay
           </button>
@@ -121,7 +112,7 @@ export default function RobotSimulationPage() {
           <button
             type="button"
             onClick={executor.reset}
-            className="cursor-pointer rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 active:scale-95"
+            className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             Reset
           </button>
@@ -129,16 +120,16 @@ export default function RobotSimulationPage() {
           <button
             type="button"
             onClick={() => setFollowCamera((v) => !v)}
-            className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+            className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
               followCamera
-                ? "border-indigo-400/60 bg-indigo-950/80 text-indigo-200 hover:bg-indigo-900/80"
-                : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+                ? "border-sky-500/50 bg-sky-500/15 text-sky-700 hover:bg-sky-500/25 dark:border-sky-400/50 dark:bg-sky-950/80 dark:text-sky-200"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
             }`}
           >
             Follow Cam: {followCamera ? "ON" : "OFF"}
           </button>
         </div>
-      </header>
+      </div>
 
       {/* Main Content: Unobstructed 3D Viewport + Dedicated Step List Sidebar */}
       <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -177,13 +168,13 @@ export default function RobotSimulationPage() {
         </div>
 
         {/* Dedicated Step List Sidebar (never overlaps 3D scene) */}
-        <aside className="z-20 flex max-h-64 w-full shrink-0 flex-col border-t border-slate-800 bg-slate-900/95 p-4 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0 xl:w-96">
-          <div className="mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
+        <aside className="z-20 flex max-h-64 w-full shrink-0 flex-col border-t border-slate-200 bg-white p-4 transition-colors dark:border-slate-800 dark:bg-slate-900/95 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0 xl:w-96">
+          <div className="mb-2.5 flex items-center justify-between border-b border-slate-200 pb-2 dark:border-slate-800">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
                 Scenario Steps ({executor.steps.length})
               </h2>
-              <p className="font-mono text-[11px] text-slate-400">
+              <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
                 Start ({executor.startPosition.x.toFixed(1)}m,{" "}
                 {executor.startPosition.z.toFixed(1)}m)
               </p>
@@ -210,30 +201,30 @@ export default function RobotSimulationPage() {
               return (
                 <li
                   key={`${step.action}-${step.target ?? index}-${index}`}
-                  className={`flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 transition ${
+                  className={`flex items-start justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
                     isCurrent
-                      ? "border-sky-400 bg-sky-950/90 text-white shadow-md ring-1 ring-sky-400/50"
+                      ? "border-sky-500 bg-sky-50 text-slate-900 shadow-xs ring-1 ring-sky-400/50 dark:border-sky-400 dark:bg-sky-950/90 dark:text-white"
                       : isDone
-                        ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-100"
-                        : "border-slate-800 bg-slate-950/60 text-slate-300"
+                        ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+                        : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300"
                   }`}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[11px] font-bold opacity-80">
+                      <span className="font-mono text-[11px] font-bold opacity-75">
                         #{index + 1}
                       </span>
-                      <span className="rounded bg-slate-800/90 px-1.5 py-0.5 font-mono text-[11px] font-bold text-sky-300">
+                      <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-sky-700 dark:bg-slate-800/90 dark:text-sky-300">
                         {step.action}
                       </span>
                       {step.action !== "say" && summary && (
-                        <span className="truncate font-semibold text-white">
+                        <span className="truncate font-semibold text-slate-900 dark:text-white">
                           {summary}
                         </span>
                       )}
                     </div>
                     {step.action === "say" && summary && (
-                      <p className="mt-1 line-clamp-2 text-[11px] italic text-slate-200">
+                      <p className="mt-1 line-clamp-2 text-[11px] italic text-slate-600 dark:text-slate-200">
                         {summary}
                       </p>
                     )}
@@ -242,10 +233,10 @@ export default function RobotSimulationPage() {
                   <span
                     className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
                       isCurrent
-                        ? "bg-sky-500/30 text-sky-200"
+                        ? "bg-sky-500/20 text-sky-700 dark:bg-sky-500/30 dark:text-sky-200"
                         : isDone
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : "text-slate-500"
+                          ? "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                          : "text-slate-400 dark:text-slate-500"
                     }`}
                   >
                     {isCurrent
@@ -260,7 +251,7 @@ export default function RobotSimulationPage() {
           </ol>
 
           {executor.currentTargetInfo && (
-            <div className="mt-2.5 rounded-md border border-slate-800 bg-slate-950/80 px-2.5 py-1.5 font-mono text-[11px] text-slate-300">
+            <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] text-slate-700 dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-300">
               Edge stop: (
               {executor.currentTargetInfo.stopPoint.x.toFixed(2)}m,{" "}
               {executor.currentTargetInfo.stopPoint.z.toFixed(2)}m) • outside{" "}

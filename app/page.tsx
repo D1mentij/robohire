@@ -23,39 +23,9 @@ const HOW_IT_WORKS_STEPS = [
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col justify-between bg-slate-50 px-6 py-10 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-10">
-      {/* Top Bar */}
-      <header className="mx-auto flex w-full max-w-5xl items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-block h-3 w-3 rounded-full bg-sky-500" />
-          <span className="text-lg font-extrabold tracking-tight">
-            RoboHire
-          </span>
-        </div>
-        <nav className="flex items-center gap-5 text-xs font-semibold text-slate-600 dark:text-slate-400">
-          <Link
-            href="/upload"
-            className="transition hover:text-slate-900 dark:hover:text-white"
-          >
-            Upload
-          </Link>
-          <Link
-            href="/jobs"
-            className="transition hover:text-slate-900 dark:hover:text-white"
-          >
-            Jobs
-          </Link>
-          <Link
-            href="/robot"
-            className="transition hover:text-slate-900 dark:hover:text-white"
-          >
-            3D Simulation
-          </Link>
-        </nav>
-      </header>
-
+    <main className="flex flex-1 flex-col justify-between bg-slate-50 px-6 py-10 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-10">
       {/* Hero + How It Works */}
-      <div className="mx-auto my-12 w-full max-w-5xl space-y-14">
+      <div className="mx-auto my-8 w-full max-w-5xl space-y-14">
         <section className="mx-auto max-w-3xl text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-3.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
             <span>A Recruitment Agency for Robots • Booster K1 Humanoid</span>
@@ -109,7 +79,7 @@ export default function Home() {
             {HOW_IT_WORKS_STEPS.map((item) => (
               <div
                 key={item.step}
-                className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90"
+                className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900"
               >
                 <div>
                   <span className="inline-block rounded-lg border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 font-mono text-xs font-bold text-sky-700 dark:text-sky-300">

@@ -194,136 +194,275 @@ export default function UploadPage() {
     router.push("/jobs");
   }
 
-  const input = "w-full rounded border border-gray-400 bg-white px-3 py-2 text-gray-900 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100";
-  const err = (k: string) => (errors[k] ? <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors[k]}</p> : null);
+  const input =
+    "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-2xs transition focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+  const label = "mb-1.5 block text-sm font-semibold text-slate-800 dark:text-slate-200";
+  const err = (k: string) =>
+    errors[k] ? (
+      <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+        {errors[k]}
+      </p>
+    ) : null;
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Upload a video of your space</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="mb-1 block font-medium">Video (max {MAX_SECONDS} s)</label>
-          <input type="file" accept="video/*" capture="environment" disabled={busy}
-            onChange={(e) => onFile(e.target.files?.[0] ?? null)} className={input} />
-          {checking && <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Checking video…</p>}
-          {err("video")}
+    <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div className="border-b border-slate-200 pb-4 dark:border-slate-800">
+          <span className="inline-block rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+            Step 1 of 3 • Space Analysis
+          </span>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+            Upload a video of your space
+          </h1>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Extract 8 key frames in your browser and let AI map floor zones and repetitive tasks.
+          </p>
         </div>
-        <div>
-          <label className="mb-1 block font-medium">Business type</label>
-          <input value={businessType} onChange={(e) => setBusinessType(e.target.value)} placeholder="café" className={input} />
-          {err("businessType")}
-        </div>
-        <div>
-          <label className="mb-1 block font-medium">Opening hours per week</label>
-          <input type="number" min={1} max={168} value={hoursPerWeek} onChange={(e) => setHoursPerWeek(e.target.value)} className={input} />
-          {err("hoursPerWeek")}
-        </div>
-        <div>
-          <label className="mb-1 block font-medium">Staff hourly cost (€)</label>
-          <input type="number" min={0} step="0.5" value={hourlyCost} onChange={(e) => setHourlyCost(e.target.value)} className={input} />
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Typical Latvian hospitality cost ≈ €8.5/h incl. employer tax</p>
-          {err("hourlyCost")}
-        </div>
-        <div className="flex gap-3">
-          <button type="submit" disabled={busy || checking} className="rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
-          </button>
-          <button type="button" onClick={onAnalyze} disabled={!frames.length || busy || analyzing || jobsLoading}
-            title={frames.length ? "" : "Extract frames first"}
-            className="rounded border border-gray-400 px-4 py-2 font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:hover:bg-gray-800">
-            {analyzing ? "Analyzing…" : "Analyze"}
-          </button>
-          <button type="button" onClick={runDemo} disabled={busy || analyzing || jobsLoading}
-            className="rounded border border-emerald-700 px-4 py-2 font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950">
-            Try demo (no video needed)
-          </button>
-        </div>
-      </form>
 
-      {progress && (
-        <div>
-          <progress value={progress.done} max={progress.total} className="w-full" />
-          <p className="text-sm text-gray-600 dark:text-gray-400">Frame {progress.done} / {progress.total}</p>
-        </div>
-      )}
-
-      {frames.length > 0 && (
-        <section>
-          <p className="mb-2 text-sm text-gray-600 dark:text-gray-400">{frames.length} frames, {totalKb} KB total · saved to sessionStorage</p>
-          <div className="grid grid-cols-4 gap-2">
-            {frames.map((f, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={i} src={f} alt={`Frame ${i + 1}`} className="aspect-video w-full rounded object-cover" />
-            ))}
+        <form
+          onSubmit={onSubmit}
+          className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div>
+            <label className={label}>Video (max {MAX_SECONDS} s)</label>
+            <input
+              type="file"
+              accept="video/*"
+              capture="environment"
+              disabled={busy}
+              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+              className={input}
+            />
+            {checking && (
+              <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
+                Checking video…
+              </p>
+            )}
+            {err("video")}
           </div>
-        </section>
-      )}
 
-      {analyzing && <p className="text-sm text-gray-600 dark:text-gray-400">AI is studying your space… this can take 10–40 seconds.</p>}
-      {analyzeError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{analyzeError}</p>}
+          <div>
+            <label className={label}>Business type</label>
+            <input
+              value={businessType}
+              onChange={(e) => setBusinessType(e.target.value)}
+              placeholder="café"
+              className={input}
+            />
+            {err("businessType")}
+          </div>
 
-      {(analyzeError || jobsError || (errors.video && !checking)) && (
-        <p className="text-sm">
-          Something went wrong, but you can still see how RoboHire works.{" "}
-          <button type="button" onClick={runDemo} className="rounded border border-emerald-700 px-3 py-1 font-medium text-emerald-800 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950">
-            Continue with demo
-          </button>
-        </p>
-      )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={label}>Opening hours per week</label>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={hoursPerWeek}
+                onChange={(e) => setHoursPerWeek(e.target.value)}
+                className={input}
+              />
+              {err("hoursPerWeek")}
+            </div>
 
-      {jobsLoading && <p className="text-sm text-gray-600 dark:text-gray-400">Rating robot jobs…</p>}
-      {jobsError && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          Job rating failed: {jobsError}{" "}
-          <button type="button" className="underline" onClick={() => {
-            const raw = sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
-            if (raw) void loadJobs(JSON.parse(raw) as StoredAnalysis);
-          }}>Retry</button>
-        </p>
-      )}
-      {jobs && jobs.jobs.length > 0 && (() => {
-        const best = jobs.jobs.reduce((a, b) => (b.savings_eur_month > a.savings_eur_month ? b : a));
-        return (
-          <section className="space-y-2 rounded border border-gray-400 p-3 dark:border-gray-500">
-            <p className="text-sm">
-              {jobs.jobs.length} jobs found, best: <b>{best.title}</b> — €{best.savings_eur_month}/month
-              {best.payback_months !== null ? `, payback ${best.payback_months} months` : ", no payback"}
+            <div>
+              <label className={label}>Staff hourly cost (€)</label>
+              <input
+                type="number"
+                min={0}
+                step="0.5"
+                value={hourlyCost}
+                onChange={(e) => setHourlyCost(e.target.value)}
+                className={input}
+              />
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Typical Latvian hospitality cost ≈ €8.5/h incl. employer tax
+              </p>
+              {err("hourlyCost")}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={busy || checking}
+              className="cursor-pointer rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
+            </button>
+            <button
+              type="button"
+              onClick={onAnalyze}
+              disabled={!frames.length || busy || analyzing || jobsLoading}
+              title={frames.length ? "" : "Extract frames first"}
+              className="cursor-pointer rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 shadow-2xs transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+            >
+              {analyzing ? "Analyzing…" : "Analyze"}
+            </button>
+            <button
+              type="button"
+              onClick={runDemo}
+              disabled={busy || analyzing || jobsLoading}
+              className="cursor-pointer rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-5 py-2.5 text-sm font-bold text-emerald-700 transition hover:bg-emerald-500/20 disabled:opacity-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-950"
+            >
+              Try demo (no video needed)
+            </button>
+          </div>
+        </form>
+
+        {progress && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+            <progress value={progress.done} max={progress.total} className="w-full" />
+            <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+              Frame {progress.done} / {progress.total}
             </p>
-            <Link href="/jobs" className="inline-block rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500">
-              See robot jobs →
-            </Link>
-          </section>
-        );
-      })()}
+          </div>
+        )}
 
-      {analysis && (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold">Space</h2>
-            <p className="text-sm">Room: {analysis.scene.room.width} × {analysis.scene.room.depth} m</p>
-            <ul className="mt-1 list-disc pl-5 text-sm">
-              {analysis.scene.zones.map((z) => (
-                <li key={z.id}><b>{z.label}</b> <code>({z.id})</code> — center ({z.x}, {z.z}), {z.w} × {z.d} m</li>
+        {frames.length > 0 && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="mb-3 text-xs font-medium text-slate-600 dark:text-slate-400">
+              {frames.length} frames, {totalKb} KB total · saved to sessionStorage
+            </p>
+            <div className="grid grid-cols-4 gap-2.5">
+              {frames.map((f, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={f}
+                  alt={`Frame ${i + 1}`}
+                  className="aspect-video w-full rounded-lg border border-slate-200 object-cover dark:border-slate-800"
+                />
               ))}
-            </ul>
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">Repetitive tasks</h2>
-            <ul className="mt-1 space-y-2 text-sm">
-              {analysis.tasks.map((t) => (
-                <li key={t.id}>
-                  <b>{t.title}</b> <span className="text-gray-600 dark:text-gray-400">@ {t.zone_id} · {t.frequency_per_day}×/day · {t.minutes_each} min each</span>
-                  <br />{t.description}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <details>
-            <summary className="cursor-pointer text-sm">Raw JSON</summary>
-            <pre className="mt-2 overflow-x-auto rounded border border-gray-400 p-2 text-xs dark:border-gray-500">{JSON.stringify(analysis, null, 2)}</pre>
-          </details>
-        </section>
-      )}
+            </div>
+          </section>
+        )}
+
+        {analyzing && (
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+            AI is studying your space… this can take 10–40 seconds.
+          </p>
+        )}
+        {analyzeError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400"
+          >
+            {analyzeError}
+          </p>
+        )}
+
+        {(analyzeError || jobsError || (errors.video && !checking)) && (
+          <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            Something went wrong, but you can still see how RoboHire works.{" "}
+            <button
+              type="button"
+              onClick={runDemo}
+              className="cursor-pointer rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 font-semibold text-emerald-700 transition hover:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-950"
+            >
+              Continue with demo
+            </button>
+          </p>
+        )}
+
+        {jobsLoading && (
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+            Rating robot jobs…
+          </p>
+        )}
+        {jobsError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400"
+          >
+            Job rating failed: {jobsError}{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => {
+                const raw = sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
+                if (raw) void loadJobs(JSON.parse(raw) as StoredAnalysis);
+              }}
+            >
+              Retry
+            </button>
+          </p>
+        )}
+        {jobs &&
+          jobs.jobs.length > 0 &&
+          (() => {
+            const best = jobs.jobs.reduce((a, b) =>
+              b.savings_eur_month > a.savings_eur_month ? b : a,
+            );
+            return (
+              <section className="space-y-3 rounded-2xl border border-emerald-500/40 bg-white p-5 shadow-sm dark:border-emerald-500/30 dark:bg-slate-900">
+                <p className="text-sm text-slate-800 dark:text-slate-200">
+                  {jobs.jobs.length} jobs found, best: <b>{best.title}</b> — €
+                  {best.savings_eur_month}/month
+                  {best.payback_months !== null
+                    ? `, payback ${best.payback_months} months`
+                    : ", no payback"}
+                </p>
+                <Link
+                  href="/jobs"
+                  className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
+                >
+                  See robot jobs →
+                </Link>
+              </section>
+            );
+          })()}
+
+        {analysis && (
+          <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Space
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Room: {analysis.scene.room.width} × {analysis.scene.room.depth} m
+              </p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700 dark:text-slate-300">
+                {analysis.scene.zones.map((z) => (
+                  <li key={z.id}>
+                    <b>{z.label}</b> <code>({z.id})</code> — center ({z.x}, {z.z}),{" "}
+                    {z.w} × {z.d} m
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Repetitive tasks
+              </h2>
+              <ul className="mt-2 space-y-2.5 text-sm text-slate-700 dark:text-slate-300">
+                {analysis.tasks.map((t) => (
+                  <li
+                    key={t.id}
+                    className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/50"
+                  >
+                    <b>{t.title}</b>{" "}
+                    <span className="text-slate-600 dark:text-slate-400">
+                      @ {t.zone_id} · {t.frequency_per_day}×/day · {t.minutes_each} min each
+                    </span>
+                    <br />
+                    {t.description}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <details>
+              <summary className="cursor-pointer text-xs font-semibold text-slate-600 dark:text-slate-400">
+                Raw JSON
+              </summary>
+              <pre className="mt-2 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
+                {JSON.stringify(analysis, null, 2)}
+              </pre>
+            </details>
+          </section>
+        )}
+      </div>
     </main>
   );
 }
