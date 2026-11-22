@@ -10,8 +10,8 @@ Next.js (TypeScript, App Router), react-three-fiber, Vercel. AI calls only on th
 Next.js 16 has API changes — check node_modules/next/dist/docs/ before using Next.js APIs.
 
 ## Ownership (do NOT edit the other person's folders)
-- Person 1 (Claude Code, "brain"): app/upload, app/jobs, app/api, lib/ai, lib/roi
-- Person 2 (Antigravity, "body"): app/robot, components/three, lib/executor
+- Person 1 (Claude Code, "brain"): app/upload, app/api, lib/ai, lib/roi
+- Person 2 (Antigravity, "body"): app/jobs, app/robot, components/three, lib/executor
 - Shared (change only if both agree): types/contracts.ts, mocks/, AGENTS.md, package.json
 
 ## Data contracts (source of truth: types/contracts.ts)

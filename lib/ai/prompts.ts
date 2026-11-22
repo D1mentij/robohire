@@ -75,3 +75,52 @@ Return STRICT JSON only, exactly this shape:
 { "scene": { "room": {"width": number, "depth": number}, "zones": [{"id","label","x","z","w","d"}] },
   "tasks": [{"id","title","zone_id","description","frequency_per_day","minutes_each"}] }`;
 }
+
+export const JOBS_SCHEMA = {
+  type: "object",
+  properties: {
+    ratings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          fit: { type: "string", enum: ["good", "partial", "no"] },
+          score: { type: "number" },
+          why: { type: "string" },
+          limits: { type: "string" },
+        },
+        required: ["id", "fit", "score", "why", "limits"],
+      },
+    },
+  },
+  required: ["ratings"],
+};
+
+export function buildJobsPrompt(
+  businessType: string,
+  tasks: unknown,
+  zones: unknown,
+  profile: unknown,
+): string {
+  return `You are rating how well a Booster K1 humanoid robot could take over repetitive tasks in a "${businessType}".
+
+K1 CAPABILITY PROFILE (the only source of truth about the robot):
+${JSON.stringify(profile)}
+
+ZONES: ${JSON.stringify(zones)}
+
+TASKS (done by human staff today):
+${JSON.stringify(tasks)}
+
+For EACH task, return exactly one rating with:
+- id: the task id, unchanged
+- fit: "good" (K1 can do essentially all of it with its listed abilities), "partial" (K1 can do a meaningful part, e.g. the talking/guiding/gesturing part, but not the physical part), or "no" (needs something in the K1 "cannot" list: carrying, wiping/cleaning, fine manipulation, stairs, doors, wet work...)
+- score: integer 0-100 for overall suitability (good ~70-95, partial ~30-65, no ~0-25)
+- why: 1-2 sentences, why this rating, referring to concrete K1 abilities
+- limits: ONE honest sentence about what the K1 cannot do for this task, based on the "cannot" list
+
+Be realistic and do not oversell: K1 is a small (95 cm) humanoid with no hands.
+STRICT RULES: do NOT write any numbers about money, savings, prices, time or hours anywhere in the text. Do not add or remove tasks.
+Return STRICT JSON: { "ratings": [ {"id","fit","score","why","limits"} ] }`;
+}

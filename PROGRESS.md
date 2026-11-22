@@ -108,3 +108,18 @@
 - CONTRACT CHANGE: None
 - Next: Awaiting confirmation for Step 4.
 - Blocked by: nothing
+## [2026-11-22] Person 1 / Claude Code
+- Done: Step 5 — robot jobs + ROI. POST /api/jobs (validates {tasks, scene, businessType, hoursPerWeek, hourlyCost}) →
+  lib/ai/jobs.ts: Gemini rates each task against lib/ai/k1-profile.json and returns ONLY fit/score/why/limits (no money/hours;
+  prompt in lib/ai/prompts.ts; all tasks must be rated, 2 attempts → {ok:false,error}). ROI is code only: lib/roi/config.ts
+  (all assumptions, commented) + lib/roi/roi.ts; output = JobsResult validated with isJobsResult, sorted by score, job id = task id.
+  /upload auto-calls /api/jobs after Analyze, shows a summary, saves sessionStorage "robohire:jobs", button "See robot jobs →" to /jobs.
+  `npm run test:roi` (tsx, scripts/test-roi.ts).
+- Changed files: app/api/jobs/route.ts, lib/ai/{jobs,prompts,types}.ts, lib/roi/{config,roi}.ts, scripts/test-roi.ts,
+  app/upload/page.tsx, package.json (+test:roi script), AGENTS.md, PROGRESS.md.
+- CONTRACT CHANGE: ownership only — app/jobs moved from Person 1 to Person 2 (agreed by both) in AGENTS.md. types/contracts.ts unchanged.
+- AI-generated: all code by Claude Code (Claude Sonnet 5.5). At runtime Gemini generates fit/score/why/limits only; every number
+  (hours, savings, payback) is computed by code from assumptions in lib/roi/config.ts (6 days/week, coverage 0.8/0.4/0, 60 €/month
+  running cost, 4.33 weeks/month, robot price 8000 € = assumption).
+- Tested: lint + build + test:roi pass; e2e on synthetic frames (/api/analyze → /api/jobs, 10.7 s): all 3 tasks honestly rated "no".
+  NOTE: /jobs page (Person 2) still reads mocks — hand-off to robohire:jobs is theirs.

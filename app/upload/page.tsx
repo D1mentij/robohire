@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
+import type { JobsResult } from "@/types/contracts";
 import {
   ANALYSIS_STORAGE_KEY,
+  JOBS_STORAGE_KEY,
   UPLOAD_STORAGE_KEY,
   type AnalysisResult,
   type AnalyzeResponse,
@@ -29,6 +32,10 @@ export default function UploadPage() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [analyzeError, setAnalyzeError] = useState("");
 
+  const [jobs, setJobs] = useState<JobsResult | null>(null);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobsError, setJobsError] = useState("");
+
   const busy = progress !== null;
   const totalKb = Math.round(frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024);
 
@@ -37,6 +44,8 @@ export default function UploadPage() {
     setFile(null);
     setFrames([]);
     setAnalysis(null);
+    setJobs(null);
+    setJobsError("");
     setAnalyzeError("");
     setErrors((e) => ({ ...e, video: "" }));
     if (!f) {
@@ -77,6 +86,8 @@ export default function UploadPage() {
 
     setFrames([]);
     setAnalysis(null);
+    setJobs(null);
+    setJobsError("");
     setAnalyzeError("");
     setProgress({ done: 0, total: 8 });
     try {
@@ -129,10 +140,39 @@ export default function UploadPage() {
         hourlyCost: data.hourlyCost,
       };
       sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(stored));
+      setAnalyzing(false);
+      await loadJobs(stored);
+      return;
     } catch (err) {
       setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+    }
+    setAnalyzing(false);
+  }
+
+  async function loadJobs(stored: StoredAnalysis) {
+    setJobsLoading(true);
+    setJobsError("");
+    try {
+      sessionStorage.removeItem(JOBS_STORAGE_KEY);
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stored),
+      });
+      let json: { ok: true; result: JobsResult } | { ok: false; error: string } | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        /* non-JSON */
+      }
+      if (!json) throw new Error(`Server error (${res.status})`);
+      if (!json.ok) throw new Error(json.error);
+      setJobs(json.result);
+      sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.result));
+    } catch (err) {
+      setJobsError(err instanceof Error ? err.message : "Job rating failed");
     } finally {
-      setAnalyzing(false);
+      setJobsLoading(false);
     }
   }
 
@@ -169,7 +209,7 @@ export default function UploadPage() {
           <button type="submit" disabled={busy || checking} className="rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
           </button>
-          <button type="button" onClick={onAnalyze} disabled={!frames.length || busy || analyzing}
+          <button type="button" onClick={onAnalyze} disabled={!frames.length || busy || analyzing || jobsLoading}
             title={frames.length ? "" : "Extract frames first"}
             className="rounded border border-gray-400 px-4 py-2 font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:hover:bg-gray-800">
             {analyzing ? "Analyzing…" : "Analyze"}
@@ -198,6 +238,31 @@ export default function UploadPage() {
 
       {analyzing && <p className="text-sm text-gray-600 dark:text-gray-400">AI is studying your space… this can take 10–40 seconds.</p>}
       {analyzeError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{analyzeError}</p>}
+
+      {jobsLoading && <p className="text-sm text-gray-600 dark:text-gray-400">Rating robot jobs…</p>}
+      {jobsError && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          Job rating failed: {jobsError}{" "}
+          <button type="button" className="underline" onClick={() => {
+            const raw = sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
+            if (raw) void loadJobs(JSON.parse(raw) as StoredAnalysis);
+          }}>Retry</button>
+        </p>
+      )}
+      {jobs && jobs.jobs.length > 0 && (() => {
+        const best = jobs.jobs.reduce((a, b) => (b.savings_eur_month > a.savings_eur_month ? b : a));
+        return (
+          <section className="space-y-2 rounded border border-gray-400 p-3 dark:border-gray-500">
+            <p className="text-sm">
+              {jobs.jobs.length} jobs found, best: <b>{best.title}</b> — €{best.savings_eur_month}/month
+              {best.payback_months !== null ? `, payback ${best.payback_months} months` : ", no payback"}
+            </p>
+            <Link href="/jobs" className="inline-block rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500">
+              See robot jobs →
+            </Link>
+          </section>
+        );
+      })()}
 
       {analysis && (
         <section className="space-y-4">

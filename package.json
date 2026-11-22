@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:mocks": "tsx scripts/check-mocks.ts"
+    "check:mocks": "tsx scripts/check-mocks.ts",
+    "test:roi": "tsx scripts/test-roi.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
