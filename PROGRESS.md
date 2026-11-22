@@ -146,3 +146,13 @@
 - CONTRACT CHANGE: none
 - AI-generated: code and demo tasks by Claude Code (Claude Sonnet 5.5); demo numbers are mocks/illustrative.
 - Tested: lint + build; in browser, "Try demo" fills both storage keys (5 tasks, 4 jobs) and lands on /jobs.
+
+## [2026-11-22] Person 1 / Claude Code
+- Done: Step 8 — Vercel prep + disclosure. All 3 API routes have `maxDuration = 60` (scenario was 30). No `runtime` export: with
+  `cacheComponents` Next 16 rejects it and Node.js is already the default runtime. Checked: GEMINI_* is read only in lib/ai/provider.ts
+  (server-only; no client file imports it, no NEXT_PUBLIC_ vars); .env.example lists GEMINI_API_KEY and GEMINI_MODEL. Production build
+  passes with no warnings. README.md rewritten (what it is, local run, architecture, team split, AI usage disclosure, ROI assumptions).
+- Changed files: README.md, app/api/scenario/route.ts, PROGRESS.md.
+- CONTRACT CHANGE: none
+- AI-generated: README and edits by Claude Code (Claude Sonnet 5.5).
+- Reminder for deploy: set GEMINI_API_KEY (and optionally GEMINI_MODEL) in Vercel project env vars; maxDuration 60 needs a plan that allows it.
