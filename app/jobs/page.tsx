@@ -1,12 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { mockJobs } from "@/mocks";
-import type { Fit, Job } from "@/types/contracts";
+import { useRouter } from "next/navigation";
+import { mockJobs, mockScenario, mockScene } from "@/mocks";
+import {
+  filterValidSteps,
+  isScenario,
+  isScene,
+  type Fit,
+  type Job,
+  type Scenario,
+  type ScenarioStep,
+  type Scene,
+} from "@/types/contracts";
+import { ANALYSIS_STORAGE_KEY } from "@/lib/ai/types";
 
 interface FitStyle {
-  label: string;
+  label: "Suitable" | "Partial" | "Not Suitable";
   badgeClass: string;
   scoreBarClass: string;
   cardClass: string;
@@ -14,7 +25,7 @@ interface FitStyle {
 
 const FIT_STYLES: Record<Fit, FitStyle> = {
   good: {
-    label: "Подходит",
+    label: "Suitable",
     badgeClass:
       "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
     scoreBarClass: "bg-emerald-500",
@@ -22,7 +33,7 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
       "border-emerald-500/40 bg-white shadow-md dark:border-emerald-500/30 dark:bg-slate-900",
   },
   partial: {
-    label: "Частично",
+    label: "Partial",
     badgeClass:
       "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
     scoreBarClass: "bg-amber-500",
@@ -30,7 +41,7 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
       "border-amber-500/40 bg-white shadow-sm dark:border-amber-500/30 dark:bg-slate-900",
   },
   no: {
-    label: "Не подходит",
+    label: "Not Suitable",
     badgeClass:
       "border-slate-400/40 bg-slate-500/15 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400",
     scoreBarClass: "bg-slate-400 dark:bg-slate-600",
@@ -39,9 +50,124 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
   },
 };
 
-function JobCard({ job, rank }: { job: Job; rank: number }) {
+const PRESET_SCENARIOS: Record<string, ScenarioStep[]> = {
+  greeter: mockScenario.steps,
+  menu_presenter: [
+    { action: "walk_to", target: "menu_board" },
+    { action: "turn_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Hello everyone! Check out today's fresh pastry and roast coffee combo on our menu board.",
+    },
+    { action: "point_to", target: "menu_board" },
+    { action: "wait", seconds: 2 },
+    { action: "point_to", target: "counter" },
+    {
+      action: "say",
+      text: "Head right over to the counter whenever you are ready to order.",
+    },
+  ],
+  table_guide: [
+    { action: "walk_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Welcome! Follow me and I will guide you to our seating area.",
+    },
+    { action: "walk_to", target: "tables" },
+    { action: "point_to", target: "tables" },
+    {
+      action: "say",
+      text: "Here are our available tables. Please make yourself comfortable!",
+    },
+    { action: "wait", seconds: 2 },
+    { action: "point_to", target: "counter" },
+    {
+      action: "say",
+      text: "When you are ready, you can place your order at the counter.",
+    },
+  ],
+};
+
+function getActiveScene(): Scene {
+  if (typeof window === "undefined") return mockScene;
+  try {
+    const rawAnalysis = window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
+    if (rawAnalysis) {
+      const parsed = JSON.parse(rawAnalysis) as { scene?: unknown };
+      if (isScene(parsed?.scene)) return parsed.scene;
+    }
+    const rawLocalScene = window.localStorage.getItem("robohire:scene");
+    if (rawLocalScene) {
+      const parsed = JSON.parse(rawLocalScene) as unknown;
+      if (isScene(parsed)) return parsed;
+    }
+  } catch {
+    // Fall back to mockScene
+  }
+  return mockScene;
+}
+
+function buildFallbackScenario(job: Job, scene: Scene): Scenario {
+  const zoneIds = scene.zones.map((z) => z.id);
+  const preset = PRESET_SCENARIOS[job.id];
+  if (preset) {
+    const validPreset = filterValidSteps(preset, zoneIds);
+    if (validPreset.length >= 2) {
+      return { job_id: job.id, steps: validPreset };
+    }
+  }
+
+  const firstZone = scene.zones[0]?.id;
+  const secondZone = scene.zones[1]?.id ?? firstZone;
+
+  const genericSteps: ScenarioStep[] = firstZone
+    ? [
+        { action: "walk_to", target: firstZone },
+        { action: "wave" },
+        {
+          action: "say",
+          text: `Hello! I am performing the ${job.title} role.`,
+        },
+        ...(secondZone
+          ? ([
+              { action: "turn_to", target: secondZone },
+              { action: "point_to", target: secondZone },
+            ] as ScenarioStep[])
+          : []),
+        { action: "wait", seconds: 2 },
+        {
+          action: "say",
+          text: "Please let our team know if you need further assistance.",
+        },
+      ]
+    : [{ action: "wave" }];
+
+  return {
+    job_id: job.id,
+    steps: filterValidSteps(genericSteps, zoneIds),
+  };
+}
+
+interface JobCardProps {
+  job: Job;
+  rank: number;
+  isHiring: boolean;
+  isAnyHiring: boolean;
+  onHire: (job: Job) => void;
+}
+
+function JobCard({
+  job,
+  rank,
+  isHiring,
+  isAnyHiring,
+  onHire,
+}: JobCardProps) {
   const style = FIT_STYLES[job.fit];
   const isNotSuitable = job.fit === "no";
+  const canHire = job.fit === "good" || job.fit === "partial";
 
   return (
     <article
@@ -50,7 +176,7 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
       className={`flex flex-col justify-between rounded-2xl border p-6 transition ${style.cardClass}`}
     >
       <div className="space-y-4">
-        {/* Header: Rank, Title, Fit Badge, and Score */}
+        {/* Header: Rank, Title, Fit Badge, Score, and Hire Action */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
@@ -69,7 +195,7 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <span
               className={`rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${style.badgeClass}`}
             >
@@ -87,6 +213,18 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
               </span>
               <span className="text-xs text-slate-400">/100</span>
             </div>
+
+            {canHire && (
+              <button
+                type="button"
+                data-testid={`hire-btn-${job.id}`}
+                disabled={isAnyHiring}
+                onClick={() => onHire(job)}
+                className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+              >
+                {isHiring ? "Hiring…" : "Hire"}
+              </button>
+            )}
           </div>
         </div>
 
@@ -98,11 +236,11 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
           />
         </div>
 
-        {/* Why & Limitations */}
+        {/* Why it fits & Limitations */}
         <div className="grid gap-3 pt-1 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Почему (Why it fits)
+              Why it fits
             </div>
             <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
               {job.why}
@@ -111,7 +249,7 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
 
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Ограничения (Limitations)
+              Limitations
             </div>
             <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
               {job.limits}
@@ -120,20 +258,20 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
         </div>
       </div>
 
-      {/* Metrics Footer: Hours/week, Savings €/month, Payback months */}
+      {/* Metrics Footer: Hours/week, Savings €/month, Payback in months */}
       <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Часов в неделю
+            Hours / week
           </dt>
           <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-            {job.hours_per_week} ч/нед
+            {job.hours_per_week} hrs/wk
           </dd>
         </div>
 
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Экономия €/мес
+            Monthly savings
           </dt>
           <dd
             className={`mt-0.5 font-mono text-base font-bold ${
@@ -142,16 +280,16 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
                 : "text-slate-500 dark:text-slate-500"
             }`}
           >
-            €{job.savings_eur_month}/мес
+            €{job.savings_eur_month}/mo
           </dd>
         </div>
 
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Окупаемость
+            Payback period
           </dt>
           <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-            {job.payback_months !== null ? `${job.payback_months} мес.` : "—"}
+            {job.payback_months !== null ? `${job.payback_months} mo` : "—"}
           </dd>
         </div>
       </dl>
@@ -160,10 +298,67 @@ function JobCard({ job, rank }: { job: Job; rank: number }) {
 }
 
 export default function JobsPage() {
+  const router = useRouter();
+  const [hiringJobId, setHiringJobId] = useState<string | null>(null);
+
   const sortedJobs = useMemo(
     () => [...mockJobs.jobs].sort((a, b) => b.score - a.score),
     [],
   );
+
+  async function handleHire(job: Job) {
+    if (hiringJobId !== null) return;
+    setHiringJobId(job.id);
+
+    const scene = getActiveScene();
+    let scenario: Scenario | null = null;
+
+    try {
+      const response = await fetch("/api/scenario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job, scene }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as unknown;
+        const candidate =
+          typeof data === "object" &&
+          data !== null &&
+          "scenario" in data
+            ? (data as { scenario: unknown }).scenario
+            : data;
+
+        if (isScenario(candidate)) {
+          const validSteps = filterValidSteps(
+            candidate.steps,
+            scene.zones.map((z) => z.id),
+          );
+          if (validSteps.length > 0) {
+            scenario = { job_id: candidate.job_id, steps: validSteps };
+          }
+        }
+      }
+    } catch {
+      // Gracefully fall back to matching mock scenario below
+    }
+
+    if (!scenario) {
+      scenario = buildFallbackScenario(job, scene);
+    }
+
+    try {
+      window.localStorage.setItem("robohire:scene", JSON.stringify(scene));
+      window.localStorage.setItem(
+        "robohire:scenario",
+        JSON.stringify(scenario),
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+
+    router.push("/robot");
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
@@ -210,7 +405,14 @@ export default function JobsPage() {
         {/* Sorted Job Cards List */}
         <section className="space-y-4" aria-label="Matched Robot Jobs">
           {sortedJobs.map((job, idx) => (
-            <JobCard key={job.id} job={job} rank={idx + 1} />
+            <JobCard
+              key={job.id}
+              job={job}
+              rank={idx + 1}
+              isHiring={hiringJobId === job.id}
+              isAnyHiring={hiringJobId !== null}
+              onHire={handleHire}
+            />
           ))}
         </section>
       </div>

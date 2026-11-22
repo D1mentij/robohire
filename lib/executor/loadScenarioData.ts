@@ -83,7 +83,18 @@ export function loadSimulationData(
   };
 }
 
-const SERVER_SNAPSHOT: LoadedSimulationData = loadSimulationData(null);
+export function loadDefaultMockSimulationData(): LoadedSimulationData {
+  const zoneIds = mockScene.zones.map((z) => z.id);
+  const steps = filterValidSteps(mockScenario.steps, zoneIds);
+  return {
+    scene: mockScene,
+    scenario: mockScenario,
+    steps,
+    source: "mock",
+  };
+}
+
+const SERVER_SNAPSHOT: LoadedSimulationData = loadDefaultMockSimulationData();
 let cachedClientKey = "";
 let cachedClientSnapshot: LoadedSimulationData = SERVER_SNAPSHOT;
 
