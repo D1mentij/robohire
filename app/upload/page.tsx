@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { startDemo } from "@/lib/ai/demo";
 import { useRef, useState } from "react";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
 import type { JobsResult } from "@/types/contracts";
@@ -15,8 +17,17 @@ import {
 } from "@/lib/ai/types";
 
 const MAX_SECONDS = 60;
+const FETCH_TIMEOUT_MS = 35_000;
+
+function netError(err: unknown, fallback: string): string {
+  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError"))
+    return "The AI took too long (35 s timeout).";
+  if (err instanceof TypeError) return "Network error — could not reach the server.";
+  return err instanceof Error ? err.message : fallback;
+}
 
 export default function UploadPage() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [businessType, setBusinessType] = useState("");
   const [hoursPerWeek, setHoursPerWeek] = useState("");
@@ -101,7 +112,7 @@ export default function UploadPage() {
       const data: UploadData = { businessType: businessType.trim(), hoursPerWeek: hours, hourlyCost: cost, frames: out };
       sessionStorage.setItem(UPLOAD_STORAGE_KEY, JSON.stringify(data));
     } catch (err) {
-      setErrors({ video: err instanceof Error ? err.message : "Frame extraction failed" });
+      setErrors({ video: `Frame extraction failed: ${err instanceof Error ? err.message : "unknown error"}` });
     } finally {
       setProgress(null);
     }
@@ -123,6 +134,7 @@ export default function UploadPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       let json: AnalyzeResponse | null = null;
       try {
@@ -144,7 +156,7 @@ export default function UploadPage() {
       await loadJobs(stored);
       return;
     } catch (err) {
-      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+      setAnalyzeError(netError(err, "Analysis failed"));
     }
     setAnalyzing(false);
   }
@@ -158,6 +170,7 @@ export default function UploadPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(stored),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       let json: { ok: true; result: JobsResult } | { ok: false; error: string } | null = null;
       try {
@@ -170,10 +183,15 @@ export default function UploadPage() {
       setJobs(json.result);
       sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.result));
     } catch (err) {
-      setJobsError(err instanceof Error ? err.message : "Job rating failed");
+      setJobsError(netError(err, "Job rating failed"));
     } finally {
       setJobsLoading(false);
     }
+  }
+
+  function runDemo() {
+    startDemo();
+    router.push("/jobs");
   }
 
   const input = "w-full rounded border border-gray-400 bg-white px-3 py-2 text-gray-900 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100";
@@ -215,6 +233,10 @@ export default function UploadPage() {
             className="rounded border border-gray-400 px-4 py-2 font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:hover:bg-gray-800">
             {analyzing ? "Analyzing…" : "Analyze"}
           </button>
+          <button type="button" onClick={runDemo} disabled={busy || analyzing || jobsLoading}
+            className="rounded border border-emerald-700 px-4 py-2 font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950">
+            Try demo (no video needed)
+          </button>
         </div>
       </form>
 
@@ -239,6 +261,15 @@ export default function UploadPage() {
 
       {analyzing && <p className="text-sm text-gray-600 dark:text-gray-400">AI is studying your space… this can take 10–40 seconds.</p>}
       {analyzeError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{analyzeError}</p>}
+
+      {(analyzeError || jobsError || (errors.video && !checking)) && (
+        <p className="text-sm">
+          Something went wrong, but you can still see how RoboHire works.{" "}
+          <button type="button" onClick={runDemo} className="rounded border border-emerald-700 px-3 py-1 font-medium text-emerald-800 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950">
+            Continue with demo
+          </button>
+        </p>
+      )}
 
       {jobsLoading && <p className="text-sm text-gray-600 dark:text-gray-400">Rating robot jobs…</p>}
       {jobsError && (

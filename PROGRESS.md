@@ -136,3 +136,13 @@
   The 8.5 €/h Latvian cost is an assumption (employer cost incl. tax), not measured.
 - Tested: lint + build; /api/scenario with mockScene+mock "greeter" (12.9 s, 12 valid steps) and with a synthetic analysis scene (13.1 s);
   bad input → 400. Analysis on synthetic frames now returns greeting + menu tasks alongside cleaning.
+
+## [2026-11-22] Person 1 / Claude Code
+- Done: Step 7 — demo mode + resilience. lib/ai/demo.ts `startDemo()` writes sessionStorage "robohire:analysis"
+  ({scene: mockScene, tasks: demoTasks, businessType "Small café (Riga)", hoursPerWeek 60, hourlyCost 8.5}) and "robohire:jobs" (mockJobs);
+  demo tasks in lib/ai/demoData.ts. /upload: "Try demo (no video needed)" button → startDemo() + /jobs; any failure (video/frame extraction,
+  /api/analyze, /api/jobs, missing key, timeout, network) shows a clear message + "Continue with demo"; 35 s client timeout on analyze/jobs calls.
+- Changed files: lib/ai/demo.ts, lib/ai/demoData.ts, app/upload/page.tsx, PROGRESS.md.
+- CONTRACT CHANGE: none
+- AI-generated: code and demo tasks by Claude Code (Claude Sonnet 5.5); demo numbers are mocks/illustrative.
+- Tested: lint + build; in browser, "Try demo" fills both storage keys (5 tasks, 4 jobs) and lands on /jobs.
