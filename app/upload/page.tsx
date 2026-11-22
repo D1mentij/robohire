@@ -2,7 +2,14 @@
 
 import { useRef, useState } from "react";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
-import { UPLOAD_STORAGE_KEY, type UploadData } from "@/lib/ai/types";
+import {
+  ANALYSIS_STORAGE_KEY,
+  UPLOAD_STORAGE_KEY,
+  type AnalysisResult,
+  type AnalyzeResponse,
+  type StoredAnalysis,
+  type UploadData,
+} from "@/lib/ai/types";
 
 const MAX_SECONDS = 60;
 
@@ -18,6 +25,10 @@ export default function UploadPage() {
   const [checking, setChecking] = useState(false);
   const checkId = useRef(0);
 
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analyzeError, setAnalyzeError] = useState("");
+
   const busy = progress !== null;
   const totalKb = Math.round(frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024);
 
@@ -25,6 +36,8 @@ export default function UploadPage() {
     const id = ++checkId.current;
     setFile(null);
     setFrames([]);
+    setAnalysis(null);
+    setAnalyzeError("");
     setErrors((e) => ({ ...e, video: "" }));
     if (!f) {
       setChecking(false);
@@ -63,6 +76,8 @@ export default function UploadPage() {
     if (Object.keys(errs).length || !file) return;
 
     setFrames([]);
+    setAnalysis(null);
+    setAnalyzeError("");
     setProgress({ done: 0, total: 8 });
     try {
       const out = await extractFrames(file, {
@@ -78,6 +93,46 @@ export default function UploadPage() {
       setErrors({ video: err instanceof Error ? err.message : "Frame extraction failed" });
     } finally {
       setProgress(null);
+    }
+  }
+
+  async function onAnalyze() {
+    if (!frames.length || analyzing) return;
+    setAnalyzing(true);
+    setAnalyzeError("");
+    setAnalysis(null);
+    try {
+      const data: UploadData = {
+        businessType: businessType.trim(),
+        hoursPerWeek: Number(hoursPerWeek),
+        hourlyCost: Number(hourlyCost),
+        frames,
+      };
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      let json: AnalyzeResponse | null = null;
+      try {
+        json = (await res.json()) as AnalyzeResponse;
+      } catch {
+        /* non-JSON error page */
+      }
+      if (!json) throw new Error(`Server error (${res.status})`);
+      if (!json.ok) throw new Error(json.error);
+      setAnalysis(json.result);
+      const stored: StoredAnalysis = {
+        ...json.result,
+        businessType: data.businessType,
+        hoursPerWeek: data.hoursPerWeek,
+        hourlyCost: data.hourlyCost,
+      };
+      sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(stored));
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
     }
   }
 
@@ -114,8 +169,10 @@ export default function UploadPage() {
           <button type="submit" disabled={busy || checking} className="rounded border border-blue-700 bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
           </button>
-          <button type="button" disabled title="Coming in the next step" className="rounded border border-gray-400 px-4 py-2 opacity-50 dark:border-gray-500">
-            Analyze
+          <button type="button" onClick={onAnalyze} disabled={!frames.length || busy || analyzing}
+            title={frames.length ? "" : "Extract frames first"}
+            className="rounded border border-gray-400 px-4 py-2 font-medium hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:hover:bg-gray-800">
+            {analyzing ? "Analyzing…" : "Analyze"}
           </button>
         </div>
       </form>
@@ -136,6 +193,38 @@ export default function UploadPage() {
               <img key={i} src={f} alt={`Frame ${i + 1}`} className="aspect-video w-full rounded object-cover" />
             ))}
           </div>
+        </section>
+      )}
+
+      {analyzing && <p className="text-sm text-gray-600 dark:text-gray-400">AI is studying your space… this can take 10–40 seconds.</p>}
+      {analyzeError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{analyzeError}</p>}
+
+      {analysis && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Space</h2>
+            <p className="text-sm">Room: {analysis.scene.room.width} × {analysis.scene.room.depth} m</p>
+            <ul className="mt-1 list-disc pl-5 text-sm">
+              {analysis.scene.zones.map((z) => (
+                <li key={z.id}><b>{z.label}</b> <code>({z.id})</code> — center ({z.x}, {z.z}), {z.w} × {z.d} m</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">Repetitive tasks</h2>
+            <ul className="mt-1 space-y-2 text-sm">
+              {analysis.tasks.map((t) => (
+                <li key={t.id}>
+                  <b>{t.title}</b> <span className="text-gray-600 dark:text-gray-400">@ {t.zone_id} · {t.frequency_per_day}×/day · {t.minutes_each} min each</span>
+                  <br />{t.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <details>
+            <summary className="cursor-pointer text-sm">Raw JSON</summary>
+            <pre className="mt-2 overflow-x-auto rounded border border-gray-400 p-2 text-xs dark:border-gray-500">{JSON.stringify(analysis, null, 2)}</pre>
+          </details>
         </section>
       )}
     </main>
