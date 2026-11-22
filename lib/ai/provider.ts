@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 /** Swap the AI vendor by changing only this file. Server-side only. */
 export interface AiProvider {
   /** images = JPEG data URLs. Returns parsed JSON (unvalidated). */
-  generateJson(prompt: string, images: string[], schema?: unknown): Promise<unknown>;
+  generateJson(prompt: string, images: string[], schema?: unknown, opts?: { timeoutMs?: number }): Promise<unknown>;
 }
 
 export class MissingKeyError extends Error {}
@@ -11,7 +11,7 @@ export class MissingKeyError extends Error {}
 const DEFAULT_MODEL = "gemini-3.8-flash";
 
 export const geminiProvider: AiProvider = {
-  async generateJson(prompt, images, schema) {
+  async generateJson(prompt, images, schema, opts) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new MissingKeyError("GEMINI_API_KEY is not set on the server.");
     const ai = new GoogleGenAI({ apiKey });
@@ -28,6 +28,7 @@ export const geminiProvider: AiProvider = {
         responseMimeType: "application/json",
         ...(schema ? { responseJsonSchema: schema } : {}),
         temperature: 0.4,
+        ...(opts?.timeoutMs ? { abortSignal: AbortSignal.timeout(opts.timeoutMs) } : {}),
       },
     });
     const text = res.text;

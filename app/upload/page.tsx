@@ -20,7 +20,7 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [businessType, setBusinessType] = useState("");
   const [hoursPerWeek, setHoursPerWeek] = useState("");
-  const [hourlyCost, setHourlyCost] = useState("12");
+  const [hourlyCost, setHourlyCost] = useState("8.5");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [frames, setFrames] = useState<string[]>([]);
@@ -203,6 +203,7 @@ export default function UploadPage() {
         <div>
           <label className="mb-1 block font-medium">Staff hourly cost (€)</label>
           <input type="number" min={0} step="0.5" value={hourlyCost} onChange={(e) => setHourlyCost(e.target.value)} className={input} />
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Typical Latvian hospitality cost ≈ €8.5/h incl. employer tax</p>
           {err("hourlyCost")}
         </div>
         <div className="flex gap-3">

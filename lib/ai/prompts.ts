@@ -67,9 +67,14 @@ GROUNDING RULES (most important):
 
 Zone rules: 3 to 7 zones; short snake_case ids (e.g. "entrance", "counter"); human-readable label;
 every zone fully inside the room; zones must not overlap; realistic sizes (room typically 3-20 m per side).
-Task rules: repetitive work suggested by the visible space (greeting, explaining, guiding, cleaning, carrying,
-restocking, tidying...); 3 to 8 tasks; id = short snake_case; zone_id MUST be one of the zone ids;
+Task rules: 4 to 7 tasks; id = short snake_case; zone_id MUST be one of the zone ids;
 description = one sentence; frequency_per_day = realistic repetitions; minutes_each = realistic minutes.
+Include BOTH kinds of work:
+ (a) physical work staff really do in the visible space (cleaning, carrying, restocking, tidying...);
+ (b) customer-facing COMMUNICATION work that fits the visible space: greeting at the entrance, wayfinding / guiding
+     visitors to zones, explaining the menu / offers / products, queue or waiting-area information,
+     closing-time or safety announcements.
+When the space has visitors or customers, at least 2 of the tasks MUST be communication tasks (b), each tied to a visible zone.
 
 Return STRICT JSON only, exactly this shape:
 { "scene": { "room": {"width": number, "depth": number}, "zones": [{"id","label","x","z","w","d"}] },
@@ -123,4 +128,41 @@ For EACH task, return exactly one rating with:
 Be realistic and do not oversell: K1 is a small (95 cm) humanoid with no hands.
 STRICT RULES: do NOT write any numbers about money, savings, prices, time or hours anywhere in the text. Do not add or remove tasks.
 Return STRICT JSON: { "ratings": [ {"id","fit","score","why","limits"} ] }`;
+}
+
+export const SCENARIO_SCHEMA = {
+  type: "object",
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["walk_to", "turn_to", "wave", "point_to", "say", "wait"] },
+          target: { type: "string" },
+          text: { type: "string" },
+          seconds: { type: "number" },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  required: ["steps"],
+};
+
+export function buildScenarioPrompt(job: unknown, businessType: string | null, zones: unknown): string {
+  return `Write a short demo script showing a small humanoid service robot (Booster K1) doing this job in this exact space.
+${businessType ? `Business type: "${businessType}".\n` : ""}JOB: ${JSON.stringify(job)}
+ZONES (the only valid targets): ${JSON.stringify(zones)}
+
+Return JSON { "steps": [...] } with 6 to 12 steps. Allowed actions ONLY:
+- walk_to {target}   - turn_to {target}   - point_to {target}   - wave   - say {text}   - wait {seconds}
+Rules:
+- target MUST be one of the zone ids above, spelled exactly. Never invent zones.
+- The FIRST step must be walk_to the zone most relevant to the job.
+- At least 2 "say" steps and at least 1 gesture (wave or point_to).
+- say text: English, friendly, specific to this job and business, max 15 words.
+- wait seconds: 1 to 3.
+- Only things a robot WITHOUT hands can do: walking, turning, gestures, pointing, talking.
+- Do not mention prices, savings or money.`;
 }

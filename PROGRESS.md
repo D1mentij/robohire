@@ -123,3 +123,16 @@
   running cost, 4.33 weeks/month, robot price 8000 € = assumption).
 - Tested: lint + build + test:roi pass; e2e on synthetic frames (/api/analyze → /api/jobs, 10.7 s): all 3 tasks honestly rated "no".
   NOTE: /jobs page (Person 2) still reads mocks — hand-off to robohire:jobs is theirs.
+
+## [2026-11-22] Person 1 / Claude Code
+- Done: Step 6 — (A) analysis prompt now asks for 4–7 tasks incl. ≥2 customer-facing communication tasks (greeting, wayfinding,
+  explaining menu/offers, queue info, closing/safety announcements) when the space has visitors. (B) POST /api/scenario
+  (body {job, scene, businessType?} → {scenario} or non-200 {error}); lib/ai/scenario.ts: Gemini writes 6–12 steps, code runs
+  filterValidSteps, <4 valid → one retry then error, job_id = job.id, 18 s total abort (provider.generateJson got optional timeoutMs).
+  (D) /upload default hourly cost 12 → 8.5 € with Latvian hospitality hint; mocks untouched.
+- Changed files: lib/ai/{prompts,scenario,provider}.ts, app/api/scenario/route.ts, app/upload/page.tsx, PROGRESS.md.
+- CONTRACT CHANGE: none
+- AI-generated: code by Claude Code (Claude Sonnet 5.5); at runtime Gemini writes the scenario steps/speech.
+  The 8.5 €/h Latvian cost is an assumption (employer cost incl. tax), not measured.
+- Tested: lint + build; /api/scenario with mockScene+mock "greeter" (12.9 s, 12 valid steps) and with a synthetic analysis scene (13.1 s);
+  bad input → 400. Analysis on synthetic frames now returns greeting + menu tasks alongside cleaning.
