@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
 import type { ScenarioStep, Zone } from "@/types/contracts";
@@ -62,10 +63,12 @@ export default function RobotSimulationPage() {
           <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
             Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
             {simData.scene.zones.length} zones • Job:{" "}
-            <span className="font-mono font-semibold text-slate-900 dark:text-white">
-              {simData.scenario.job_id}
+            <span className="font-semibold text-slate-900 dark:text-white">
+              {simData.job.title}
             </span>{" "}
-            ({executor.steps.length} steps)
+            <span className="font-mono text-slate-500 dark:text-slate-400">
+              ({simData.scenario.job_id} • {executor.steps.length} steps)
+            </span>
           </p>
         </div>
 
@@ -161,6 +164,54 @@ export default function RobotSimulationPage() {
                   <p className="text-sm font-semibold leading-snug text-white">
                     &ldquo;{executor.activeSpeech}&rdquo;
                   </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Job Completed ✓ Overlay Card */}
+          {executor.status === "completed" && (
+            <div
+              data-testid="job-completed-card"
+              className="pointer-events-auto absolute bottom-6 left-1/2 z-30 w-full max-w-md -translate-x-1/2 px-4"
+            >
+              <div className="rounded-2xl border-2 border-emerald-400/80 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur-md dark:bg-slate-900/95 dark:text-white">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-1 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
+                    Job Completed ✓
+                  </span>
+                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                    {executor.steps.length}/{executor.steps.length} steps
+                  </span>
+                </div>
+
+                <h3 className="mt-3 text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+                  {simData.job.title}
+                </h3>
+
+                <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Estimated Monthly Savings
+                  </span>
+                  <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
+                    €{simData.job.savings_eur_month}/month
+                  </span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2.5">
+                  <Link
+                    href="/jobs"
+                    className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    ← Back to Jobs
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={executor.replay}
+                    className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95"
+                  >
+                    ↻ Replay Job
+                  </button>
                 </div>
               </div>
             </div>

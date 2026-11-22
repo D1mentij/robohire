@@ -1,19 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { mockJobs, mockScenario, mockScene } from "@/mocks";
 import {
   filterValidSteps,
+  isJobsResult,
   isScenario,
   isScene,
   type Fit,
   type Job,
+  type JobsResult,
   type Scenario,
   type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
-import { ANALYSIS_STORAGE_KEY } from "@/lib/ai/types";
+import { ANALYSIS_STORAGE_KEY, JOBS_STORAGE_KEY } from "@/lib/ai/types";
 
 interface FitStyle {
   label: "Suitable" | "Partial" | "Not Suitable";
@@ -88,6 +90,41 @@ const PRESET_SCENARIOS: Record<string, ScenarioStep[]> = {
     },
   ],
 };
+
+let cachedJobsRaw = "";
+let cachedJobsSnapshot: JobsResult = mockJobs;
+
+function getJobsClientSnapshot(): JobsResult {
+  if (typeof window === "undefined") return mockJobs;
+  try {
+    const raw =
+      window.sessionStorage.getItem(JOBS_STORAGE_KEY) ??
+      window.localStorage.getItem(JOBS_STORAGE_KEY) ??
+      "";
+    if (raw !== cachedJobsRaw) {
+      cachedJobsRaw = raw;
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        cachedJobsSnapshot = isJobsResult(parsed) ? parsed : mockJobs;
+      } else {
+        cachedJobsSnapshot = mockJobs;
+      }
+    }
+  } catch {
+    return mockJobs;
+  }
+  return cachedJobsSnapshot;
+}
+
+function getJobsServerSnapshot(): JobsResult {
+  return mockJobs;
+}
+
+function subscribeJobsStorage(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
 
 function getActiveScene(): Scene {
   if (typeof window === "undefined") return mockScene;
@@ -219,9 +256,15 @@ function JobCard({
                 data-testid={`hire-btn-${job.id}`}
                 disabled={isAnyHiring}
                 onClick={() => onHire(job)}
-                className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
               >
-                {isHiring ? "Hiring…" : "Hire"}
+                {isHiring && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  />
+                )}
+                <span>{isHiring ? "Hiring…" : "Hire"}</span>
               </button>
             )}
           </div>
@@ -298,16 +341,21 @@ function JobCard({
 
 export default function JobsPage() {
   const router = useRouter();
-  const [hiringJobId, setHiringJobId] = useState<string | null>(null);
+  const jobsData = useSyncExternalStore(
+    subscribeJobsStorage,
+    getJobsClientSnapshot,
+    getJobsServerSnapshot,
+  );
+  const [hiringJob, setHiringJob] = useState<Job | null>(null);
 
   const sortedJobs = useMemo(
-    () => [...mockJobs.jobs].sort((a, b) => b.score - a.score),
-    [],
+    () => [...jobsData.jobs].sort((a, b) => b.score - a.score),
+    [jobsData.jobs],
   );
 
   async function handleHire(job: Job) {
-    if (hiringJobId !== null) return;
-    setHiringJobId(job.id);
+    if (hiringJob !== null) return;
+    setHiringJob(job);
 
     const scene = getActiveScene();
     let scenario: Scenario | null = null;
@@ -316,7 +364,11 @@ export default function JobsPage() {
       const response = await fetch("/api/scenario", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job, scene }),
+        body: JSON.stringify({
+          job,
+          scene,
+          businessType: jobsData.business_type,
+        }),
       });
 
       if (response.ok) {
@@ -352,6 +404,7 @@ export default function JobsPage() {
         "robohire:scenario",
         JSON.stringify(scenario),
       );
+      window.localStorage.setItem("robohire:job", JSON.stringify(job));
     } catch {
       // Ignore storage quota errors
     }
@@ -366,7 +419,7 @@ export default function JobsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
           <div>
             <span className="inline-block rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
-              Step 2 of 3 • {mockJobs.business_type}
+              Step 2 of 3 • {jobsData.business_type}
             </span>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
               Matched Booster K1 Robot Jobs
@@ -378,6 +431,21 @@ export default function JobsPage() {
           </div>
         </div>
 
+        {/* Hiring Transition Loading Banner */}
+        {hiringJob && (
+          <div
+            role="status"
+            data-testid="hiring-loading-banner"
+            className="flex items-center gap-3 rounded-2xl border border-sky-500/50 bg-sky-500/10 px-5 py-3.5 text-sm font-semibold text-sky-800 shadow-sm dark:text-sky-200"
+          >
+            <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+            <span>
+              Preparing 3D workspace &amp; generating K1 scenario for{" "}
+              <strong className="font-bold">{hiringJob.title}</strong>…
+            </span>
+          </div>
+        )}
+
         {/* Sorted Job Cards List */}
         <section className="space-y-4" aria-label="Matched Robot Jobs">
           {sortedJobs.map((job, idx) => (
@@ -385,8 +453,8 @@ export default function JobsPage() {
               key={job.id}
               job={job}
               rank={idx + 1}
-              isHiring={hiringJobId === job.id}
-              isAnyHiring={hiringJobId !== null}
+              isHiring={hiringJob?.id === job.id}
+              isAnyHiring={hiringJob !== null}
               onHire={handleHire}
             />
           ))}

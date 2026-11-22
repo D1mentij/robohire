@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef } from "react";
+import { Suspense, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -13,6 +13,8 @@ import type {
 } from "@/lib/executor";
 import { Room3D } from "./Room3D";
 import { RobotModel } from "./RobotModel";
+
+const FLY_IN_DURATION_SECONDS = 1.65;
 
 interface FollowCameraControllerProps {
   poseRef: React.MutableRefObject<RobotPose>;
@@ -27,13 +29,68 @@ function FollowCameraController({
 }: FollowCameraControllerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const isInteractingRef = useRef<boolean>(false);
+  const flyInElapsedRef = useRef<number>(0);
+  const flyInCompleteRef = useRef<boolean>(false);
+
+  const flyStartPos = useRef({
+    x: roomCenter.x - 6.2,
+    y: 13.2,
+    z: -9.8,
+  });
+  const flyEndPos = useRef({
+    x: roomCenter.x - 2.2,
+    y: 7.2,
+    z: -4.0,
+  });
 
   useFrame((state, delta) => {
     const controls = controlsRef.current;
-    if (!controls || !enabled) return;
+    if (!controls) return;
 
     const dt = Math.min(Math.max(delta, 0), 0.1);
     const pose = poseRef.current;
+
+    // Initial smooth camera fly-in animation on entering the 3D space
+    if (!flyInCompleteRef.current) {
+      if (isInteractingRef.current) {
+        flyInCompleteRef.current = true;
+      } else {
+        flyInElapsedRef.current += dt;
+        const progress = Math.min(
+          1,
+          flyInElapsedRef.current / FLY_IN_DURATION_SECONDS,
+        );
+        // Cubic ease-out
+        const eased = 1 - Math.pow(1 - progress, 3);
+
+        const start = flyStartPos.current;
+        const end = flyEndPos.current;
+
+        state.camera.position.set(
+          start.x + (end.x - start.x) * eased,
+          start.y + (end.y - start.y) * eased,
+          start.z + (end.z - start.z) * eased,
+        );
+
+        const desiredX = pose.x * 0.65 + roomCenter.x * 0.35;
+        const desiredY = 0.55;
+        const desiredZ = pose.z * 0.65 + roomCenter.z * 0.35;
+
+        controls.target.set(
+          roomCenter.x + (desiredX - roomCenter.x) * eased,
+          0.2 + (desiredY - 0.2) * eased,
+          roomCenter.z + (desiredZ - roomCenter.z) * eased,
+        );
+        controls.update();
+
+        if (progress >= 1) {
+          flyInCompleteRef.current = true;
+        }
+        return;
+      }
+    }
+
+    if (!enabled) return;
 
     // Blend robot position (65%) with room center overview (35%)
     const desiredX = pose.x * 0.65 + roomCenter.x * 0.35;
@@ -65,7 +122,7 @@ function FollowCameraController({
       minPolarAngle={0.15}
       maxPolarAngle={Math.PI / 2 - 0.04}
       minDistance={3.5}
-      maxDistance={24}
+      maxDistance={26}
       enableDamping
       dampingFactor={0.08}
       onStart={() => {
@@ -105,20 +162,34 @@ export function SimCanvas({
 }: SimCanvasProps) {
   const cx = scene.room.width / 2;
   const cz = scene.room.depth / 2;
+  const [canvasReady, setCanvasReady] = useState(false);
 
   return (
     <div className="relative h-full w-full bg-slate-950">
+      {!canvasReady && (
+        <div
+          data-testid="canvas-loading-indicator"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-slate-950/90 text-slate-200 backdrop-blur-xs"
+        >
+          <div className="h-8 w-8 animate-spin rounded-full border-3 border-sky-500 border-t-transparent" />
+          <p className="font-mono text-xs font-semibold tracking-wide text-sky-300">
+            Loading 3D workspace &amp; Booster K1 model…
+          </p>
+        </div>
+      )}
+
       <Canvas
         shadows
+        onCreated={() => setCanvasReady(true)}
         camera={{
-          position: [cx - 2.2, 7.4, -4.2],
+          position: [cx - 6.2, 13.2, -9.8],
           fov: 45,
           near: 0.1,
           far: 100,
         }}
       >
         <color attach="background" args={["#090d16"]} />
-        <fog attach="fog" args={["#090d16", 18, 34]} />
+        <fog attach="fog" args={["#090d16", 18, 36]} />
 
         {/* Balanced studio & room lighting */}
         <ambientLight intensity={0.75} />

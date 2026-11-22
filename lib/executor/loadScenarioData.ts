@@ -1,11 +1,14 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { mockScenario, mockScene } from "@/mocks";
+import { mockJobs, mockScenario, mockScene } from "@/mocks";
 import {
   filterValidSteps,
+  isJob,
+  isJobsResult,
   isScenario,
   isScene,
+  type Job,
   type Scenario,
   type Scene,
 } from "@/types/contracts";
@@ -13,6 +16,8 @@ import type { LoadedSimulationData } from "./types";
 
 export const SCENE_STORAGE_KEYS = ["robohire:scene", "scene"] as const;
 export const SCENARIO_STORAGE_KEYS = ["robohire:scenario", "scenario"] as const;
+export const JOB_STORAGE_KEYS = ["robohire:job", "job"] as const;
+export const JOBS_LIST_STORAGE_KEYS = ["robohire:jobs", "jobs"] as const;
 
 function tryParseJson(raw: string | null): unknown {
   if (!raw) return null;
@@ -38,11 +43,31 @@ function readFromStorage(keys: readonly string[]): unknown {
   return null;
 }
 
+function resolveJobMetadata(scenario: Scenario): Job {
+  const storedJob = readFromStorage(JOB_STORAGE_KEYS);
+  if (isJob(storedJob) && storedJob.id === scenario.job_id) {
+    return storedJob;
+  }
+
+  const storedJobsList = readFromStorage(JOBS_LIST_STORAGE_KEYS);
+  if (isJobsResult(storedJobsList)) {
+    const matched = storedJobsList.jobs.find((j) => j.id === scenario.job_id);
+    if (matched) return matched;
+  }
+
+  if (isJob(storedJob)) {
+    return storedJob;
+  }
+
+  return (
+    mockJobs.jobs.find((j) => j.id === scenario.job_id) ?? mockJobs.jobs[0]
+  );
+}
+
 /**
- * Loads `scene` and `scenario` from URL query params (`?scene=...&scenario=...`)
- * or browser storage (`localStorage` / `sessionStorage` keys `robohire:scene`,
- * `robohire:scenario`, `scene`, `scenario`), falling back cleanly to `mockScene`
- * and `mockScenario`. Always sanitizes steps with `filterValidSteps()`.
+ * Loads `scene`, `scenario`, and `job` from URL query params or browser storage
+ * (`localStorage` / `sessionStorage`), falling back cleanly to `mockScene`,
+ * `mockScenario`, and `mockJobs`. Always sanitizes steps with `filterValidSteps()`.
  */
 export function loadSimulationData(
   searchParams?: URLSearchParams | null,
@@ -74,10 +99,12 @@ export function loadSimulationData(
 
   const zoneIds = scene.zones.map((z) => z.id);
   const steps = filterValidSteps(scenario.steps, zoneIds);
+  const job = resolveJobMetadata(scenario);
 
   return {
     scene,
     scenario,
+    job,
     steps,
     source,
   };
@@ -86,9 +113,12 @@ export function loadSimulationData(
 export function loadDefaultMockSimulationData(): LoadedSimulationData {
   const zoneIds = mockScene.zones.map((z) => z.id);
   const steps = filterValidSteps(mockScenario.steps, zoneIds);
+  const job =
+    mockJobs.jobs.find((j) => j.id === mockScenario.job_id) ?? mockJobs.jobs[0];
   return {
     scene: mockScene,
     scenario: mockScenario,
+    job,
     steps,
     source: "mock",
   };
@@ -102,7 +132,12 @@ function getClientSnapshot(): LoadedSimulationData {
   if (typeof window === "undefined") return SERVER_SNAPSHOT;
   let key = window.location.search;
   try {
-    for (const k of [...SCENE_STORAGE_KEYS, ...SCENARIO_STORAGE_KEYS]) {
+    for (const k of [
+      ...SCENE_STORAGE_KEYS,
+      ...SCENARIO_STORAGE_KEYS,
+      ...JOB_STORAGE_KEYS,
+      ...JOBS_LIST_STORAGE_KEYS,
+    ]) {
       key += `|${window.localStorage.getItem(k) ?? ""}|${window.sessionStorage.getItem(k) ?? ""}`;
     }
   } catch {
