@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { readFile } from "node:fs/promises";
 
 /** Hire the plan, play the robot to the end, check the checklist + completion card + .py export from /robot. */

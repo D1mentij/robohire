@@ -1,15 +1,14 @@
 import { isScene, type Scene } from "@/types/contracts";
 import type { AnalysisResult, Rating, Task } from "./types";
+import { ZONE_TYPES, inferZoneType, zoneTypeOfId, type ZoneType } from "./zoneTypes";
 import { heuristicRating, makeRating } from "./ratings";
-import { detectBusiness, genericBasics, templatesFor, type Template } from "./businessTemplates";
+import { fixLayout, relabelZones } from "./layout";
+import { detectBusiness, genericBasics, templatesFor, type BusinessKind, type Template } from "./businessTemplates";
 
 /**
  * Local (Ollama) analysis split: the small model only describes the SPACE (zones with a fixed type + a few visible
  * activities). Tasks and K1 ratings are then generated in code from zone types, so a weak model cannot break them.
  */
-export const ZONE_TYPES = ["entrance", "counter", "seating", "display", "waiting", "shelves", "desk", "corridor", "other"] as const;
-export type ZoneType = (typeof ZONE_TYPES)[number];
-
 export const ZONES_SCHEMA = {
   type: "object",
   properties: {
@@ -45,24 +44,6 @@ export function buildZonesPrompt(businessType: string): string {
 - No robot, charging or docking zones.`;
 }
 
-const TYPE_RE: [ZoneType, RegExp][] = [
-  ["entrance", /entr|door|lobby entrance|reception|foyer|gate/i],
-  ["counter", /counter|bar\b|cash|checkout|register|kitchen|service/i],
-  ["seating", /seat|table|chair|sofa|bench|lounge|booth|dining/i],
-  ["display", /display|menu|board|showcase|product|exhibit|window|vitrine|vehicle|car\b/i],
-  ["waiting", /wait|queue|lobby|lounge area/i],
-  ["shelves", /shelf|shelves|rack|storage|stock/i],
-  ["desk", /desk|office|info|workstation/i],
-  ["corridor", /corridor|hall|aisle|passage|stair/i],
-];
-export const inferZoneType = (label: string): ZoneType => TYPE_RE.find(([, re]) => re.test(label))?.[0] ?? "other";
-
-/** Zone ids in the local flow are the type (+ _2, _3 when repeated), so the type survives scene cleanup. */
-export const zoneTypeOfId = (id: string): ZoneType => {
-  const t = id.replace(/_\d+$/, "");
-  return (ZONE_TYPES as readonly string[]).includes(t) ? (t as ZoneType) : inferZoneType(id);
-};
-
 /** Validates the model's zones answer; returns a raw scene (not yet cleaned) with type-based ids + the activities. */
 const MIN_ZONE_SIDE = 1;
 
@@ -87,14 +68,15 @@ export function parseZonesAnswer(raw: unknown): { scene: Scene; activities: stri
   return { scene, activities };
 }
 
+export { ZONE_TYPES, inferZoneType, zoneTypeOfId, type ZoneType };
+
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-const r1 = (n: number) => Math.round(n * 10) / 10;
 const MAX_TASKS = 7;
 const MAX_NO = 2;
 
 /** Tasks + rule-based ratings from zone types. Always 4–7 tasks, with at least 2 K1-suitable ones. */
-export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek: number, businessType = ""): { tasks: Task[]; ratings: Rating[] } {
-  const kind = detectBusiness(businessType);
+export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek: number, businessType = "", kindOverride?: BusinessKind): { tasks: Task[]; ratings: Rating[] } {
+  const kind = kindOverride ?? detectBusiness(businessType, [...activities, ...scene.zones.map((z) => z.label)]);
   const scale = Math.min(2.5, Math.max(0.3, hoursPerWeek / 60));
   const zones = scene.zones.map((z) => ({ z, type: zoneTypeOfId(z.id) }));
   if (!zones.length) return { tasks: [], ratings: [] };
@@ -108,7 +90,7 @@ export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek:
     const label = zone.label.trim().slice(0, 30);
     const title = fill(t.title, label);
     const id = slug(`${zoneId}_${t.key}`).slice(0, 48);
-    const task: Task = { id, title, zone_id: zoneId, description: fill(t.desc, label.toLowerCase()), frequency_per_day: r1(t.perDay * scale), minutes_each: t.minutes };
+    const task: Task = { id, title, zone_id: zoneId, description: fill(t.desc, label.toLowerCase()), frequency_per_day: Math.max(1, Math.round(t.perDay * scale)), minutes_each: Math.max(1, Math.round(t.minutes)) };
     entries.push({ task, rating: makeRating(id, t.fit, t.why) });
   };
   for (const { z, type } of zones) for (const t of templatesFor(kind, type)) add(z.id, t);
@@ -120,7 +102,7 @@ export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek:
     const title = a[0].toUpperCase() + a.slice(1);
     if (used.has(`act:${title}`)) continue;
     used.add(`act:${title}`);
-    const task: Task = { id: slug(`${home.z.id}_${title}`).slice(0, 48), title, zone_id: home.z.id, description: `Seen in the video: ${a}.`, frequency_per_day: r1(15 * scale), minutes_each: 3 };
+    const task: Task = { id: slug(`${home.z.id}_${title}`).slice(0, 48), title, zone_id: home.z.id, description: `Seen in the video: ${a}.`, frequency_per_day: Math.max(1, Math.round(15 * scale)), minutes_each: 3 };
     entries.push({ task, rating: heuristicRating(task) });
   }
   // always have enough K1-suitable work: top up with entrance/zone-agnostic basics
@@ -138,9 +120,12 @@ export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek:
 
 export function validateZonesAnalysis(raw: unknown, hoursPerWeek: number, cleanScene: (s: Scene) => Scene | null, businessType = ""): AnalysisResult {
   const { scene: rawScene, activities } = parseZonesAnswer(raw);
-  const scene = cleanScene(rawScene);
-  if (!scene) throw new Error("No usable zones after cleanup");
-  const { tasks, ratings } = tasksFromZones(scene, activities, hoursPerWeek, businessType);
+  const cleaned = cleanScene(rawScene);
+  if (!cleaned) throw new Error("No usable zones after cleanup");
+  // unknown business type → infer from what the model saw (model labels + activities)
+  const kind = detectBusiness(businessType, [...activities, ...rawScene.zones.map((z) => z.label)]);
+  const scene = fixLayout(relabelZones(cleaned, kind), kind);
+  const { tasks, ratings } = tasksFromZones(scene, activities, hoursPerWeek, businessType, kind);
   if (!tasks.length) throw new Error("No tasks could be derived");
   return { scene, tasks, ratings };
 }

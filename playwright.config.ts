@@ -22,7 +22,7 @@ export default defineConfig({
     acceptDownloads: true,
     trace: "retain-on-failure",
     // headless Chromium: software WebGL for the 3D canvas
-    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
+    launchOptions: { args: ["--mute-audio", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } }],
   webServer: prodUrl

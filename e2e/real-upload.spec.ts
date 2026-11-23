@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * npm run e2e:real — the REAL path in the browser: video upload → frame extraction → /api/analyze with local Ollama → /jobs → hire.

@@ -384,3 +384,19 @@
 - Person 2 folders: nothing new found; REVIEW.md preset-detection issue (open) was re-confirmed relevant: the hotel showcase is matched to the "Hotel" preset by name.
 - Tested: lint, build, npm test, e2e (3), demo:check READY. CONTRACT CHANGE: none. AI-generated: tests/docs by Claude Code (Claude Sonnet 5.5).
 - Review round: no new Person 2 commits → skipped. Fixed 0, reported 0 new.
+
+## [2026-11-23] Person 1 / Claude Code — Auto fixes: detection, human labels, rounding, layout sanity; silent e2e
+- Detection (lib/ai/businessTemplates.ts): contains-matching with synonyms (dealer, autodealer, auto/car dealer, car/auto salon, showroom, dīleris, autosalons, автодилер, автосалон, дилер …; "hair salon" stays generic).
+  Unknown type → inferred from the model's zone labels/activities ("car", "barista", "luggage", "books" …), else generic.
+- Labels (lib/ai/layout.ts): code labels from zone type + business (car showroom: Car display / Customer lounge / Sales desk / Entrance …; maps for café, hotel, library, retail, office, university, generic).
+  Model labels only when more specific than the bare type ("Elevator corridor" kept, "Seating area" replaced); duplicates numbered ("Car display 2").
+- Numbers: frequency_per_day and minutes_each are integers ≥ 1 (templates and the Gemini path). NOTE: sub-minute tasks now count as 1 min (greeting 80×/day = 80 min), so hours/savings of greeting-type jobs are slightly higher than before.
+- Layout (local flow only): room minimum per business (showroom 12×9, hotel 10×8, café 8×6 …, zones scaled with the room), entrance added on the edge facing the largest free margin, ≥ 4 zones (plausible missing types per business), grid layout when zones overlap or are collinear.
+  Side effect: the grid gives all zones equal size, so the 3D room looks tidy but loses the model's relative sizes.
+- Bench (4B, 4 @ 512): Auto as "Autodealer" 3/3 valid, 12–13 s, 4–8 zones; Cafe 3/3, 13–17 s, 6 zones; Hotel 3/3 valid but 26–41 s this round (another Ollama/dev-server load on the machine; not caused by this change).
+  Auto result: Entrance, Customer lounge, Car display, Sales desk → "Greet visitors at Entrance", "Guide visitors to Customer lounge", "Present current offers at Car display", "Explain test-drive booking at Sales desk", "Serve refreshments…" (no), "Wipe and polish cars…" (no).
+  Showcases regenerated (better: human labels, integer numbers): real-hotel-lobby.json and real-room-test.json (café).
+- e2e is silent: e2e/fixtures.ts stubs window.speechSynthesis (speak = no-op) for every page, Chromium launches with --mute-audio.
+- Tests: scripts/test-ai.ts (detection synonyms + hint inference, labels/uniqueness/bare detection, rounding, layout fixes incl. end-to-end weak "Autodealer" answer). lint, build, npm test, e2e (3), demo:check READY.
+- Stopped a second foreign `next dev` (PID 70601 on :3000) with the user's OK. CONTRACT CHANGE: none. AI-generated: code by Claude Code (Claude Sonnet 5.5); showcases by qwen3-vl:4b-instruct + code.
+- Review round: no new Person 2 commits → skipped. Fixed 0, reported 0.

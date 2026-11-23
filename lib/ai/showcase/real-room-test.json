@@ -3,148 +3,163 @@
   "analysis": {
     "scene": {
       "room": {
-        "width": 4.5,
-        "depth": 5
+        "width": 8,
+        "depth": 6
       },
       "zones": [
         {
+          "id": "entrance",
+          "label": "Entrance",
+          "x": 1.3,
+          "z": 1.5,
+          "w": 1.9,
+          "d": 2.1
+        },
+        {
           "id": "seating",
-          "label": "seating",
-          "x": 2.5,
-          "z": 3,
-          "w": 1,
-          "d": 1.2
-        },
-        {
-          "id": "seating_2",
-          "label": "seating",
-          "x": 3.5,
-          "z": 2.5,
-          "w": 1,
-          "d": 1.2
-        },
-        {
-          "id": "seating_3",
-          "label": "seating",
-          "x": 4.25,
-          "z": 3,
-          "w": 0.5,
-          "d": 1.2
+          "label": "Seating area",
+          "x": 4,
+          "z": 1.5,
+          "w": 1.9,
+          "d": 2.1
         },
         {
           "id": "counter",
-          "label": "counter",
-          "x": 1.2,
-          "z": 2,
-          "w": 1,
-          "d": 1
+          "label": "Service counter",
+          "x": 6.7,
+          "z": 1.5,
+          "w": 1.9,
+          "d": 2.1
+        },
+        {
+          "id": "seating_2",
+          "label": "Seating area 2",
+          "x": 1.3,
+          "z": 4.5,
+          "w": 1.9,
+          "d": 2.1
         },
         {
           "id": "display",
-          "label": "display",
-          "x": 1,
-          "z": 1.25,
-          "w": 1,
-          "d": 0.5
+          "label": "Menu board",
+          "x": 4,
+          "z": 4.5,
+          "w": 1.9,
+          "d": 2.1
         },
         {
           "id": "shelves",
-          "label": "shelves",
-          "x": 3,
-          "z": 4.05,
-          "w": 1,
-          "d": 0.9
+          "label": "Shelves",
+          "x": 6.7,
+          "z": 4.5,
+          "w": 1.9,
+          "d": 2.1
         }
       ]
     },
     "tasks": [
       {
-        "id": "seating_guide_visitors_to_a_free_seat",
-        "title": "Guide visitors to a free seat",
+        "id": "entrance_greet",
+        "title": "Greet guests at Entrance",
+        "zone_id": "entrance",
+        "description": "Welcome guests at entrance.",
+        "frequency_per_day": 80,
+        "minutes_each": 1
+      },
+      {
+        "id": "seating_seat",
+        "title": "Guide guests to a free table in Seating area",
         "zone_id": "seating",
-        "description": "Show arriving guests to a free place in seating.",
+        "description": "Show arriving guests to a free table in seating area.",
         "frequency_per_day": 40,
         "minutes_each": 1
       },
       {
-        "id": "counter_explain_menu_and_offers_at_the_counter",
-        "title": "Explain menu and offers at the counter",
+        "id": "counter_explain",
+        "title": "Explain menu and offers at Service counter",
         "zone_id": "counter",
-        "description": "Answer repeated questions about products, prices and offers at counter.",
+        "description": "Answer repeated questions about drinks, food and offers at service counter.",
         "frequency_per_day": 45,
-        "minutes_each": 1.5
+        "minutes_each": 2
       },
       {
-        "id": "display_present_offers_and_products",
-        "title": "Present offers and products",
+        "id": "display_present",
+        "title": "Present today's specials at Menu board",
         "zone_id": "display",
-        "description": "Point out and explain products or offers shown at display.",
+        "description": "Point out and explain specials and the menu at menu board.",
         "frequency_per_day": 30,
-        "minutes_each": 1.5
+        "minutes_each": 2
       },
       {
-        "id": "shelves_answer_where_can_i_find_questions",
-        "title": "Answer 'where can I find...' questions",
+        "id": "shelves_where",
+        "title": "Answer 'where is it' at Shelves",
         "zone_id": "shelves",
         "description": "Point visitors to items at shelves.",
         "frequency_per_day": 25,
         "minutes_each": 1
       },
       {
-        "id": "seating_clear_and_wipe_tables",
-        "title": "Clear and wipe tables",
+        "id": "seating_tidy",
+        "title": "Clear and wipe tables in Seating area",
         "zone_id": "seating",
-        "description": "Remove dishes and wipe surfaces in seating.",
+        "description": "Remove dishes and wipe tables in seating area.",
         "frequency_per_day": 50,
-        "minutes_each": 2.5
+        "minutes_each": 3
       },
       {
-        "id": "counter_carry_orders_from_the_counter_to_custome",
-        "title": "Carry orders from the counter to customers",
+        "id": "counter_carry",
+        "title": "Carry orders from Service counter to tables",
         "zone_id": "counter",
-        "description": "Bring finished items from counter to where customers are.",
+        "description": "Bring finished drinks and food from service counter to guests.",
         "frequency_per_day": 35,
         "minutes_each": 2
       }
     ],
     "ratings": [
       {
-        "id": "seating_guide_visitors_to_a_free_seat",
+        "id": "entrance_greet",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
       },
       {
-        "id": "counter_explain_menu_and_offers_at_the_counter",
+        "id": "seating_seat",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
       },
       {
-        "id": "display_present_offers_and_products",
+        "id": "counter_explain",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
       },
       {
-        "id": "shelves_answer_where_can_i_find_questions",
+        "id": "display_present",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
       },
       {
-        "id": "seating_clear_and_wipe_tables",
+        "id": "shelves_where",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "seating_tidy",
         "fit": "no",
         "score": 10,
         "why": "Mainly physical work that needs hands or carrying.",
         "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects."
       },
       {
-        "id": "counter_carry_orders_from_the_counter_to_custome",
+        "id": "counter_carry",
         "fit": "no",
         "score": 10,
         "why": "Mainly physical work that needs hands or carrying.",
@@ -159,67 +174,78 @@
     "business_type": "Cafe",
     "jobs": [
       {
-        "id": "seating_guide_visitors_to_a_free_seat",
+        "id": "entrance_greet",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
-        "title": "Guide visitors to a free seat",
+        "title": "Greet guests at Entrance",
+        "hours_per_week": 8,
+        "savings_eur_month": 236,
+        "payback_months": null
+      },
+      {
+        "id": "seating_seat",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Guide guests to a free table in Seating area",
         "hours_per_week": 4,
         "savings_eur_month": 118,
         "payback_months": null
       },
       {
-        "id": "counter_explain_menu_and_offers_at_the_counter",
+        "id": "counter_explain",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
-        "title": "Explain menu and offers at the counter",
-        "hours_per_week": 6.8,
-        "savings_eur_month": 199,
+        "title": "Explain menu and offers at Service counter",
+        "hours_per_week": 9,
+        "savings_eur_month": 265,
         "payback_months": null
       },
       {
-        "id": "display_present_offers_and_products",
+        "id": "display_present",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
-        "title": "Present offers and products",
-        "hours_per_week": 4.5,
-        "savings_eur_month": 132,
+        "title": "Present today's specials at Menu board",
+        "hours_per_week": 6,
+        "savings_eur_month": 177,
         "payback_months": null
       },
       {
-        "id": "shelves_answer_where_can_i_find_questions",
+        "id": "shelves_where",
         "fit": "good",
         "score": 80,
         "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
         "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
-        "title": "Answer 'where can I find...' questions",
+        "title": "Answer 'where is it' at Shelves",
         "hours_per_week": 2.5,
         "savings_eur_month": 74,
         "payback_months": null
       },
       {
-        "id": "seating_clear_and_wipe_tables",
+        "id": "seating_tidy",
         "fit": "no",
         "score": 10,
         "why": "Mainly physical work that needs hands or carrying.",
         "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
-        "title": "Clear and wipe tables",
-        "hours_per_week": 12.5,
+        "title": "Clear and wipe tables in Seating area",
+        "hours_per_week": 15,
         "savings_eur_month": 0,
         "payback_months": null
       },
       {
-        "id": "counter_carry_orders_from_the_counter_to_custome",
+        "id": "counter_carry",
         "fit": "no",
         "score": 10,
         "why": "Mainly physical work that needs hands or carrying.",
         "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
-        "title": "Carry orders from the counter to customers",
+        "title": "Carry orders from Service counter to tables",
         "hours_per_week": 7,
         "savings_eur_month": 0,
         "payback_months": null
@@ -228,18 +254,19 @@
   },
   "plan": {
     "job_ids": [
-      "shelves_answer_where_can_i_find_questions",
-      "seating_guide_visitors_to_a_free_seat",
-      "display_present_offers_and_products",
-      "counter_explain_menu_and_offers_at_the_counter"
+      "shelves_where",
+      "entrance_greet",
+      "seating_seat",
+      "display_present",
+      "counter_explain"
     ],
-    "hours_per_week": 14.2,
+    "hours_per_week": 23.6,
     "capacity_hours_per_week": 36,
-    "gross_savings_eur_month": 523,
+    "gross_savings_eur_month": 870,
     "running_cost_eur_month": 60,
-    "net_savings_eur_month": 463,
+    "net_savings_eur_month": 810,
     "robot_price_eur": 8000,
-    "payback_months": 17,
+    "payback_months": 10,
     "assumptions": [
       "Robot price \u20ac8000 (assumption \u2014 Booster publishes no price)",
       "Coverage: good fit 80%, partial 40% of task hours",

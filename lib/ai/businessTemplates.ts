@@ -11,7 +11,7 @@ export type BusinessKind = "cafe" | "hotel" | "showroom" | "retail" | "library" 
 
 /** Order matters: the first match wins (showroom before retail, hotel before university "lobby" etc.). EN / LV / RU keywords. */
 const DETECT: [BusinessKind, RegExp][] = [
-  ["showroom", /showroom|car\s*(dealer|sales|shop)|dealership|\bauto\b|automobil|autosalon|auto\s*salon|motor|vehicle|автосалон|автомобил|машин|дилер/i],
+  ["showroom", /showroom|dealer|dealership|d[iī]ler|car\s*(sales|shop|salon|centre|center)|auto\s*(salon|centre|center|sales|house)|\bauto\b|autosal|automobil|\bcars?\b|motor|vehicle|автосалон|автодилер|автомобил|машин|дилер|салон\s*авто/i],
   ["hotel", /hotel|hostel|motel|resort|guest\s*house|viesn[iī]c|naktsm[iī]t|otel|отел|гостиниц|хостел/i],
   ["library", /librar|bibliot[eē]k|библиотек/i],
   ["university", /universit|college|school|campus|augstskol|skol[aā]|universit[aā]t|универс|институт|школ|колледж|вуз/i],
@@ -20,9 +20,26 @@ const DETECT: [BusinessKind, RegExp][] = [
   ["office", /office|reception|clinic|bank|coworking|birojs|rec[eē]pcij|ofis|офис|ресепш|приём|приемн|клиник|банк/i],
 ];
 
-export function detectBusiness(businessType: string | null | undefined): BusinessKind {
+/** Contains-matching on the owner's text (EN/LV/RU synonyms, e.g. "Autodealer", "car salon", "viesnīca", "автодилер"). */
+export function detectBusiness(businessType: string | null | undefined, hints: string[] = []): BusinessKind {
   const t = (businessType ?? "").trim();
-  return DETECT.find(([, re]) => re.test(t))?.[0] ?? "generic";
+  const direct = DETECT.find(([, re]) => re.test(t))?.[0];
+  if (direct) return direct;
+  return inferFromHints(hints);
+}
+
+/** Unknown business type: guess from what the model saw (zone labels, activities). Several hits needed unless the word is unambiguous. */
+const HINTS: [BusinessKind, RegExp][] = [
+  ["showroom", /\b(cars?|vehicles?|automobiles?|showroom|test.?drive|dealer\w*)\b/i],
+  ["library", /\b(books?|library|readers?|reading|librarian)\b/i],
+  ["cafe", /\b(barista|coffee|espresso|latte|menu|caf[eé]|drinks?|pastr\w+)\b/i],
+  ["hotel", /\b(hotel|luggage|elevators?|check-?in|concierge|guests?)\b/i],
+  ["retail", /\b(shoppers?|cashier|checkout|store|boutique|clothes|groceries)\b/i],
+  ["office", /\b(office|meeting rooms?|employees?|visitor badges?)\b/i],
+];
+export function inferFromHints(hints: string[]): BusinessKind {
+  const text = hints.join(" \n ");
+  return HINTS.find(([, re]) => re.test(text))?.[0] ?? "generic";
 }
 
 const T = (key: string, title: string, desc: string, perDay: number, minutes: number, fit: Fit, why?: string): Template => ({ key, title, desc, perDay, minutes, fit, ...(why ? { why } : {}) });

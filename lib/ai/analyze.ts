@@ -103,8 +103,8 @@ function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, strin
       title: o.title.trim(),
       zone_id,
       description: typeof o.description === "string" ? o.description.trim() : "",
-      frequency_per_day: r1(Math.min(freq, 1000)),
-      minutes_each: r1(Math.min(mins, 240)),
+      frequency_per_day: Math.max(1, Math.round(Math.min(freq, 1000))),
+      minutes_each: Math.max(1, Math.round(Math.min(mins, 240))),
     });
   }
   return out;

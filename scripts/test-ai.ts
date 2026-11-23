@@ -14,7 +14,8 @@ import { OllamaUnavailableError, parseModelJson, provider, providerName, isUnava
 import { parseShowcase } from "../lib/ai/showcase";
 import { readShowcasesFromDisk } from "../lib/ai/showcaseDisk";
 import { ANALYSIS_SCHEMA, buildAnalysisPrompt } from "../lib/ai/prompts";
-import { detectBusiness } from "../lib/ai/businessTemplates";
+import { detectBusiness, inferFromHints } from "../lib/ai/businessTemplates";
+import { fixLayout, gridLayout, hasOverlap, isBareLabel, isCollinear, relabelZones } from "../lib/ai/layout";
 import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis } from "../lib/ai/zoneTasks";
 import { filterValidSteps, isJobsResult, isRobotPlan, type Scene } from "../types/contracts";
 
@@ -256,6 +257,75 @@ delete process.env.AI_PROVIDER;
   // a kind with a missing zone type falls back to generic templates (no crash, still labelled)
   const only = tasksFromZones({ room: { width: 6, depth: 6 }, zones: [{ id: "other", label: "Bay", x: 3, z: 3, w: 2, d: 2 }] }, [], 60, "Library");
   assert.ok(only.tasks.length >= 1 && only.tasks.every((t) => t.title.includes("Bay") || t.zone_id));
+}
+// ---- detection synonyms + inference from what the model saw
+{
+  for (const n of ["Autodealer", "auto dealer", "Car dealer", "car salon", "Auto salon", "Showroom", "dīleris", "autosalons", "автодилер", "автосалон", "дилер", "Mazda dealership"]) assert.equal(detectBusiness(n), "showroom", n);
+  assert.equal(detectBusiness("hair salon"), "generic"); // "salon" alone is not a car salon
+  assert.equal(detectBusiness("Kaut kas", ["parked cars on display", "customer talks to salesperson"]), "showroom");
+  assert.equal(detectBusiness("", ["barista makes coffee"]), "cafe");
+  assert.equal(detectBusiness("???", ["guest at reception", "luggage cart"]), "hotel");
+  assert.equal(detectBusiness("???", ["people walking"]), "generic");
+  assert.equal(inferFromHints(["Reader browsing books"]), "library");
+}
+
+// ---- human labels, uniqueness, bare detection
+{
+  assert.equal(isBareLabel("Seating area", "seating"), true);
+  assert.equal(isBareLabel("Main seating zone with tables and bench", "seating"), true);
+  assert.equal(isBareLabel("elevator corridor", "corridor"), false);
+  assert.equal(isBareLabel("Wooden service counter", "counter"), false);
+  assert.equal(isBareLabel("entrance", "entrance"), true);
+  const z = (id: string, label: string, x: number) => ({ id, label, x, z: 3, w: 2, d: 2 });
+  const rl = relabelZones({ room: { width: 14, depth: 9 }, zones: [z("display", "display", 2), z("display_2", "Display area", 5), z("seating", "sofa", 8), z("counter", "Reception counter", 11)] }, "showroom");
+  assert.deepEqual(rl.zones.map((q) => q.label), ["Car display", "Car display 2", "Customer lounge", "Reception counter"]);
+  assert.equal(new Set(relabelZones({ room: { width: 8, depth: 6 }, zones: [z("other", "x", 2), z("other_2", "y", 5)] }, "cafe").zones.map((q) => q.label)).size, 2);
+}
+
+// ---- rounding: whole numbers shown to users, min 1
+{
+  const sc: Scene = { room: { width: 12, depth: 9 }, zones: [{ id: "entrance", label: "Entrance", x: 2, z: 2, w: 2, d: 2 }, { id: "display", label: "Car display", x: 6, z: 5, w: 3, d: 2 }] };
+  for (const hrs of [7, 33, 60, 111]) {
+    const { tasks } = tasksFromZones(sc, ["customers browse"], hrs, "Car dealer");
+    for (const t of tasks) {
+      assert.ok(Number.isInteger(t.frequency_per_day) && t.frequency_per_day >= 1, `${t.title} freq ${t.frequency_per_day}`);
+      assert.ok(Number.isInteger(t.minutes_each) && t.minutes_each >= 1, `${t.title} min ${t.minutes_each}`);
+    }
+  }
+  const g = validateAnalysis({ scene: mockScene, tasks: [{ id: "a", title: "Greet", zone_id: mockScene.zones[0].id, description: "d", frequency_per_day: 12.6, minutes_each: 0.4 }] });
+  assert.deepEqual([g.tasks[0].frequency_per_day, g.tasks[0].minutes_each], [13, 1]);
+}
+
+// ---- layout sanity
+{
+  // tiny room, one zone, no entrance → bigger room, entrance added, ≥ 4 zones, no overlap
+  const tiny = fixLayout({ room: { width: 4, depth: 4 }, zones: [{ id: "display", label: "Car display", x: 2, z: 2, w: 2, d: 2 }] }, "showroom");
+  assert.ok(tiny.room.width >= 12 && tiny.room.depth >= 9);
+  assert.ok(tiny.zones.length >= 4);
+  assert.ok(tiny.zones.some((q) => q.id.startsWith("entrance")));
+  assert.equal(hasOverlap(tiny.zones), false);
+  assert.equal(new Set(tiny.zones.map((q) => q.label)).size, tiny.zones.length);
+  for (const q of tiny.zones) {
+    assert.ok(q.x - q.w / 2 >= -0.01 && q.x + q.w / 2 <= tiny.room.width + 0.01 && q.z - q.d / 2 >= -0.01 && q.z + q.d / 2 <= tiny.room.depth + 0.01, `${q.id} inside room`);
+  }
+  // collinear zones are spread
+  const line = [0, 1, 2, 3].map((i) => ({ id: ["entrance", "counter", "seating", "display"][i], label: "x", x: 2 + i * 2.5, z: 4, w: 2, d: 1.5 }));
+  assert.equal(isCollinear(line), true);
+  const spreadOut = fixLayout({ room: { width: 12, depth: 9 }, zones: line }, "cafe");
+  assert.equal(isCollinear(spreadOut.zones), false);
+  assert.equal(hasOverlap(spreadOut.zones), false);
+  // a healthy layout is left untouched; room minimums per business
+  const ok: Scene = { room: { width: 12, depth: 9 }, zones: [{ id: "entrance", label: "Entrance", x: 2, z: 7.5, w: 2, d: 1.5 }, { id: "display", label: "Car display", x: 4, z: 2, w: 4, d: 2 }, { id: "seating", label: "Customer lounge", x: 10, z: 2, w: 3, d: 2 }, { id: "counter", label: "Sales desk", x: 9, z: 6.5, w: 3, d: 2 }] };
+  assert.deepEqual(fixLayout(ok, "showroom").zones.map((q) => [q.x, q.z]), ok.zones.map((q) => [q.x, q.z]));
+  assert.ok(fixLayout({ room: { width: 5, depth: 4 }, zones: ok.zones.map((q) => ({ ...q, x: q.x / 3, w: q.w / 3, z: q.z / 3, d: q.d / 3 })) }, "cafe").room.width >= 8);
+  assert.equal(gridLayout({ width: 10, depth: 8 }, line).length, 4);
+  // end to end: a weak model answer for a car dealer gives car-showroom labels and tasks
+  const weak = { room: { width: 5, depth: 4 }, zones: [{ label: "area", type: "display", x: 2, z: 2, w: 1, d: 1 }, { label: "sofa area", type: "seating", x: 3, z: 2, w: 1, d: 1 }], activities: ["customer looks at a car"] };
+  const r = validateZonesAnalysis(weak, 60, cleanScene, "Autodealer");
+  assert.ok(r.scene.zones.length >= 4 && r.scene.room.width >= 12);
+  assert.ok(r.scene.zones.some((q) => q.label === "Car display"));
+  assert.ok(r.tasks.some((t) => /test-drive|offers/i.test(t.title)));
+  assert.ok(!r.tasks.some((t) => /menu|barista|wipe tables/i.test(t.title)));
 }
 console.log("test:ai OK");
 }
