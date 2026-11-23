@@ -2,6 +2,7 @@ import { isScene, type Scene, type Zone } from "@/types/contracts";
 import type { AnalysisResult, Task, UploadData } from "./types";
 import { parseRatings } from "./ratings";
 import { buildAnalysisPrompt, ANALYSIS_SCHEMA } from "./prompts";
+import { ZONES_SCHEMA, buildZonesPrompt, validateZonesAnalysis } from "./zoneTasks";
 import { ProviderUnavailableError, provider, providerName } from "./provider";
 
 /** Safety net: the model sometimes invents robot infrastructure. */
@@ -130,8 +131,14 @@ export type AnalyzeOutcome = { ok: true; result: AnalysisResult } | { ok: false;
 /** Total AI time for analysis: Ollama (local) gets 120 s across attempts, Gemini has none (it answers or errors). */
 const analyzeBudgetMs = () => (providerName() === "ollama" ? 120_000 : undefined);
 
+/** One hung local call must not eat the whole budget: cap per attempt so the retry still fits (normal calls take 15–45 s). */
+const ATTEMPT_CAP_MS = 60_000;
+
 export async function analyze(data: UploadData): Promise<AnalyzeOutcome> {
-  const prompt = buildAnalysisPrompt(data.businessType, providerName() === "ollama");
+  const local = providerName() === "ollama";
+  // local models only describe the space (zones); tasks + ratings are built in code. Gemini keeps the full one-call prompt.
+  const prompt = local ? buildZonesPrompt(data.businessType) : buildAnalysisPrompt(data.businessType);
+  const schema = local ? ZONES_SCHEMA : ANALYSIS_SCHEMA;
   const budget = analyzeBudgetMs();
   const started = Date.now();
   let lastError = "Unknown error";
@@ -139,8 +146,8 @@ export async function analyze(data: UploadData): Promise<AnalyzeOutcome> {
     const left = budget === undefined ? undefined : budget - (Date.now() - started);
     if (left !== undefined && left < 20_000) break;
     try {
-      const raw = await provider.generateJson(prompt, data.frames, ANALYSIS_SCHEMA, left === undefined ? undefined : { timeoutMs: left });
-      return { ok: true, result: validateAnalysis(raw) };
+      const raw = await provider.generateJson(prompt, data.frames, schema, left === undefined ? undefined : { timeoutMs: Math.min(left, ATTEMPT_CAP_MS) });
+      return { ok: true, result: local ? validateZonesAnalysis(raw, data.hoursPerWeek, cleanScene) : validateAnalysis(raw) };
     } catch (e) {
       if (e instanceof ProviderUnavailableError) return { ok: false, error: e.message };
       lastError = e instanceof Error ? e.message : String(e);

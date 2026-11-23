@@ -1,0 +1,251 @@
+{
+  "name": "Real room test",
+  "analysis": {
+    "scene": {
+      "room": {
+        "width": 4.5,
+        "depth": 5
+      },
+      "zones": [
+        {
+          "id": "seating",
+          "label": "seating",
+          "x": 2.5,
+          "z": 3,
+          "w": 1,
+          "d": 1.2
+        },
+        {
+          "id": "seating_2",
+          "label": "seating",
+          "x": 3.5,
+          "z": 2.5,
+          "w": 1,
+          "d": 1.2
+        },
+        {
+          "id": "seating_3",
+          "label": "seating",
+          "x": 4.25,
+          "z": 3,
+          "w": 0.5,
+          "d": 1.2
+        },
+        {
+          "id": "counter",
+          "label": "counter",
+          "x": 1.2,
+          "z": 2,
+          "w": 1,
+          "d": 1
+        },
+        {
+          "id": "display",
+          "label": "display",
+          "x": 1,
+          "z": 1.25,
+          "w": 1,
+          "d": 0.5
+        },
+        {
+          "id": "shelves",
+          "label": "shelves",
+          "x": 3,
+          "z": 4.05,
+          "w": 1,
+          "d": 0.9
+        }
+      ]
+    },
+    "tasks": [
+      {
+        "id": "seating_guide_visitors_to_a_free_seat",
+        "title": "Guide visitors to a free seat",
+        "zone_id": "seating",
+        "description": "Show arriving guests to a free place in seating.",
+        "frequency_per_day": 40,
+        "minutes_each": 1
+      },
+      {
+        "id": "counter_explain_menu_and_offers_at_the_counter",
+        "title": "Explain menu and offers at the counter",
+        "zone_id": "counter",
+        "description": "Answer repeated questions about products, prices and offers at counter.",
+        "frequency_per_day": 45,
+        "minutes_each": 1.5
+      },
+      {
+        "id": "display_present_offers_and_products",
+        "title": "Present offers and products",
+        "zone_id": "display",
+        "description": "Point out and explain products or offers shown at display.",
+        "frequency_per_day": 30,
+        "minutes_each": 1.5
+      },
+      {
+        "id": "shelves_answer_where_can_i_find_questions",
+        "title": "Answer 'where can I find...' questions",
+        "zone_id": "shelves",
+        "description": "Point visitors to items at shelves.",
+        "frequency_per_day": 25,
+        "minutes_each": 1
+      },
+      {
+        "id": "seating_clear_and_wipe_tables",
+        "title": "Clear and wipe tables",
+        "zone_id": "seating",
+        "description": "Remove dishes and wipe surfaces in seating.",
+        "frequency_per_day": 50,
+        "minutes_each": 2.5
+      },
+      {
+        "id": "counter_carry_orders_from_the_counter_to_custome",
+        "title": "Carry orders from the counter to customers",
+        "zone_id": "counter",
+        "description": "Bring finished items from counter to where customers are.",
+        "frequency_per_day": 35,
+        "minutes_each": 2
+      }
+    ],
+    "ratings": [
+      {
+        "id": "seating_guide_visitors_to_a_free_seat",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "counter_explain_menu_and_offers_at_the_counter",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "display_present_offers_and_products",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "shelves_answer_where_can_i_find_questions",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "seating_clear_and_wipe_tables",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects."
+      },
+      {
+        "id": "counter_carry_orders_from_the_counter_to_custome",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects."
+      }
+    ],
+    "businessType": "Cafe",
+    "hoursPerWeek": 60,
+    "hourlyCost": 8.5
+  },
+  "jobs": {
+    "business_type": "Cafe",
+    "jobs": [
+      {
+        "id": "seating_guide_visitors_to_a_free_seat",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Guide visitors to a free seat",
+        "hours_per_week": 4,
+        "savings_eur_month": 118,
+        "payback_months": null
+      },
+      {
+        "id": "counter_explain_menu_and_offers_at_the_counter",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Explain menu and offers at the counter",
+        "hours_per_week": 6.8,
+        "savings_eur_month": 199,
+        "payback_months": null
+      },
+      {
+        "id": "display_present_offers_and_products",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Present offers and products",
+        "hours_per_week": 4.5,
+        "savings_eur_month": 132,
+        "payback_months": null
+      },
+      {
+        "id": "shelves_answer_where_can_i_find_questions",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Answer 'where can I find...' questions",
+        "hours_per_week": 2.5,
+        "savings_eur_month": 74,
+        "payback_months": null
+      },
+      {
+        "id": "seating_clear_and_wipe_tables",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
+        "title": "Clear and wipe tables",
+        "hours_per_week": 12.5,
+        "savings_eur_month": 0,
+        "payback_months": null
+      },
+      {
+        "id": "counter_carry_orders_from_the_counter_to_custome",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
+        "title": "Carry orders from the counter to customers",
+        "hours_per_week": 7,
+        "savings_eur_month": 0,
+        "payback_months": null
+      }
+    ]
+  },
+  "plan": {
+    "job_ids": [
+      "shelves_answer_where_can_i_find_questions",
+      "seating_guide_visitors_to_a_free_seat",
+      "display_present_offers_and_products",
+      "counter_explain_menu_and_offers_at_the_counter"
+    ],
+    "hours_per_week": 14.2,
+    "capacity_hours_per_week": 36,
+    "gross_savings_eur_month": 523,
+    "running_cost_eur_month": 60,
+    "net_savings_eur_month": 463,
+    "robot_price_eur": 8000,
+    "payback_months": 17,
+    "assumptions": [
+      "Robot price \u20ac8000 (assumption \u2014 Booster publishes no price)",
+      "Coverage: good fit 80%, partial 40% of task hours",
+      "Robot active 6 h/day \u00d7 6 days = 36 h/week (battery + charging)",
+      "Staff cost \u20ac8.5/h; running cost \u20ac60/month for the one robot",
+      "4.33 weeks/month; jobs under \u20ac20/month gross are skipped"
+    ]
+  }
+}

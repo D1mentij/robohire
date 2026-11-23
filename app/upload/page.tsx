@@ -26,7 +26,7 @@ const FETCH_TIMEOUT_MS = 130_000;
 
 function netError(err: unknown, fallback: string): string {
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError"))
-    return "The AI took too long (over 2 minutes). Try the smaller model (OLLAMA_MODEL=qwen3-vl:4b-instruct) or demo mode.";
+    return "The AI took too long (over 2 minutes). Check that Ollama is not busy, or use demo mode.";
   if (err instanceof TypeError) return "Network error — could not reach the server.";
   return err instanceof Error ? err.message : fallback;
 }
@@ -143,11 +143,11 @@ export default function UploadPage() {
     setPlan(null);
     setJobsError("");
     setAnalyzeError("");
-    setProgress({ done: 0, total: 8 });
+    setProgress({ done: 0, total: 4 });
     try {
       const out = await extractFrames(file, {
-        count: 8,
-        maxSide: 768,
+        count: 4, // measured: 4 frames @ 512 px is the fastest local setting that still finds the zones
+        maxSide: 512,
         quality: 0.7,
         onProgress: (done, total) => setProgress({ done, total }),
       });

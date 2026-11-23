@@ -11,7 +11,7 @@ import path from "node:path";
 import { buildJobs } from "../lib/ai/jobs";
 import { analyze } from "../lib/ai/analyze";
 import { generateShift } from "../lib/ai/shift";
-import { providerName } from "../lib/ai/provider";
+import { providerName, warmUpOllama } from "../lib/ai/provider";
 
 function loadEnvLocal() {
   try {
@@ -29,7 +29,11 @@ function frames(input: string): string[] {
   if (!statSync(input).isDirectory()) {
     dir = mkdtempSync(path.join(os.tmpdir(), "bench-frames-"));
     // 8 evenly spaced frames, max 768 px wide (same as the browser extraction)
-    execFileSync("ffmpeg", ["-v", "error", "-i", input, "-vf", "fps=8/20,scale=768:-2", "-frames:v", "8", path.join(dir, "f%02d.jpg")]);
+    const n = Number(process.env.BENCH_FRAMES) || 8; // frames extracted from the video (the model then gets at most OLLAMA_MAX_FRAMES)
+    const size = Number(process.env.BENCH_SIZE) || 768; // longest side in px
+    const dur = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", input]).toString().trim()) || 20;
+    execFileSync("ffmpeg", ["-v", "error", "-i", input, "-vf", `fps=${n}/${dur},scale='if(gt(iw,ih),${size},-2)':'if(gt(iw,ih),-2,${size})'`, "-frames:v", String(n), "-q:v", "4", path.join(dir, "f%02d.jpg")]);
+    if (process.env.BENCH_KEEP_FRAMES) console.log("frames in", dir);
   }
   const files = readdirSync(dir).filter((f) => /\.jpe?g$/i.test(f)).sort();
   if (!files.length) throw new Error("no jpg frames found");
@@ -47,11 +51,14 @@ async function main() {
   const fr = frames(input);
   console.log(`provider=${providerName()} model=${process.env.OLLAMA_MODEL ?? "(default)"} frames=${fr.length} (${Math.round(fr.join("").length / 1024)} KB)\n`);
   let failed = 0;
+  if (process.env.BENCH_WARMUP) console.log("warm-up:", JSON.stringify(await warmUpOllama()));
+  const maxSec = Number(process.env.BENCH_MAX_SECONDS) || 0;
   console.log("run | analyze(+ratings) | valid | zones | tasks | AI ratings | shift(AI) | shift source");
   for (let i = 1; i <= runs; i++) {
     const t0 = Date.now();
     const a = await analyze({ businessType, hoursPerWeek: 60, hourlyCost: 8.5, frames: fr });
     const tA = ((Date.now() - t0) / 1000).toFixed(1);
+    if (maxSec && Number(tA) > maxSec) { failed++; console.log(`${i} | ${tA}s | TOO SLOW (limit ${maxSec}s)`); continue; }
     if (!a.ok) {
       failed++;
       console.log(`${i} | ${tA}s | FAIL: ${a.error}`);
@@ -60,10 +67,14 @@ async function main() {
     const { scene, tasks, ratings = [] } = a.result;
     const jobs = buildJobs({ tasks, scene, businessType, hoursPerWeek: 60, hourlyCost: 8.5, ratings });
     const t1 = Date.now();
-    const shift = jobs.ok ? await generateShift(jobs.plan, jobs.jobs.jobs, scene, businessType) : null;
+    const shift = jobs.ok && !process.env.BENCH_SKIP_SHIFT ? await generateShift(jobs.plan, jobs.jobs.jobs, scene, businessType) : null;
     const tS = ((Date.now() - t1) / 1000).toFixed(1);
     if (!jobs.ok) failed++;
     console.log(`${i} | ${tA}s | ${jobs.ok ? "ok" : "FAIL"} | ${scene.zones.length} | ${tasks.length} | ${ratings.length}/${tasks.length} | ${tS}s | ${shift?.source ?? "-"} (${shift?.scenario.steps.length ?? 0} steps)`);
+    if (process.env.BENCH_SAVE && i === runs) {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(process.env.BENCH_SAVE, JSON.stringify({ name: process.env.BENCH_NAME ?? "Real room test", analysis: { ...a.result, businessType, hoursPerWeek: 60, hourlyCost: 8.5 }, jobs: jobs.ok ? jobs.jobs : null, plan: jobs.ok ? jobs.plan : null }, null, 2));
+    }
     if (i === runs) console.log("\nzones:", scene.zones.map((z) => `${z.label} ${z.w}x${z.d}`).join(", "), "\ntasks:", tasks.map((t) => t.title).join(" | "));
   }
   process.exit(failed ? 1 : 0);

@@ -14,6 +14,15 @@ const LIMITS = {
   no: "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
 } as const;
 
+const WHY = {
+  good: "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+  partial: "K1 can do the talking and guiding part but not the physical part.",
+  no: "Mainly physical work that needs hands or carrying.",
+} as const;
+
+/** Rating with a fixed fit (used for rule-based task templates). */
+export const makeRating = (id: string, fit: Rating["fit"], why?: string): Rating => ({ id, fit, score: SCORE[fit], why: why ?? WHY[fit], limits: LIMITS[fit] });
+
 export function heuristicRating(task: Pick<Task, "id" | "title" | "description">): Rating {
   const text = `${task.title} ${task.description}`;
   const talk = TALKING.test(text);

@@ -14,7 +14,9 @@
     "e2e:prod": "E2E_BASE_URL=https://robohire-six.vercel.app playwright test",
     "test:k1export": "tsx scripts/test-k1export.ts",
     "test": "npm run test:roi && npm run test:shift && npm run test:k1export && npm run test:ai && npm run check:mocks",
-    "test:ai": "tsx scripts/test-ai.ts"
+    "test:ai": "tsx scripts/test-ai.ts",
+    "doctor": "node scripts/doctor.mjs",
+    "demo:check": "node scripts/demo-check.mjs"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",

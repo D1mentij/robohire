@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { mockJobs, mockScene } from "../mocks";
 import { demoTasks, demoMeta } from "../lib/ai/demoData";
-import { validateAnalysis } from "../lib/ai/analyze";
+import { cleanScene, validateAnalysis } from "../lib/ai/analyze";
 import { buildJobs } from "../lib/ai/jobs";
 import { completeRatings, heuristicRating, parseRatings } from "../lib/ai/ratings";
 import { buildJobScenario } from "../lib/ai/shiftFallback";
@@ -14,6 +14,7 @@ import { OllamaUnavailableError, parseModelJson, provider, providerName, isUnava
 import { parseShowcase } from "../lib/ai/showcase";
 import { readShowcasesFromDisk } from "../lib/ai/showcaseDisk";
 import { ANALYSIS_SCHEMA, buildAnalysisPrompt } from "../lib/ai/prompts";
+import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis } from "../lib/ai/zoneTasks";
 import { filterValidSteps, isJobsResult, isRobotPlan } from "../types/contracts";
 
 const zoneIds = mockScene.zones.map((z) => z.id);
@@ -126,14 +127,14 @@ delete process.env.AI_PROVIDER;
 assert.equal(providerName(), "ollama", "default provider is ollama");
 {
   const seen: Seen = {};
-  const srv = await fakeOllama(["qwen3-vl:8b-instruct"], "```json\n{\"ok\":true}\n```", seen);
+  const srv = await fakeOllama(["qwen3-vl:4b-instruct"], "```json\n{\"ok\":true}\n```", seen);
   process.env.OLLAMA_URL = srv.url;
   delete process.env.OLLAMA_MODEL;
   const frames = Array.from({ length: 8 }, (_, i) => `data:image/jpeg;base64,FRAME${i}`);
   const out = await provider.generateJson("hello", frames, { type: "object" }, { timeoutMs: 5000 });
   assert.deepEqual(out, { ok: true });
   const chat = seen.chat as { model: string; stream: boolean; think: boolean; format: unknown; messages: { content: string; images: string[] }[] };
-  assert.equal(chat.model, "qwen3-vl:8b-instruct");
+  assert.equal(chat.model, "qwen3-vl:4b-instruct");
   assert.equal(chat.stream, false);
   assert.equal(chat.think, false);
   assert.deepEqual(chat.format, { type: "object" });
@@ -144,10 +145,10 @@ assert.equal(providerName(), "ollama", "default provider is ollama");
 {
   // only the smaller model is pulled → it is used
   const seen: Seen = {};
-  const srv = await fakeOllama(["qwen3-vl:4b-instruct"], { ok: 1 }, seen);
+  const srv = await fakeOllama(["qwen3-vl:8b-instruct"], { ok: 1 }, seen);
   process.env.OLLAMA_URL = srv.url;
   await provider.generateJson("x", [], undefined, { timeoutMs: 5000 });
-  assert.equal((seen.chat as { model: string }).model, "qwen3-vl:4b-instruct");
+  assert.equal((seen.chat as { model: string }).model, "qwen3-vl:8b-instruct");
   assert.equal((seen.chat as { format: unknown }).format, "json");
   srv.close();
 }
@@ -155,7 +156,7 @@ assert.equal(providerName(), "ollama", "default provider is ollama");
   // nothing pulled → "ollama pull" message
   const srv = await fakeOllama(["llama3:8b"], {}, {});
   process.env.OLLAMA_URL = srv.url;
-  await assert.rejects(provider.generateJson("x", [], undefined, { timeoutMs: 5000 }), (e: Error) => e instanceof OllamaUnavailableError && /ollama pull qwen3-vl:8b-instruct/.test(e.message));
+  await assert.rejects(provider.generateJson("x", [], undefined, { timeoutMs: 5000 }), (e: Error) => e instanceof OllamaUnavailableError && /ollama pull qwen3-vl:4b-instruct/.test(e.message));
   srv.close();
 }
 {
@@ -181,6 +182,37 @@ delete process.env.AI_PROVIDER;
   const list = await readShowcasesFromDisk(dir);
   assert.deepEqual(list.map((s) => s.name), ["Test café"]);
   assert.deepEqual(await readShowcasesFromDisk(path.join(dir, "missing")), []);
+}
+// ---- local zones-only flow: tasks + ratings come from code
+{
+  const raw = {
+    room: { width: 8, depth: 6 },
+    zones: [
+      { label: "Front door", type: "entrance", x: 1, z: 0.8, w: 1.5, d: 1.2 },
+      { label: "Coffee bar", type: "counter", x: 6, z: 1, w: 2.5, d: 1.2 },
+      { label: "Tables", type: "seating", x: 4, z: 4, w: 5, d: 3 },
+      { label: "Menu board", type: "bogus", x: 7, z: 3, w: 1, d: 1 }, // unknown type → inferred from label (display)
+    ],
+    activities: ["barista makes coffee", "robot charging dock"],
+  };
+  const a = validateZonesAnalysis(raw, 60, cleanScene);
+  assert.ok(a.scene.zones.length >= 3);
+  assert.ok(a.tasks.length >= 4 && a.tasks.length <= 7, `tasks ${a.tasks.length}`);
+  const rs = a.ratings ?? [];
+  assert.equal(rs.length, a.tasks.length);
+  assert.ok(rs.filter((r) => r.fit !== "no").length >= 2);
+  assert.ok(rs.some((r) => r.fit === "no"));
+  assert.ok(a.tasks.every((t) => a.scene.zones.some((z) => z.id === t.zone_id)));
+  assert.ok(!a.tasks.some((t) => /robot/i.test(t.title)));
+  assert.equal(buildJobs({ tasks: a.tasks, scene: a.scene, businessType: "Café", hoursPerWeek: 60, hourlyCost: 9, ratings: rs }).ok, true);
+  // hours scale frequencies
+  const lo = tasksFromZones(a.scene, [], 20).tasks[0].frequency_per_day;
+  const hi = tasksFromZones(a.scene, [], 100).tasks[0].frequency_per_day;
+  assert.ok(hi > lo);
+  // one useless zone still yields a usable task list
+  const one = tasksFromZones({ room: { width: 4, depth: 4 }, zones: [{ id: "other", label: "Room", x: 2, z: 2, w: 3, d: 3 }] }, [], 60);
+  assert.ok(one.tasks.length >= 1 && one.ratings.some((r) => r.fit !== "no"));
+  assert.throws(() => parseZonesAnswer({ room: { width: 4, depth: 4 }, zones: [] }));
 }
 console.log("test:ai OK");
 }

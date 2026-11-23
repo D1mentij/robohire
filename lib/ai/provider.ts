@@ -92,8 +92,8 @@ const geminiProvider: AiProvider = {
 // Ollama (local, default). Docs: https://docs.ollama.com/api (POST /api/chat, GET /api/tags),
 // structured outputs via the `format` field: https://docs.ollama.com/capabilities/structured-outputs
 // ---------------------------------------------------------------------------------------------
-export const DEFAULT_OLLAMA_MODEL = "qwen3-vl:8b-instruct"; // 6.2 GB, vision, no thinking mode
-export const DEFAULT_OLLAMA_FALLBACK_MODEL = "qwen3-vl:4b-instruct"; // 3.3 GB
+export const DEFAULT_OLLAMA_MODEL = "qwen3-vl:4b-instruct"; // 3.3 GB, vision, no thinking mode; measured: valid 9/9, ~15 s warm (8B: ~24 s, 6.2 GB)
+export const DEFAULT_OLLAMA_FALLBACK_MODEL = "qwen3-vl:8b-instruct"; // 6.2 GB, better labels, slower
 const OLLAMA_TIMEOUT_MS = 90_000;
 
 export type ProviderName = "ollama" | "gemini";
@@ -107,6 +107,31 @@ function pickFrames(images: string[]): string[] {
   const max = Math.max(1, Number(process.env.OLLAMA_MAX_FRAMES) || 4);
   if (images.length <= max) return images;
   return Array.from({ length: max }, (_, i) => images[Math.round((i * (images.length - 1)) / (max - 1 || 1))]);
+}
+
+const ollamaKeepAlive = () => process.env.OLLAMA_KEEP_ALIVE?.trim() || "30m";
+
+/** Loads the model into RAM so the first real Analyze is not slow. Never throws; returns what happened. */
+export async function warmUpOllama(): Promise<{ ok: boolean; model?: string; seconds?: number; error?: string }> {
+  if (providerName() !== "ollama") return { ok: false, error: "provider is not ollama" };
+  const t0 = Date.now();
+  try {
+    const names = await installedModels(5000);
+    const primary = process.env.OLLAMA_MODEL?.trim() || DEFAULT_OLLAMA_MODEL;
+    const fallback = process.env.OLLAMA_FALLBACK_MODEL?.trim() || DEFAULT_OLLAMA_FALLBACK_MODEL;
+    const model = hasModel(names, primary) ? primary : hasModel(names, fallback) ? fallback : null;
+    if (!model) return { ok: false, error: `model ${primary} not pulled` };
+    const res = await fetch(`${ollamaUrl()}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(120_000),
+      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: ollamaKeepAlive(), options: { num_ctx: Number(process.env.OLLAMA_NUM_CTX) || 8192 } }),
+    });
+    if (!res.ok) return { ok: false, model, error: `HTTP ${res.status}` };
+    return { ok: true, model, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 let tagsCache: { at: number; url: string; names: string[] } | null = null;
@@ -171,7 +196,8 @@ const ollamaProvider: AiProvider = {
           stream: false,
           think: false, // thinking models: skip the long reasoning phase, we only need the JSON
           format: schema ?? "json",
-          options: { temperature: 0.2, num_ctx: 8192, num_predict: 3000 },
+          keep_alive: ollamaKeepAlive(), // keep the model in RAM between calls (default 30m)
+          options: { temperature: 0.2, num_ctx: Number(process.env.OLLAMA_NUM_CTX) || 8192, num_predict: 3000 },
           messages: [
             {
               role: "user",

@@ -11,15 +11,22 @@ The AI runs on your own machine through [Ollama](https://ollama.com): free, no r
 ```bash
 brew install ollama                    # or download the app from https://ollama.com/download
 ollama serve                           # skip if the Ollama menu-bar app is already running
-ollama pull qwen3-vl:8b-instruct       # default model, 6.2 GB download, needs ~8 GB free RAM
-# smaller / faster fallback (3.3 GB):  ollama pull qwen3-vl:4b-instruct
+ollama pull qwen3-vl:4b-instruct       # default model, 3.3 GB download, ~5 GB RAM
+# optional, better zone names but ~60% slower (6.2 GB):  ollama pull qwen3-vl:8b-instruct
 
 npm install
 cp .env.example .env.local             # the defaults already point to Ollama
 npm run dev                            # http://localhost:3000
 ```
 
-If the default model is not pulled but the smaller one is, the app uses the smaller one automatically.
+**Why 4B is the default:** measured on a MacBook Air M5 (16 GB) with 3 real room videos (café, hotel lobby, car showroom), 4 frames at 512 px:
+`qwen3-vl:4b-instruct` was valid in 26 of 27 runs (the one failure was an Ollama stall, now retried faster), 4–6 zones, ~15–25 s warm and ~30–45 s for the very first (cold) call;
+`qwen3-vl:8b-instruct` was valid 12/12 but ~22–30 s warm and 56–62 s cold, for slightly nicer labels. 6 frames @ 640 px was slower and found no more zones.
+The server loads the model at start-up (`instrumentation.ts`) and keeps it in RAM (`OLLAMA_KEEP_ALIVE`, default 30m), so the first Analyze on stage is warm.
+With Ollama the model only describes the **space** (typed zones: entrance, counter, seating, display, waiting, shelves, desk, corridor); the tasks and K1 ratings
+are then generated in code from zone types and the opening hours (`lib/ai/zoneTasks.ts`), so a small model cannot break them. Gemini keeps the full one-call prompt.
+
+If the default model is not pulled but the other one is, the app uses it automatically.
 If Ollama is not running, `/upload` shows "Start Ollama..." and offers **Continue with demo**.
 The first AI call after starting Ollama is slower (the model loads into memory).
 
@@ -27,21 +34,48 @@ The first AI call after starting Ollama is slower (the model loads into memory).
 | --- | --- |
 | `AI_PROVIDER` | `ollama` (default) or `gemini` |
 | `OLLAMA_URL` | default `http://localhost:11434` |
-| `OLLAMA_MODEL` / `OLLAMA_FALLBACK_MODEL` | default `qwen3-vl:8b-instruct` / `qwen3-vl:4b-instruct` |
+| `OLLAMA_MODEL` / `OLLAMA_FALLBACK_MODEL` | default `qwen3-vl:4b-instruct` / `qwen3-vl:8b-instruct` |
 | `OLLAMA_MAX_FRAMES` | video frames sent to the model, default 4 (more = slower) |
+| `OLLAMA_KEEP_ALIVE` / `OLLAMA_NUM_CTX` | how long the model stays in RAM (default `30m`) / context size (default 8192) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | only with `AI_PROVIDER=gemini` (key stays server-side) |
 
 No AI at all? Use **Try demo** (mock café) or **Try real example: ...** (a saved real analysis, see below) on `/upload` or the landing page.
 
-**Showcase (a real example with no AI call):** run a real analysis, open `http://localhost:3000/upload?dev=1`, click *Save as showcase (dev)*,
+**Showcase (a real example with no AI call):** `lib/ai/showcase/real-room-test.json` ships with the repo (analysis of a real café video). To add your own: run a real analysis, open `http://localhost:3000/upload?dev=1`, click *Save as showcase (dev)*,
 and put the downloaded `.json` into `lib/ai/showcase/`. It then appears as "Try real example: <name>" next to *Try demo*.
 
-Scripts: `npm run lint`, `npm run build`, `npm test` (roi, shift, k1export, ai, mocks), `npm run e2e` (Playwright, demo mode, no AI),
-`npx tsx scripts/bench-ai.ts <video|frames-folder>` (latency + validation of the real AI path). `npm run e2e:prod` is optional (tests a deployed site).
+Scripts: `npm run doctor` (is this laptop ready? green/red checklist with fix commands), `npm run demo:check` (doctor → e2e → one real local analyze → READY / NOT READY), `npm run lint`, `npm run build`, `npm test` (roi, shift, k1export, ai, mocks), `npm run e2e` (Playwright, demo mode, no AI),
+`npx tsx scripts/bench-ai.ts <video|frames-folder> [businessType] [runs]` (latency + validation of the real AI path; env `BENCH_FRAMES`, `BENCH_SIZE`). `npm run e2e:prod` is optional (tests a deployed site).
+
+## Backup laptop setup
+
+Goal: a second laptop that can run the demo on stage if the main one fails. About 10 minutes plus downloads.
+
+**macOS**
+1. Install Homebrew (https://brew.sh), then: `brew install node git ollama ffmpeg` (ffmpeg only for the benchmark script).
+2. `git clone <repo-url> robohire && cd robohire`
+3. `npm install`
+4. `open -a Ollama` (or `ollama serve` in another terminal), then `ollama pull qwen3-vl:4b-instruct`
+5. `npx playwright install chromium`
+6. `npm run doctor` — fix every red line using the command it prints (it creates `.env.local` from `.env.example` if missing).
+7. `npm run demo:check` — must end with **READY**. (Copy any room video into `test-videos/` first to include the real AI test; videos are never committed.)
+8. `npm run dev`, open http://localhost:3000/upload and press **Try demo** once. Keep Ollama running.
+
+**Windows** (PowerShell)
+1. `winget install OpenJS.NodeJS.LTS Git.Git Ollama.Ollama Gyan.FFmpeg` (then reopen PowerShell).
+2. `git clone <repo-url> robohire; cd robohire`
+3. `npm install`
+4. Start **Ollama** from the Start menu (or `ollama serve`), then `ollama pull qwen3-vl:4b-instruct`
+5. `npx playwright install chromium`
+6. `npm run doctor` (it runs `copy .env.example .env.local` for you if the file is missing; red lines show the fix command).
+7. `npm run demo:check` — must end with **READY**.
+8. `npm run dev`, open http://localhost:3000/upload and press **Try demo** once.
+
+No GPU? It still works (slower); if the real AI is too slow or Ollama fails, **Try demo** and **Try real example** need no AI at all.
 
 ## Architecture
 
-- **Upload** (`/upload`): 8 frames are extracted from the video in the browser (max 60 s) and kept in `sessionStorage`.
+- **Upload** (`/upload`): 4 frames (512 px) are extracted from the video in the browser (max 60 s) and kept in `sessionStorage`.
 - **Analyze** (`/api/analyze`): ONE AI call returns the floor plan (`Scene`), the repetitive tasks and a K1 fit rating per task. Code validates, clamps zones into the room, removes overlaps and fills any missing rating with a keyword heuristic (`lib/ai/ratings.ts`).
 - **Jobs + ROI** (`/api/jobs`, `lib/roi`): no AI. Ratings become jobs; hours, savings, payback and the one-robot shift plan are computed in code only.
 - **Scenario** (`/api/scenario`): per-job scripts are built in code from templates (instant); `?ai=1` asks the model instead.
