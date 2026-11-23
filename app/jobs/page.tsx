@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { mockJobs, mockScenario, mockScene } from "@/mocks";
 import {
   filterValidSteps,
@@ -97,10 +97,7 @@ let cachedJobsSnapshot: JobsResult = mockJobs;
 function getJobsClientSnapshot(): JobsResult {
   if (typeof window === "undefined") return mockJobs;
   try {
-    const raw =
-      window.sessionStorage.getItem(JOBS_STORAGE_KEY) ??
-      window.localStorage.getItem(JOBS_STORAGE_KEY) ??
-      "";
+    const raw = window.sessionStorage.getItem(JOBS_STORAGE_KEY) ?? "";
     if (raw !== cachedJobsRaw) {
       cachedJobsRaw = raw;
       if (raw) {
@@ -111,6 +108,7 @@ function getJobsClientSnapshot(): JobsResult {
       }
     }
   } catch {
+    cachedJobsSnapshot = mockJobs;
     return mockJobs;
   }
   return cachedJobsSnapshot;
@@ -123,7 +121,15 @@ function getJobsServerSnapshot(): JobsResult {
 function subscribeJobsStorage(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
+  window.addEventListener("popstate", callback);
+  window.addEventListener("focus", callback);
+  window.addEventListener("robohire:storage", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("popstate", callback);
+    window.removeEventListener("focus", callback);
+    window.removeEventListener("robohire:storage", callback);
+  };
 }
 
 function getActiveScene(): Scene {
@@ -341,12 +347,17 @@ function JobCard({
 
 export default function JobsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const jobsData = useSyncExternalStore(
     subscribeJobsStorage,
     getJobsClientSnapshot,
     getJobsServerSnapshot,
   );
   const [hiringJob, setHiringJob] = useState<Job | null>(null);
+
+  useEffect(() => {
+    window.dispatchEvent(new Event("robohire:storage"));
+  }, [pathname]);
 
   const sortedJobs = useMemo(
     () => [...jobsData.jobs].sort((a, b) => b.score - a.score),
@@ -405,6 +416,7 @@ export default function JobsPage() {
         JSON.stringify(scenario),
       );
       window.localStorage.setItem("robohire:job", JSON.stringify(job));
+      window.dispatchEvent(new Event("robohire:storage"));
     } catch {
       // Ignore storage quota errors
     }

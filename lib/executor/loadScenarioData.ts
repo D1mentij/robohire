@@ -160,9 +160,11 @@ function subscribeToStorage(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", callback);
   window.addEventListener("popstate", callback);
+  window.addEventListener("robohire:storage", callback);
   return () => {
     window.removeEventListener("storage", callback);
     window.removeEventListener("popstate", callback);
+    window.removeEventListener("robohire:storage", callback);
   };
 }
 

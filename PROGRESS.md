@@ -193,3 +193,11 @@
 - For Person 2: /jobs and /robot still show per-job savings (now gross) and "—" for payback; they can read "robohire:plan" (RobotPlan) for the real net/payback.
 - AI-generated: code by Claude Code (Claude Sonnet 5.5); all numbers computed by code, no AI. Robot price, 6 h/day, coverage and running cost are assumptions.
 - Tested: lint, build, test:roi (capacity, skip "no"/<€20, single running cost, null payback), check:mocks.
+
+## [2026-11-23 12:26] Antigravity
+- Done: (1) `app/jobs/page.tsx`: read jobs strictly from `sessionStorage` `"robohire:jobs"` validated with `isJobsResult` (`types/contracts.ts`), falling back to `mockJobs` if missing/invalid, and display `jobsData.business_type` in the header badge with immediate storage sync on route entry. (2) `app/page.tsx`: wired landing `"Try demo"` button to `startDemo()` (`@/lib/ai/demo`) followed by `router.push("/jobs")`. Verified in browser: (a) `/upload` → Analyze → `"See robot jobs →"` shows the analysed tasks and business type (not café mocks); (b) landing `"Try demo"` overwrites `sessionStorage` and displays the café jobs. `npm run lint` and `npm run build` pass.
+- Changed files: app/jobs/page.tsx, app/page.tsx, lib/executor/loadScenarioData.ts, PROGRESS.md.
+- AI-generated: edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Next: Ready for final demo.
+- Blocked by: nothing

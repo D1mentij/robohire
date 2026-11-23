@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { startDemo } from "@/lib/ai/demo";
 
 const HOW_IT_WORKS_STEPS = [
   {
@@ -22,6 +26,8 @@ const HOW_IT_WORKS_STEPS = [
 ] as const;
 
 export default function Home() {
+  const router = useRouter();
+
   return (
     <main className="flex flex-1 flex-col justify-between bg-slate-50 px-6 py-10 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-10">
       {/* Hero + How It Works */}
@@ -51,13 +57,17 @@ export default function Home() {
             >
               Start
             </Link>
-            <Link
-              href="/jobs"
+            <button
+              type="button"
               data-testid="landing-demo-btn"
-              className="rounded-xl border border-slate-300 bg-white px-8 py-3.5 text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+              onClick={() => {
+                startDemo();
+                router.push("/jobs");
+              }}
+              className="cursor-pointer rounded-xl border border-slate-300 bg-white px-8 py-3.5 text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
             >
-              Demo
-            </Link>
+              Try demo
+            </button>
           </div>
         </section>
 
