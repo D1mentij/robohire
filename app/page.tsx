@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
+import { clearHandoffStorage } from "@/lib/executor";
 
 const HOW_IT_WORKS_STEPS = [
   {
@@ -61,7 +62,9 @@ export default function Home() {
               type="button"
               data-testid="landing-demo-btn"
               onClick={() => {
+                clearHandoffStorage();
                 startDemo();
+                window.dispatchEvent(new Event("robohire:storage"));
                 router.push("/jobs");
               }}
               className="cursor-pointer rounded-xl border border-slate-300 bg-white px-8 py-3.5 text-base font-bold text-slate-800 shadow-sm transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"

@@ -169,7 +169,7 @@ export default function RobotSimulationPage() {
             </div>
           )}
 
-          {/* Job Completed ✓ Overlay Card */}
+          {/* Job Completed ✓ Overlay Card showing NET savings from the RobotPlan */}
           {executor.status === "completed" && (
             <div
               data-testid="job-completed-card"
@@ -189,13 +189,31 @@ export default function RobotSimulationPage() {
                   {simData.job.title}
                 </h3>
 
-                <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Estimated Monthly Savings
-                  </span>
-                  <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
-                    €{simData.job.savings_eur_month}/month
-                  </span>
+                <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Net Shift Plan Savings
+                    </span>
+                    <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
+                      €{simData.plan.net_savings_eur_month}/month net
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <span>
+                      Payback:{" "}
+                      <strong className="font-mono">
+                        {simData.plan.payback_months !== null
+                          ? `${simData.plan.payback_months} mo`
+                          : "—"}
+                      </strong>
+                    </span>
+                    <span>
+                      This job gross:{" "}
+                      <strong className="font-mono">
+                        €{simData.job.savings_eur_month}/mo
+                      </strong>
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-end gap-2.5">

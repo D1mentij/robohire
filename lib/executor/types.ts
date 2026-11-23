@@ -1,4 +1,11 @@
-import type { Job, Scenario, ScenarioStep, Scene, Zone } from "@/types/contracts";
+import type {
+  Job,
+  RobotPlan,
+  Scenario,
+  ScenarioStep,
+  Scene,
+  Zone,
+} from "@/types/contracts";
 
 export interface Vec2XZ {
   x: number;
@@ -30,8 +37,10 @@ export interface RobotPose {
 export interface LoadedSimulationData {
   scene: Scene;
   scenario: Scenario;
-  /** Matched job metadata (title, monthly savings in €, etc.) */
+  /** Matched job metadata (title, gross savings in €, etc.) */
   job: Job;
+  /** Full robot shift plan (net savings in €, payback months, included job_ids) */
+  plan: RobotPlan;
   /** Sanitized steps for the full scenario via filterValidSteps */
   steps: ScenarioStep[];
   source: "custom" | "mock";
