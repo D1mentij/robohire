@@ -9,8 +9,8 @@
       "why": "Guests arrive all day and staff are often busy behind the counter. Greeting, waving and giving a short welcome needs only walking, gestures and speech, which K1 can do reliably.",
       "limits": "Cannot open doors, carry trays or handle payments. Keeps to a short scripted dialogue.",
       "hours_per_week": 8,
-      "savings_eur_month": 176,
-      "payback_months": 45
+      "savings_eur_month": 236,
+      "payback_months": null
     },
     {
       "id": "menu_presenter",
@@ -20,8 +20,8 @@
       "why": "Staff repeat the daily specials and promotions to every guest. K1 can stand by the menu board, point at items and announce offers on a schedule.",
       "limits": "Cannot take orders or answer open-ended questions about allergens. Promo text must be set in advance.",
       "hours_per_week": 7.5,
-      "savings_eur_month": 161,
-      "payback_months": 50
+      "savings_eur_month": 221,
+      "payback_months": null
     },
     {
       "id": "table_guide",
@@ -31,8 +31,8 @@
       "why": "K1 can lead guests towards the seating area and point at a table. Staff spend several minutes per hour on this at peak times.",
       "limits": "Cannot see which tables are free without extra sensors or staff input. Narrow aisles and moving chairs make walking unreliable.",
       "hours_per_week": 6,
-      "savings_eur_month": 28,
-      "payback_months": 286
+      "savings_eur_month": 88,
+      "payback_months": null
     },
     {
       "id": "dishwashing",

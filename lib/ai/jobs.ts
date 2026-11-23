@@ -1,12 +1,12 @@
-import { isJobsResult, type JobsResult, type Scene } from "@/types/contracts";
-import { buildJob } from "@/lib/roi/roi";
+import { isJobsResult, isRobotPlan, type JobsResult, type RobotPlan, type Scene } from "@/types/contracts";
+import { buildJob, buildPlan } from "@/lib/roi/roi";
 import type { Task } from "./types";
 import { buildJobsPrompt, JOBS_SCHEMA } from "./prompts";
 import { MissingKeyError, provider } from "./provider";
 import { k1Profile } from "./k1Profile";
 
 export type JobsInput = { tasks: Task[]; scene: Scene; businessType: string; hoursPerWeek: number; hourlyCost: number };
-export type JobsOutcome = { ok: true; result: JobsResult } | { ok: false; error: string };
+export type JobsOutcome = { ok: true; jobs: JobsResult; plan: RobotPlan } | { ok: false; error: string };
 
 type Rating = { id: string; fit: "good" | "partial" | "no"; score: number; why: string; limits: string };
 
@@ -51,7 +51,9 @@ export async function rateJobs(input: JobsInput): Promise<JobsOutcome> {
         .sort((a, b) => b.score - a.score);
       const result: JobsResult = { business_type: input.businessType, jobs };
       if (!isJobsResult(result)) throw new Error("Result failed JobsResult validation");
-      return { ok: true, result };
+      const plan = buildPlan(result.jobs, input.hourlyCost);
+      if (!isRobotPlan(plan)) throw new Error("Plan failed RobotPlan validation");
+      return { ok: true, jobs: result, plan };
     } catch (e) {
       if (e instanceof MissingKeyError) return { ok: false, error: e.message };
       lastError = e instanceof Error ? e.message : String(e);

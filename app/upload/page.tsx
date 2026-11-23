@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
 import { useRef, useState } from "react";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
-import type { JobsResult } from "@/types/contracts";
+import type { JobsResult, RobotPlan } from "@/types/contracts";
 import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
+  PLAN_STORAGE_KEY,
   UPLOAD_STORAGE_KEY,
   type AnalysisResult,
   type AnalyzeResponse,
@@ -44,6 +45,7 @@ export default function UploadPage() {
   const [analyzeError, setAnalyzeError] = useState("");
 
   const [jobs, setJobs] = useState<JobsResult | null>(null);
+  const [plan, setPlan] = useState<RobotPlan | null>(null);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
 
@@ -56,6 +58,7 @@ export default function UploadPage() {
     setFrames([]);
     setAnalysis(null);
     setJobs(null);
+    setPlan(null);
     setJobsError("");
     setAnalyzeError("");
     setErrors((e) => ({ ...e, video: "" }));
@@ -98,6 +101,7 @@ export default function UploadPage() {
     setFrames([]);
     setAnalysis(null);
     setJobs(null);
+    setPlan(null);
     setJobsError("");
     setAnalyzeError("");
     setProgress({ done: 0, total: 8 });
@@ -166,13 +170,15 @@ export default function UploadPage() {
     setJobsError("");
     try {
       sessionStorage.removeItem(JOBS_STORAGE_KEY);
+      sessionStorage.removeItem(PLAN_STORAGE_KEY);
+      setPlan(null);
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(stored),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      let json: { ok: true; result: JobsResult } | { ok: false; error: string } | null = null;
+      let json: { ok: true; jobs: JobsResult; plan: RobotPlan } | { ok: false; error: string } | null = null;
       try {
         json = await res.json();
       } catch {
@@ -180,8 +186,10 @@ export default function UploadPage() {
       }
       if (!json) throw new Error(`Server error (${res.status})`);
       if (!json.ok) throw new Error(json.error);
-      setJobs(json.result);
-      sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.result));
+      setJobs(json.jobs);
+      setPlan(json.plan);
+      sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.jobs));
+      sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(json.plan));
     } catch (err) {
       setJobsError(netError(err, "Job rating failed"));
     } finally {
@@ -389,30 +397,46 @@ export default function UploadPage() {
             </button>
           </p>
         )}
-        {jobs &&
-          jobs.jobs.length > 0 &&
-          (() => {
-            const best = jobs.jobs.reduce((a, b) =>
-              b.savings_eur_month > a.savings_eur_month ? b : a,
-            );
-            return (
-              <section className="space-y-3 rounded-2xl border border-emerald-500/40 bg-white p-5 shadow-sm dark:border-emerald-500/30 dark:bg-slate-900">
-                <p className="text-sm text-slate-800 dark:text-slate-200">
-                  {jobs.jobs.length} jobs found, best: <b>{best.title}</b> — €
-                  {best.savings_eur_month}/month
-                  {best.payback_months !== null
-                    ? `, payback ${best.payback_months} months`
+        {jobs && jobs.jobs.length > 0 && (
+          <section className="space-y-3 rounded-2xl border border-emerald-500/40 bg-white p-5 shadow-sm dark:border-emerald-500/30 dark:bg-slate-900">
+            <p className="text-sm text-slate-800 dark:text-slate-200">
+              {plan && plan.job_ids.length > 0 ? (
+                <>
+                  1 K1 robot:{" "}
+                  <b>
+                    {plan.job_ids
+                      .map((id) => jobs.jobs.find((j) => j.id === id)?.title ?? id)
+                      .join(" + ")}
+                  </b>{" "}
+                  → €{plan.net_savings_eur_month}/month net
+                  {plan.payback_months !== null
+                    ? `, payback ${plan.payback_months} months`
                     : ", no payback"}
-                </p>
-                <Link
-                  href="/jobs"
-                  className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
-                >
-                  See robot jobs →
-                </Link>
-              </section>
-            );
-          })()}
+                </>
+              ) : (
+                <>{jobs.jobs.length} jobs found, but none is worth a robot yet.</>
+              )}
+            </p>
+            {plan && plan.job_ids.length > 0 && (
+              <details className="text-xs text-slate-600 dark:text-slate-400">
+                <summary className="cursor-pointer font-semibold">
+                  Plan assumptions ({plan.hours_per_week} of {plan.capacity_hours_per_week} robot-hours/week)
+                </summary>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {plan.assumptions.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            <Link
+              href="/jobs"
+              className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
+            >
+              See robot jobs →
+            </Link>
+          </section>
+        )}
 
         {analysis && (
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { rateJobs, type JobsInput } from "@/lib/ai/jobs";
-import { isScene, type JobsResult } from "@/types/contracts";
+import { isScene, type JobsResult, type RobotPlan } from "@/types/contracts";
 
 export const maxDuration = 60;
 
-type Resp = { ok: true; result: JobsResult } | { ok: false; error: string };
+type Resp = { ok: true; jobs: JobsResult; plan: RobotPlan } | { ok: false; error: string };
 const fail = (error: string, status: number) => NextResponse.json<Resp>({ ok: false, error }, { status });
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);

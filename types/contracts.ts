@@ -38,6 +38,19 @@ export interface JobsResult {
   jobs: Job[];
 }
 
+/** One K1 robot doing several jobs per shift. Payback only makes sense for the whole plan. */
+export interface RobotPlan {
+  job_ids: string[];
+  hours_per_week: number; // robot-hours used
+  capacity_hours_per_week: number;
+  gross_savings_eur_month: number;
+  running_cost_eur_month: number;
+  net_savings_eur_month: number;
+  robot_price_eur: number;
+  payback_months: number | null;
+  assumptions: string[];
+}
+
 export const ALLOWED_ACTIONS = [
   "walk_to",
   "turn_to",
@@ -114,6 +127,23 @@ export function isJobsResult(v: unknown): v is JobsResult {
     isStr(v.business_type) &&
     Array.isArray(v.jobs) &&
     v.jobs.every(isJob)
+  );
+}
+
+export function isRobotPlan(v: unknown): v is RobotPlan {
+  return (
+    isObj(v) &&
+    Array.isArray(v.job_ids) &&
+    v.job_ids.every(isStr) &&
+    isNum(v.hours_per_week) &&
+    isNum(v.capacity_hours_per_week) &&
+    isNum(v.gross_savings_eur_month) &&
+    isNum(v.running_cost_eur_month) &&
+    isNum(v.net_savings_eur_month) &&
+    isNum(v.robot_price_eur) &&
+    (v.payback_months === null || isNum(v.payback_months)) &&
+    Array.isArray(v.assumptions) &&
+    v.assumptions.every(isStr)
   );
 }
 

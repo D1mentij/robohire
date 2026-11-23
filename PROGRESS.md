@@ -179,3 +179,17 @@
 - New: greeter 8 h/wk, €176/mo, 45 mo; menu_presenter 7.5 h, €161, 50 mo; table_guide 6 h, €28, 286 mo; dishwashing 12 h, €0, null.
 - CONTRACT CHANGE: mock numbers only (no schema change)
 - AI-generated: numbers computed by lib/roi code (no AI); edit by Claude Code (Claude Sonnet 5.5).
+
+## [2026-11-23] Person 1 / Claude Code
+- Done: "Robot shift plan" — ROI now models ONE K1 doing several jobs. lib/roi: per-job savings_eur_month is GROSS (no running cost), per-job payback_months = null.
+  New config ROBOT_ACTIVE_HOURS_PER_DAY = 6 (assumption: battery + charging; K1 service runtime not published) → capacity 36 robot-h/week; MIN_JOB_GROSS 20 €/month.
+  `buildPlan(jobs, hourlyCost)`: good+partial jobs, sorted by gross per robot-hour (robot-hours = hours × coverage), added while they fit capacity, jobs < €20 skipped,
+  running cost subtracted once, payback = price / net (null if net ≤ 0), human-readable assumptions[].
+- /api/jobs now returns { ok: true, jobs: JobsResult, plan: RobotPlan }. /upload stores "robohire:plan" and shows "1 K1 robot: A + B → €X/month net, payback N months" + assumptions.
+  lib/ai/demo.ts also writes "robohire:plan" (buildPlan on mockJobs). mocks/jobs.json regenerated with lib/roi (gross, payback null).
+- Demo plan: greeter + menu_presenter + table_guide, 14.8 of 36 robot-h/week, gross €545, running €60, net €485/month, payback 16 months (price €8000 assumed).
+- CONTRACT CHANGE: RobotPlan added (+ isRobotPlan guard) in types/contracts.ts. Also mock numbers: payback_months is now null for every per-job entry, savings are gross.
+- Changed files: types/contracts.ts, lib/roi/{config,roi}.ts, lib/ai/{jobs,demo,types}.ts, app/api/jobs/route.ts, app/upload/page.tsx, mocks/jobs.json, scripts/{test-roi,check-mocks}.ts, PROGRESS.md.
+- For Person 2: /jobs and /robot still show per-job savings (now gross) and "—" for payback; they can read "robohire:plan" (RobotPlan) for the real net/payback.
+- AI-generated: code by Claude Code (Claude Sonnet 5.5); all numbers computed by code, no AI. Robot price, 6 h/day, coverage and running cost are assumptions.
+- Tested: lint, build, test:roi (capacity, skip "no"/<€20, single running cost, null payback), check:mocks.

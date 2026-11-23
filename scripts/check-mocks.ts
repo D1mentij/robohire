@@ -1,10 +1,12 @@
 import {
   filterValidSteps,
   isJobsResult,
+  isRobotPlan,
   isScenario,
   isScene,
   ALLOWED_ACTIONS,
 } from "../types/contracts";
+import { buildPlan } from "../lib/roi/roi";
 import { mockJobs, mockScenario, mockScene } from "../mocks";
 
 const errors: string[] = [];
@@ -42,9 +44,13 @@ check(new Set(zones.map((z) => z.id)).size === zones.length, "duplicate zone ids
 // jobs
 check(mockJobs.jobs.length === 4, "expected 4 jobs");
 check(
-  mockJobs.jobs.every((j) => (j.fit === "no") === (j.payback_months === null)),
-  'payback_months must be null exactly when fit is "no"',
+  mockJobs.jobs.every((j) => j.payback_months === null),
+  "per-job payback_months must be null (payback is per RobotPlan)",
 );
+
+const mockPlan = buildPlan(mockJobs.jobs, 8.5);
+check(isRobotPlan(mockPlan), "buildPlan(mockJobs) fails isRobotPlan");
+check(mockPlan.job_ids.length > 0, "demo plan is empty");
 
 // scenario: nothing dropped, uses all actions, 6-10 steps, job exists
 const ids = zones.map((z) => z.id);

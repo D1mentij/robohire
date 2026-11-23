@@ -35,3 +35,5 @@ export type StoredAnalysis = AnalysisResult & {
 export const ANALYSIS_STORAGE_KEY = "robohire:analysis";
 
 export const JOBS_STORAGE_KEY = "robohire:jobs";
+
+export const PLAN_STORAGE_KEY = "robohire:plan";

@@ -21,3 +21,12 @@ export const RUNNING_COST_EUR_MONTH = 60;
 
 /** assumption: average weeks per month. */
 export const WEEKS_PER_MONTH = 4.33;
+
+/** assumption: robot works 6 active hours/day (battery + charging; K1 runtime for service work is not published). */
+export const ROBOT_ACTIVE_HOURS_PER_DAY = 6;
+
+/** robot-hours available per week. */
+export const ROBOT_CAPACITY_HOURS_PER_WEEK = ROBOT_ACTIVE_HOURS_PER_DAY * DAYS_OPEN_PER_WEEK;
+
+/** jobs earning less than this gross EUR/month are not worth a robot slot. */
+export const MIN_JOB_GROSS_EUR_MONTH = 20;
