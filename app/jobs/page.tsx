@@ -24,15 +24,387 @@ import {
   JOBS_STORAGE_KEY,
   PLAN_STORAGE_KEY,
 } from "@/lib/ai/types";
-import { getOrCreateScenario } from "@/lib/ai/scenarioCache";
+import { getOrCreateScenario, getOrCreateShift } from "@/lib/ai/scenarioCache";
 import { clearHandoffStorage } from "@/lib/executor";
 
 const SCENARIO_TIMEOUT_MS = 25_000;
+const SHIFT_TIMEOUT_MS = 30_000;
 const DEFAULT_HOURLY_COST = 8.5;
-const DEFAULT_MOCK_PLAN: RobotPlan = buildPlan(
-  mockJobs.jobs,
-  DEFAULT_HOURLY_COST,
-);
+const ROBOT_PRICE_EUR = 8000;
+
+export type SpacePresetId = "cafe" | "retail" | "hotel" | "hall";
+
+export interface SpacePreset {
+  id: SpacePresetId;
+  label: string;
+  tagline: string;
+  scene: Scene;
+  jobsData: JobsResult;
+  plan: RobotPlan;
+}
+
+const RETAIL_SCENE: Scene = {
+  room: { width: 12, depth: 9 },
+  zones: [
+    {
+      id: "entrance",
+      label: "Store Entrance",
+      x: 6.0,
+      z: 0.8,
+      w: 2.2,
+      d: 1.2,
+    },
+    {
+      id: "promo_display",
+      label: "Promo Display Board",
+      x: 2.0,
+      z: 2.0,
+      w: 2.2,
+      d: 1.0,
+    },
+    {
+      id: "main_aisle_shelves",
+      label: "Main Aisle Shelves",
+      x: 5.8,
+      z: 4.8,
+      w: 4.0,
+      d: 2.4,
+    },
+    {
+      id: "checkout_counter",
+      label: "Checkout Counter",
+      x: 10.2,
+      z: 4.5,
+      w: 2.0,
+      d: 3.8,
+    },
+    {
+      id: "waiting_bench",
+      label: "Fitting Lounge Sofa",
+      x: 2.2,
+      z: 7.4,
+      w: 2.8,
+      d: 1.8,
+    },
+  ],
+};
+
+const RETAIL_JOBS: JobsResult = {
+  business_type: "Retail Shop",
+  jobs: [
+    {
+      id: "retail_greeter",
+      title: "Aisle Guide & Store Greeter",
+      fit: "good",
+      score: 90,
+      why: "Shoppers frequently ask where product categories are located. K1 greets customers at the entrance, waves, and points or walks them toward the main aisle shelves.",
+      limits:
+        "Cannot retrieve items from high shelves or scan barcodes. Handles common wayfinding questions only.",
+      hours_per_week: 14,
+      savings_eur_month: 412,
+      payback_months: 19,
+    },
+    {
+      id: "promo_announcer",
+      title: "Seasonal Promo Announcer",
+      fit: "good",
+      score: 84,
+      why: "Staff rarely have time to pitch in-store deals. K1 stands near the promo display board, gestures to featured discounts, and announces offers clearly.",
+      limits:
+        "Cannot apply custom discounts at checkout or check live inventory counts without POS integration.",
+      hours_per_week: 10,
+      savings_eur_month: 295,
+      payback_months: 27,
+    },
+    {
+      id: "checkout_helper",
+      title: "Fitting & Checkout Queue Helper",
+      fit: "partial",
+      score: 58,
+      why: "During busy hours K1 guides shoppers from the fitting lounge sofa toward open checkout counters and explains self-checkout instructions.",
+      limits:
+        "Cannot fold garments, remove security tags, or bag purchased items at the register.",
+      hours_per_week: 8,
+      savings_eur_month: 118,
+      payback_months: 68,
+    },
+    {
+      id: "pallet_lifter",
+      title: "Heavy Stock & Pallet Lifter",
+      fit: "no",
+      score: 10,
+      why: "Restocking heavy boxes and moving warehouse pallets takes significant staff effort every morning.",
+      limits:
+        "K1 is a compact 95 cm communication humanoid without heavy payload lifting capacity or industrial grippers. Not suitable for stockroom lifting.",
+      hours_per_week: 15,
+      savings_eur_month: 0,
+      payback_months: null,
+    },
+  ],
+};
+
+const HOTEL_SCENE: Scene = {
+  room: { width: 12, depth: 9 },
+  zones: [
+    {
+      id: "entrance",
+      label: "Lobby Entrance",
+      x: 6.0,
+      z: 0.8,
+      w: 2.4,
+      d: 1.2,
+    },
+    {
+      id: "reception_desk",
+      label: "Reception Desk",
+      x: 10.2,
+      z: 4.4,
+      w: 2.0,
+      d: 4.2,
+    },
+    {
+      id: "waiting_lounge",
+      label: "Lobby Sofa Lounge",
+      x: 2.2,
+      z: 3.6,
+      w: 2.8,
+      d: 2.4,
+    },
+    {
+      id: "seating_tables",
+      label: "Café Seating Tables",
+      x: 2.4,
+      z: 7.2,
+      w: 2.8,
+      d: 2.0,
+    },
+    {
+      id: "info_board",
+      label: "Event & Concierge Board",
+      x: 6.5,
+      z: 7.8,
+      w: 2.4,
+      d: 1.0,
+    },
+  ],
+};
+
+const HOTEL_JOBS: JobsResult = {
+  business_type: "Hotel Lobby",
+  jobs: [
+    {
+      id: "hotel_greeter",
+      title: "Guest Greeter & Concierge Guide",
+      fit: "good",
+      score: 91,
+      why: "Arriving guests often wait in line just to ask where check-in, breakfast, or elevators are. K1 welcomes guests at the lobby entrance and directs them to the reception desk.",
+      limits:
+        "Cannot encode room keycards, verify passports, or process credit card deposits.",
+      hours_per_week: 16,
+      savings_eur_month: 471,
+      payback_months: 17,
+    },
+    {
+      id: "event_info_host",
+      title: "Event & Breakfast Info Host",
+      fit: "good",
+      score: 83,
+      why: "Front-desk staff repeat breakfast hours, Wi-Fi details, and conference schedules all morning. K1 presents schedules at the concierge board on demand.",
+      limits:
+        "Cannot book taxi transfers or modify room reservations directly.",
+      hours_per_week: 11,
+      savings_eur_month: 324,
+      payback_months: 25,
+    },
+    {
+      id: "lobby_patrol",
+      title: "Lobby Lounge & FAQ Assistant",
+      fit: "partial",
+      score: 56,
+      why: "K1 circulates between the lobby sofa lounge and reception desk to inform waiting guests about check-in queue status and local attractions.",
+      limits:
+        "Cannot serve welcome drinks or navigate crowded luggage piles without clear floor paths.",
+      hours_per_week: 9,
+      savings_eur_month: 132,
+      payback_months: 61,
+    },
+    {
+      id: "luggage_porter",
+      title: "Heavy Luggage Bellhop Porter",
+      fit: "no",
+      score: 7,
+      why: "Carrying guest suitcases to rooms and loading bell carts is a frequent physical task for lobby staff.",
+      limits:
+        "K1 cannot lift heavy suitcases, push loaded luggage carts, or operate guest elevator buttons autonomously.",
+      hours_per_week: 18,
+      savings_eur_month: 0,
+      payback_months: null,
+    },
+  ],
+};
+
+const HALL_SCENE: Scene = {
+  room: { width: 12, depth: 9 },
+  zones: [
+    {
+      id: "entrance",
+      label: "Main Hall Entrance",
+      x: 6.0,
+      z: 0.8,
+      w: 2.4,
+      d: 1.2,
+    },
+    {
+      id: "registration_desk",
+      label: "Registration Desk",
+      x: 10.2,
+      z: 3.8,
+      w: 2.0,
+      d: 3.6,
+    },
+    {
+      id: "agenda_board",
+      label: "Session Agenda Board",
+      x: 2.0,
+      z: 2.2,
+      w: 2.2,
+      d: 1.0,
+    },
+    {
+      id: "study_tables",
+      label: "Networking Tables",
+      x: 6.0,
+      z: 5.2,
+      w: 4.0,
+      d: 2.8,
+    },
+    {
+      id: "waiting_sofa",
+      label: "Speaker Waiting Sofa",
+      x: 2.2,
+      z: 7.2,
+      w: 2.8,
+      d: 1.8,
+    },
+  ],
+};
+
+const HALL_JOBS: JobsResult = {
+  business_type: "Event / University Hall",
+  jobs: [
+    {
+      id: "hall_wayfinder",
+      title: "Visitor Greeter & Room Wayfinder",
+      fit: "good",
+      score: 89,
+      why: "Students and conference attendees constantly ask for auditorium directions and badge check-in. K1 greets visitors at the main entrance and points them to registration.",
+      limits:
+        "Cannot print badges, check ID cards, or escort visitors up staircases.",
+      hours_per_week: 12,
+      savings_eur_month: 353,
+      payback_months: 23,
+    },
+    {
+      id: "agenda_announcer",
+      title: "Session & Agenda Announcer",
+      fit: "good",
+      score: 85,
+      why: "Organizers need timely reminders before keynote talks start. K1 stands by the session agenda board, highlights upcoming tracks, and invites attendees inside.",
+      limits:
+        "Cannot answer spontaneous academic questions or adjust live room schedules automatically.",
+      hours_per_week: 10,
+      savings_eur_month: 295,
+      payback_months: 27,
+    },
+    {
+      id: "crowd_flow_helper",
+      title: "Breakout & Crowd Flow Helper",
+      fit: "partial",
+      score: 54,
+      why: "Between lectures K1 guides attendees toward the networking tables and speaker waiting area to reduce bottlenecking near the entrance.",
+      limits:
+        "Voice announcements can be harder to hear in very loud halls without an external PA speaker.",
+      hours_per_week: 8,
+      savings_eur_month: 118,
+      payback_months: 68,
+    },
+    {
+      id: "av_mover",
+      title: "Heavy AV & Stage Furniture Mover",
+      fit: "no",
+      score: 6,
+      why: "Reconfiguring folding tables, podiums, and PA speakers between events requires significant manual labor.",
+      limits:
+        "K1 cannot lift furniture, rig audio-visual cables, or carry stage equipment. Not feasible for physical setup crews.",
+      hours_per_week: 10,
+      savings_eur_month: 0,
+      payback_months: null,
+    },
+  ],
+};
+
+export const SPACE_PRESETS: Record<SpacePresetId, SpacePreset> = {
+  cafe: {
+    id: "cafe",
+    label: "Café",
+    tagline: "Table seating, counter & menu board",
+    scene: mockScene,
+    jobsData: mockJobs,
+    plan: buildPlan(mockJobs.jobs, DEFAULT_HOURLY_COST),
+  },
+  retail: {
+    id: "retail",
+    label: "Retail Shop",
+    tagline: "Aisle shelves, promo display & checkout",
+    scene: RETAIL_SCENE,
+    jobsData: RETAIL_JOBS,
+    plan: buildPlan(RETAIL_JOBS.jobs, DEFAULT_HOURLY_COST),
+  },
+  hotel: {
+    id: "hotel",
+    label: "Hotel Lobby",
+    tagline: "Reception desk, lounge sofa & concierge board",
+    scene: HOTEL_SCENE,
+    jobsData: HOTEL_JOBS,
+    plan: buildPlan(HOTEL_JOBS.jobs, DEFAULT_HOURLY_COST),
+  },
+  hall: {
+    id: "hall",
+    label: "Event / University Hall",
+    tagline: "Registration desk, agenda board & networking tables",
+    scene: HALL_SCENE,
+    jobsData: HALL_JOBS,
+    plan: buildPlan(HALL_JOBS.jobs, DEFAULT_HOURLY_COST),
+  },
+};
+
+export const SPACE_PRESET_LIST: SpacePreset[] = [
+  SPACE_PRESETS.cafe,
+  SPACE_PRESETS.retail,
+  SPACE_PRESETS.hotel,
+  SPACE_PRESETS.hall,
+];
+
+function matchPresetByBusinessType(businessType: string): SpacePreset | null {
+  const norm = businessType.trim().toLowerCase();
+  if (norm.includes("caf") || norm.includes("coffee")) {
+    return SPACE_PRESETS.cafe;
+  }
+  if (norm.includes("retail") || norm.includes("shop") || norm.includes("store")) {
+    return SPACE_PRESETS.retail;
+  }
+  if (norm.includes("hotel") || norm.includes("lobby")) {
+    return SPACE_PRESETS.hotel;
+  }
+  if (
+    norm.includes("event") ||
+    norm.includes("university") ||
+    norm.includes("hall")
+  ) {
+    return SPACE_PRESETS.hall;
+  }
+  return null;
+}
 
 interface FitStyle {
   label: "Suitable" | "Partial" | "Not Suitable";
@@ -69,6 +441,7 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
 };
 
 const PRESET_SCENARIOS: Record<string, ScenarioStep[]> = {
+  // Café scenarios
   greeter: mockScenario.steps,
   menu_presenter: [
     { action: "walk_to", target: "menu_board" },
@@ -106,16 +479,180 @@ const PRESET_SCENARIOS: Record<string, ScenarioStep[]> = {
       text: "When you are ready, you can place your order at the counter.",
     },
   ],
+
+  // Retail Shop scenarios
+  retail_greeter: [
+    { action: "walk_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Welcome to our retail store! Let me help you find what you are looking for today.",
+    },
+    { action: "turn_to", target: "main_aisle_shelves" },
+    { action: "point_to", target: "main_aisle_shelves" },
+    {
+      action: "say",
+      text: "New arrivals and popular essentials are organized along our main aisle shelves.",
+    },
+    { action: "walk_to", target: "main_aisle_shelves" },
+    { action: "turn_to", target: "checkout_counter" },
+    { action: "point_to", target: "checkout_counter" },
+    {
+      action: "say",
+      text: "When you finish browsing, our checkout counter is right over there.",
+    },
+  ],
+  promo_announcer: [
+    { action: "walk_to", target: "promo_display" },
+    { action: "turn_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Good day shoppers! Take a look at our seasonal promotion board for today's member deals.",
+    },
+    { action: "point_to", target: "promo_display" },
+    { action: "wait", seconds: 2 },
+    { action: "point_to", target: "main_aisle_shelves" },
+    {
+      action: "say",
+      text: "All featured promotional items are stocked on the main aisle shelves.",
+    },
+  ],
+  checkout_helper: [
+    { action: "walk_to", target: "waiting_bench" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Ready to check out? Follow me toward the checkout counter.",
+    },
+    { action: "walk_to", target: "checkout_counter" },
+    { action: "point_to", target: "checkout_counter" },
+    {
+      action: "say",
+      text: "Register two and contactless self-checkout are open right here.",
+    },
+    { action: "wait", seconds: 2 },
+  ],
+
+  // Hotel Lobby scenarios
+  hotel_greeter: [
+    { action: "walk_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Welcome to our hotel! We are delighted to have you with us today.",
+    },
+    { action: "turn_to", target: "reception_desk" },
+    { action: "point_to", target: "reception_desk" },
+    {
+      action: "say",
+      text: "Please proceed to the reception desk on the right for room check-in and keycards.",
+    },
+    { action: "walk_to", target: "reception_desk" },
+    { action: "turn_to", target: "waiting_lounge" },
+    { action: "point_to", target: "waiting_lounge" },
+    {
+      action: "say",
+      text: "Feel free to relax in our lobby sofa lounge while your room is prepared.",
+    },
+  ],
+  event_info_host: [
+    { action: "walk_to", target: "info_board" },
+    { action: "turn_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Good morning guests! Breakfast is served until ten thirty next to our café seating tables.",
+    },
+    { action: "point_to", target: "seating_tables" },
+    { action: "wait", seconds: 2 },
+    { action: "point_to", target: "info_board" },
+    {
+      action: "say",
+      text: "Today's conference rooms and city shuttle departures are listed on this concierge board.",
+    },
+  ],
+  lobby_patrol: [
+    { action: "walk_to", target: "waiting_lounge" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Hello everyone in the lobby lounge! Check-in wait time is currently under two minutes.",
+    },
+    { action: "turn_to", target: "reception_desk" },
+    { action: "point_to", target: "reception_desk" },
+    { action: "wait", seconds: 2 },
+    { action: "walk_to", target: "seating_tables" },
+    {
+      action: "say",
+      text: "High-speed guest Wi-Fi is available throughout the lobby seating area.",
+    },
+  ],
+
+  // Event / University Hall scenarios
+  hall_wayfinder: [
+    { action: "walk_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Welcome to the hall! Please pick up your visitor badge at the registration desk.",
+    },
+    { action: "turn_to", target: "registration_desk" },
+    { action: "point_to", target: "registration_desk" },
+    { action: "walk_to", target: "registration_desk" },
+    { action: "turn_to", target: "agenda_board" },
+    { action: "point_to", target: "agenda_board" },
+    {
+      action: "say",
+      text: "Check the session agenda board for lecture room numbers and keynote times.",
+    },
+  ],
+  agenda_announcer: [
+    { action: "walk_to", target: "agenda_board" },
+    { action: "turn_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Attention attendees! The next keynote session begins in five minutes.",
+    },
+    { action: "point_to", target: "agenda_board" },
+    { action: "wait", seconds: 2 },
+    { action: "point_to", target: "study_tables" },
+    {
+      action: "say",
+      text: "Workshop groups are gathering around the networking tables right now.",
+    },
+  ],
+  crowd_flow_helper: [
+    { action: "walk_to", target: "entrance" },
+    { action: "wave" },
+    {
+      action: "say",
+      text: "Please keep the main entrance clear and move toward the networking tables.",
+    },
+    { action: "walk_to", target: "study_tables" },
+    { action: "point_to", target: "study_tables" },
+    { action: "turn_to", target: "waiting_sofa" },
+    { action: "point_to", target: "waiting_sofa" },
+    {
+      action: "say",
+      text: "Guest speakers are welcome to rest at the speaker waiting sofa before their panel.",
+    },
+  ],
 };
 
 interface JobsAndPlanSnapshot {
   jobsData: JobsResult;
   plan: RobotPlan;
+  scene: Scene;
+  hasCustomUpload: boolean;
 }
 
 const SERVER_JOBS_PLAN_SNAPSHOT: JobsAndPlanSnapshot = {
-  jobsData: mockJobs,
-  plan: DEFAULT_MOCK_PLAN,
+  jobsData: SPACE_PRESETS.cafe.jobsData,
+  plan: SPACE_PRESETS.cafe.plan,
+  scene: SPACE_PRESETS.cafe.scene,
+  hasCustomUpload: false,
 };
 
 let cachedStorageKey = "";
@@ -126,7 +663,10 @@ function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
   try {
     const rawJobs = window.sessionStorage.getItem(JOBS_STORAGE_KEY) ?? "";
     const rawPlan = window.sessionStorage.getItem(PLAN_STORAGE_KEY) ?? "";
-    const key = `${rawJobs}|${rawPlan}`;
+    const rawAnalysis =
+      window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) ?? "";
+    const rawScene = window.sessionStorage.getItem("robohire:scene") ?? "";
+    const key = `${rawJobs}|${rawPlan}|${rawAnalysis}|${rawScene}`;
 
     if (key !== cachedStorageKey) {
       cachedStorageKey = key;
@@ -140,6 +680,30 @@ function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
           }
         } catch {
           jobsData = mockJobs;
+        }
+      }
+
+      const matchedPreset = matchPresetByBusinessType(jobsData.business_type);
+      const hasCustomUpload = matchedPreset === null;
+
+      let scene: Scene = matchedPreset?.scene ?? mockScene;
+      if (rawAnalysis) {
+        try {
+          const parsedAnalysis = JSON.parse(rawAnalysis) as { scene?: unknown };
+          if (isScene(parsedAnalysis?.scene)) {
+            scene = parsedAnalysis.scene;
+          }
+        } catch {
+          // keep preset scene
+        }
+      } else if (rawScene) {
+        try {
+          const parsedScene = JSON.parse(rawScene) as unknown;
+          if (isScene(parsedScene)) {
+            scene = parsedScene;
+          }
+        } catch {
+          // keep preset scene
         }
       }
 
@@ -163,7 +727,7 @@ function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
         plan = buildPlan(jobsData.jobs, DEFAULT_HOURLY_COST);
       }
 
-      cachedSnapshot = { jobsData, plan };
+      cachedSnapshot = { jobsData, plan, scene, hasCustomUpload };
     }
   } catch {
     cachedSnapshot = SERVER_JOBS_PLAN_SNAPSHOT;
@@ -188,25 +752,6 @@ function subscribeJobsStorage(callback: () => void): () => void {
     window.removeEventListener("focus", callback);
     window.removeEventListener("robohire:storage", callback);
   };
-}
-
-function getActiveScene(): Scene {
-  if (typeof window === "undefined") return mockScene;
-  try {
-    const rawAnalysis = window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
-    if (rawAnalysis) {
-      const parsed = JSON.parse(rawAnalysis) as { scene?: unknown };
-      if (isScene(parsed?.scene)) return parsed.scene;
-    }
-    const rawSessionScene = window.sessionStorage.getItem("robohire:scene");
-    if (rawSessionScene) {
-      const parsed = JSON.parse(rawSessionScene) as unknown;
-      if (isScene(parsed)) return parsed;
-    }
-  } catch {
-    // Fall back to mockScene
-  }
-  return mockScene;
 }
 
 function buildFallbackScenario(job: Job, scene: Scene): Scenario {
@@ -250,15 +795,35 @@ function buildFallbackScenario(job: Job, scene: Scene): Scenario {
   };
 }
 
+function getDisplayPaybackMonths(job: Job): number | null {
+  if (job.fit === "no" || job.savings_eur_month <= 0) return null;
+  if (typeof job.payback_months === "number" && job.payback_months > 0) {
+    return job.payback_months;
+  }
+  return Math.max(1, Math.round(ROBOT_PRICE_EUR / job.savings_eur_month));
+}
+
 interface JobCardProps {
   job: Job;
   rank: number;
   inPlan: boolean;
+  isHiring: boolean;
+  isAnyHiring: boolean;
+  onHire: (job: Job) => void;
 }
 
-function JobCard({ job, rank, inPlan }: JobCardProps) {
+function JobCard({
+  job,
+  rank,
+  inPlan,
+  isHiring,
+  isAnyHiring,
+  onHire,
+}: JobCardProps) {
   const style = FIT_STYLES[job.fit];
   const isNotSuitable = job.fit === "no";
+  const canHire = job.fit === "good" || job.fit === "partial";
+  const paybackMonths = getDisplayPaybackMonths(job);
 
   return (
     <article
@@ -267,7 +832,7 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
       className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
-        {/* Header: Rank, Title, In Plan Badge, Fit Badge, and Score */}
+        {/* Header: Rank, Title, In Plan Badge, Fit Badge, Score, and Hire Button */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2.5">
@@ -312,6 +877,24 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
               </span>
               <span className="text-xs text-slate-400">/100</span>
             </div>
+
+            {canHire && (
+              <button
+                type="button"
+                data-testid={`hire-job-btn-${job.id}`}
+                disabled={isAnyHiring}
+                onClick={() => onHire(job)}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+              >
+                {isHiring && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  />
+                )}
+                <span>{isHiring ? "Hiring…" : "Hire"}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -345,8 +928,8 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
         </div>
       </div>
 
-      {/* Metrics Footer: Hours/week and Gross value €/mo (no per-job payback) */}
-      <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
+      {/* Metrics Footer: Hours/week, Savings/mo (€), and Payback (months) */}
+      <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
             Hours / week
@@ -358,7 +941,7 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
 
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Gross value
+            Savings / mo
           </dt>
           <dd
             className={`mt-0.5 font-mono text-base font-bold ${
@@ -367,7 +950,16 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
                 : "text-slate-500 dark:text-slate-500"
             }`}
           >
-            Gross value €{job.savings_eur_month}/mo
+            €{job.savings_eur_month}/mo
+          </dd>
+        </div>
+
+        <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
+          <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+            Payback
+          </dt>
+          <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
+            {paybackMonths !== null ? `${paybackMonths} mo` : "—"}
           </dd>
         </div>
       </dl>
@@ -378,20 +970,23 @@ function JobCard({ job, rank, inPlan }: JobCardProps) {
 export default function JobsPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { jobsData, plan } = useSyncExternalStore(
+  const { jobsData, plan, scene } = useSyncExternalStore(
     subscribeJobsStorage,
     getJobsAndPlanClientSnapshot,
     getJobsAndPlanServerSnapshot,
   );
-  const [hiringJob, setHiringJob] = useState<Job | null>(null);
+  const [hiringTargetTitle, setHiringTargetTitle] = useState<string | null>(
+    null,
+  );
+  const [hiringJobId, setHiringJobId] = useState<string | null>(null);
+
+  const activePreset = useMemo(
+    () => matchPresetByBusinessType(jobsData.business_type),
+    [jobsData.business_type],
+  );
 
   useEffect(() => {
-    // Purge any legacy localStorage keys or stale sessionStorage keys not matching current jobs
     try {
-      window.localStorage.removeItem("robohire:scene");
-      window.localStorage.removeItem("robohire:scenario");
-      window.localStorage.removeItem("robohire:job");
-
       const currentIds = new Set(jobsData.jobs.map((j) => j.id));
       const rawJob = window.sessionStorage.getItem("robohire:job");
       if (rawJob) {
@@ -405,6 +1000,42 @@ export default function JobsPage() {
     }
     window.dispatchEvent(new Event("robohire:storage"));
   }, [pathname, jobsData.jobs]);
+
+  function handleSelectPreset(preset: SpacePreset) {
+    if (hiringTargetTitle !== null) return;
+    try {
+      clearHandoffStorage();
+      window.sessionStorage.setItem(
+        JOBS_STORAGE_KEY,
+        JSON.stringify(preset.jobsData),
+      );
+      window.sessionStorage.setItem(
+        PLAN_STORAGE_KEY,
+        JSON.stringify(preset.plan),
+      );
+      window.sessionStorage.setItem(
+        ANALYSIS_STORAGE_KEY,
+        JSON.stringify({
+          scene: preset.scene,
+          tasks: [],
+          businessType: preset.jobsData.business_type,
+          hoursPerWeek: 60,
+          hourlyCost: DEFAULT_HOURLY_COST,
+        }),
+      );
+      window.sessionStorage.setItem(
+        "robohire:scene",
+        JSON.stringify(preset.scene),
+      );
+      window.localStorage.setItem(
+        "robohire:scene",
+        JSON.stringify(preset.scene),
+      );
+      window.dispatchEvent(new Event("robohire:storage"));
+    } catch {
+      // Ignore storage errors
+    }
+  }
 
   const sortedJobs = useMemo(
     () => [...jobsData.jobs].sort((a, b) => b.score - a.score),
@@ -429,12 +1060,40 @@ export default function JobsPage() {
     [includedJobs, sortedJobs],
   );
 
-  async function handleHire(job: Job) {
-    if (hiringJob !== null) return;
-    setHiringJob(job);
+  function persistHandoff(
+    targetScene: Scene,
+    targetScenario: Scenario,
+    targetJob: Job,
+  ) {
+    try {
+      const sceneJson = JSON.stringify(targetScene);
+      const scenarioJson = JSON.stringify(targetScenario);
+      const jobJson = JSON.stringify(targetJob);
+      const planJson = JSON.stringify(plan);
+      const jobsJson = JSON.stringify(jobsData);
+
+      window.sessionStorage.setItem("robohire:scene", sceneJson);
+      window.sessionStorage.setItem("robohire:scenario", scenarioJson);
+      window.sessionStorage.setItem("robohire:job", jobJson);
+      window.sessionStorage.setItem(PLAN_STORAGE_KEY, planJson);
+      window.sessionStorage.setItem(JOBS_STORAGE_KEY, jobsJson);
+
+      window.localStorage.setItem("robohire:scene", sceneJson);
+      window.localStorage.setItem("robohire:scenario", scenarioJson);
+      window.localStorage.setItem("robohire:job", jobJson);
+
+      window.dispatchEvent(new Event("robohire:storage"));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }
+
+  async function handleHireJob(job: Job) {
+    if (hiringTargetTitle !== null) return;
+    setHiringTargetTitle(job.title);
+    setHiringJobId(job.id);
 
     clearHandoffStorage();
-    const scene = getActiveScene();
     let scenario: Scenario | null = null;
 
     try {
@@ -450,26 +1109,72 @@ export default function JobsPage() {
         scenario = { job_id: candidate.job_id, steps: validSteps };
       }
     } catch {
-      // Gracefully fall back to matching mock scenario below
+      // Gracefully fall back to matching preset scenario below
     }
 
     if (!scenario) {
       scenario = buildFallbackScenario(job, scene);
     }
 
+    persistHandoff(scene, scenario, job);
+    router.push("/robot");
+  }
+
+  async function handleHireShift() {
+    if (hiringTargetTitle !== null || !primaryHireJob) return;
+    setHiringTargetTitle(
+      includedJobs.map((j) => j.title).join(" + ") || primaryHireJob.title,
+    );
+    setHiringJobId("shift");
+
+    clearHandoffStorage();
+    let scenario: Scenario | null = null;
+
     try {
-      window.sessionStorage.setItem("robohire:scene", JSON.stringify(scene));
-      window.sessionStorage.setItem(
-        "robohire:scenario",
-        JSON.stringify(scenario),
+      const { scenario: shiftCandidate } = await getOrCreateShift(
+        plan,
+        jobsData.jobs,
+        scene,
+        {
+          businessType: jobsData.business_type,
+          timeoutMs: SHIFT_TIMEOUT_MS,
+        },
       );
-      window.sessionStorage.setItem("robohire:job", JSON.stringify(job));
-      window.sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
-      window.dispatchEvent(new Event("robohire:storage"));
+      const validSteps = filterValidSteps(
+        shiftCandidate.steps,
+        scene.zones.map((z) => z.id),
+      );
+      if (validSteps.length > 0) {
+        scenario = { job_id: shiftCandidate.job_id, steps: validSteps };
+      }
     } catch {
-      // Ignore storage quota errors
+      // If shift endpoint fails, fall back to primary job scenario
+      try {
+        const { scenario: jobCandidate } = await getOrCreateScenario(
+          primaryHireJob,
+          scene,
+          {
+            businessType: jobsData.business_type,
+            timeoutMs: SCENARIO_TIMEOUT_MS,
+          },
+        );
+        const validSteps = filterValidSteps(
+          jobCandidate.steps,
+          scene.zones.map((z) => z.id),
+        );
+        if (validSteps.length > 0) {
+          scenario = { job_id: jobCandidate.job_id, steps: validSteps };
+        }
+      } catch {
+        // Fall through to buildFallbackScenario
+      }
     }
 
+    if (!scenario) {
+      scenario = buildFallbackScenario(primaryHireJob, scene);
+    }
+
+    persistHandoff(scene, scenario, primaryHireJob);
     router.push("/robot");
   }
 
@@ -494,11 +1199,58 @@ export default function JobsPage() {
               Matched Booster K1 Robot Jobs
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              One Booster K1 shift plan combining suitable tasks, ranked by
-              capability fit score (0–100) and gross monthly value.
+              Switch between business space presets or review your uploaded
+              space, ranked by Booster K1 capability fit score (0–100), monthly
+              savings, and payback period.
             </p>
           </div>
         </div>
+
+        {/* Space Preset Selector Tabs / Pills */}
+        <section
+          aria-label="Business Space Presets"
+          data-testid="space-preset-tabs"
+          className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Select Business Space Preset
+            </span>
+            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+              {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
+              zones
+            </span>
+          </div>
+          <div
+            role="tablist"
+            className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+          >
+            {SPACE_PRESET_LIST.map((preset) => {
+              const isSelected = activePreset?.id === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  data-testid={`space-preset-${preset.id}`}
+                  disabled={hiringTargetTitle !== null}
+                  onClick={() => handleSelectPreset(preset)}
+                  className={`flex cursor-pointer flex-col items-start rounded-xl border px-3.5 py-2.5 text-left transition active:scale-[0.98] disabled:cursor-wait ${
+                    isSelected
+                      ? "border-sky-500 bg-sky-500/10 text-sky-900 shadow-2xs ring-1 ring-sky-500/40 dark:border-sky-400 dark:bg-sky-500/15 dark:text-white"
+                      : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/70"
+                  }`}
+                >
+                  <span className="text-sm font-bold">{preset.label}</span>
+                  <span className="mt-0.5 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    {preset.tagline}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         {/* Recommended: hire 1 Booster K1 Shift Plan Panel */}
         <section
@@ -547,18 +1299,18 @@ export default function JobsPage() {
                 <button
                   type="button"
                   data-testid="hire-plan-btn"
-                  disabled={hiringJob !== null}
-                  onClick={() => handleHire(primaryHireJob)}
+                  disabled={hiringTargetTitle !== null}
+                  onClick={handleHireShift}
                   className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {hiringJob !== null && (
+                  {hiringJobId === "shift" && (
                     <span
                       aria-hidden="true"
                       className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
                     />
                   )}
                   <span>
-                    {hiringJob !== null ? "Hiring…" : "Hire this K1"}
+                    {hiringJobId === "shift" ? "Hiring…" : "Hire this K1"}
                   </span>
                 </button>
               )}
@@ -641,7 +1393,7 @@ export default function JobsPage() {
         </section>
 
         {/* Hiring Transition Loading Banner */}
-        {hiringJob && (
+        {hiringTargetTitle && (
           <div
             role="status"
             data-testid="hiring-loading-banner"
@@ -650,7 +1402,7 @@ export default function JobsPage() {
             <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
             <span>
               Preparing 3D workspace &amp; generating K1 scenario for{" "}
-              <strong className="font-bold">{hiringJob.title}</strong>…
+              <strong className="font-bold">{hiringTargetTitle}</strong>…
             </span>
           </div>
         )}
@@ -663,6 +1415,9 @@ export default function JobsPage() {
               job={job}
               rank={idx + 1}
               inPlan={planIdSet.has(job.id)}
+              isHiring={hiringJobId === job.id}
+              isAnyHiring={hiringTargetTitle !== null}
+              onHire={handleHireJob}
             />
           ))}
         </section>

@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
+import {
+  scriptFileName,
+  toBoosterScript,
+} from "@/lib/k1export/toBoosterScript";
 import type { ScenarioStep, Zone } from "@/types/contracts";
 
 function formatStepSummary(step: ScenarioStep, zones: Zone[]): string {
@@ -29,6 +33,46 @@ export default function RobotSimulationPage() {
   const simData = useSimulationData();
   const executor = useScenarioExecutor(simData.scene, simData.steps, true);
   const [followCamera, setFollowCamera] = useState<boolean>(true);
+
+  const isShiftScenario = simData.scenario.job_id === "shift";
+
+  const shiftJobTitles = useMemo(() => {
+    const titles: string[] = [];
+    for (const step of executor.steps) {
+      if (
+        step.label &&
+        step.label !== "Shift start" &&
+        step.label !== "Shift end" &&
+        !titles.includes(step.label)
+      ) {
+        titles.push(step.label);
+      }
+    }
+    if (titles.length === 0) {
+      titles.push(simData.job.title);
+    }
+    return titles;
+  }, [executor.steps, simData.job.title]);
+
+  function handleExportForRealK1() {
+    const py = toBoosterScript(simData.scenario, simData.scene, {
+      businessType: simData.businessType,
+      what: isShiftScenario
+        ? `whole shift: ${shiftJobTitles.join(", ")}`
+        : simData.job.title,
+    });
+    const fileName = scriptFileName(simData.scenario);
+    const url = URL.createObjectURL(
+      new Blob([py], { type: "text/x-python;charset=utf-8" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   const statusBadgeClass =
     executor.status === "running"
@@ -131,6 +175,15 @@ export default function RobotSimulationPage() {
           >
             Follow Cam: {followCamera ? "ON" : "OFF"}
           </button>
+
+          <button
+            type="button"
+            data-testid="export-k1-btn"
+            onClick={handleExportForRealK1}
+            className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Export for real K1 (.py)
+          </button>
         </div>
       </div>
 
@@ -170,7 +223,7 @@ export default function RobotSimulationPage() {
             </div>
           )}
 
-          {/* Job Completed ✓ Overlay Card showing NET savings from the RobotPlan */}
+          {/* Job / Shift Completed ✓ Overlay Card showing NET savings from the RobotPlan */}
           {executor.status === "completed" && (
             <div
               data-testid="job-completed-card"
@@ -179,7 +232,7 @@ export default function RobotSimulationPage() {
               <div className="rounded-2xl border-2 border-emerald-400/80 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur-md dark:bg-slate-900/95 dark:text-white">
                 <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-1 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
-                    Job Completed ✓
+                    {isShiftScenario ? "Shift completed ✓" : "Job Completed ✓"}
                   </span>
                   <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
                     {executor.steps.length}/{executor.steps.length} steps
@@ -187,7 +240,9 @@ export default function RobotSimulationPage() {
                 </div>
 
                 <h3 className="mt-3 text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  {simData.job.title}
+                  {isShiftScenario
+                    ? shiftJobTitles.join(" + ")
+                    : simData.job.title}
                 </h3>
 
                 <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
@@ -209,25 +264,37 @@ export default function RobotSimulationPage() {
                       </strong>
                     </span>
                     <span>
-                      This job gross:{" "}
+                      {isShiftScenario ? "Plan gross:" : "This job gross:"}{" "}
                       <strong className="font-mono">
-                        €{simData.job.savings_eur_month}/mo
+                        €
+                        {isShiftScenario
+                          ? simData.plan.gross_savings_eur_month
+                          : simData.job.savings_eur_month}
+                        /mo
                       </strong>
                     </span>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-end gap-2.5">
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                   <Link
                     href="/jobs"
-                    className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
                     ← Back to Jobs
                   </Link>
                   <button
                     type="button"
+                    data-testid="export-k1-completed-btn"
+                    onClick={handleExportForRealK1}
+                    className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Export for real K1
+                  </button>
+                  <button
+                    type="button"
                     onClick={executor.replay}
-                    className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95"
+                    className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95"
                   >
                     ↻ Replay Job
                   </button>
@@ -267,54 +334,67 @@ export default function RobotSimulationPage() {
                   executor.currentStepIndex !== null &&
                   executor.currentStepIndex > index);
               const summary = formatStepSummary(step, simData.scene.zones);
+              const prevLabel =
+                index > 0 ? executor.steps[index - 1]?.label : undefined;
+              const showGroupLabel =
+                Boolean(step.label) && step.label !== prevLabel;
 
               return (
                 <li
                   key={`${step.action}-${step.target ?? index}-${index}`}
-                  className={`flex items-start justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
-                    isCurrent
-                      ? "border-sky-500 bg-sky-50 text-slate-900 shadow-xs ring-1 ring-sky-400/50 dark:border-sky-400 dark:bg-sky-950/90 dark:text-white"
-                      : isDone
-                        ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
-                        : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300"
-                  }`}
+                  className="space-y-1"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[11px] font-bold opacity-75">
-                        #{index + 1}
-                      </span>
-                      <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-sky-700 dark:bg-slate-800/90 dark:text-sky-300">
-                        {step.action}
-                      </span>
-                      {step.action !== "say" && summary && (
-                        <span className="truncate font-semibold text-slate-900 dark:text-white">
-                          {summary}
-                        </span>
-                      )}
+                  {showGroupLabel && (
+                    <div className="pt-1 font-mono text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                      {step.label}
                     </div>
-                    {step.action === "say" && summary && (
-                      <p className="mt-1 line-clamp-2 text-[11px] italic text-slate-600 dark:text-slate-200">
-                        {summary}
-                      </p>
-                    )}
-                  </div>
-
-                  <span
-                    className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                  )}
+                  <div
+                    className={`flex items-start justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
                       isCurrent
-                        ? "bg-sky-500/20 text-sky-700 dark:bg-sky-500/30 dark:text-sky-200"
+                        ? "border-sky-500 bg-sky-50 text-slate-900 shadow-xs ring-1 ring-sky-400/50 dark:border-sky-400 dark:bg-sky-950/90 dark:text-white"
                         : isDone
-                          ? "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-                          : "text-slate-400 dark:text-slate-500"
+                          ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+                          : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300"
                     }`}
                   >
-                    {isCurrent
-                      ? executor.phase
-                      : isDone
-                        ? "✓ done"
-                        : "queued"}
-                  </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[11px] font-bold opacity-75">
+                          #{index + 1}
+                        </span>
+                        <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-sky-700 dark:bg-slate-800/90 dark:text-sky-300">
+                          {step.action}
+                        </span>
+                        {step.action !== "say" && summary && (
+                          <span className="truncate font-semibold text-slate-900 dark:text-white">
+                            {summary}
+                          </span>
+                        )}
+                      </div>
+                      {step.action === "say" && summary && (
+                        <p className="mt-1 line-clamp-2 text-[11px] italic text-slate-600 dark:text-slate-200">
+                          {summary}
+                        </p>
+                      )}
+                    </div>
+
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                        isCurrent
+                          ? "bg-sky-500/20 text-sky-700 dark:bg-sky-500/30 dark:text-sky-200"
+                          : isDone
+                            ? "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                            : "text-slate-400 dark:text-slate-500"
+                      }`}
+                    >
+                      {isCurrent
+                        ? executor.phase
+                        : isDone
+                          ? "✓ done"
+                          : "queued"}
+                    </span>
+                  </div>
                 </li>
               );
             })}

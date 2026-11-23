@@ -46,8 +46,8 @@ function tryParseJson(raw: string | null): unknown {
 }
 
 /**
- * Reads handoff data strictly from `sessionStorage` so old data from previous
- * browser sessions in `localStorage` never leaks into later runs.
+ * Reads handoff data from `sessionStorage` first, falling back to `localStorage`
+ * only when no newer run exists in `sessionStorage`.
  */
 function readFromSessionStorage(keys: readonly string[]): unknown {
   if (typeof window === "undefined") return null;
@@ -57,6 +57,19 @@ function readFromSessionStorage(keys: readonly string[]): unknown {
       if (fromSession !== null) return fromSession;
     } catch {
       // Ignore storage access errors
+    }
+  }
+  const hasSessionRun =
+    window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) !== null ||
+    window.sessionStorage.getItem(JOBS_STORAGE_KEY) !== null;
+  if (!hasSessionRun) {
+    for (const key of keys) {
+      try {
+        const fromLocal = tryParseJson(window.localStorage.getItem(key));
+        if (fromLocal !== null) return fromLocal;
+      } catch {
+        // Ignore storage access errors
+      }
     }
   }
   return null;
@@ -166,10 +179,11 @@ export function loadSimulationData(
     candidateScenario = readFromSessionStorage(SCENARIO_STORAGE_KEYS);
   }
 
-  // Guard against stale scenario whose job_id is not in the current robohire:jobs list
+  // Guard against stale scenario whose job_id is not in the current robohire:jobs list (allow whole-plan "shift")
   if (
     isScenario(candidateScenario) &&
     isJobsResult(storedJobsRaw) &&
+    candidateScenario.job_id !== "shift" &&
     !currentJobIds.has(candidateScenario.job_id)
   ) {
     candidateScenario = null;
