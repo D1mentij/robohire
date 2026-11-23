@@ -90,7 +90,7 @@ for (const j of mockJobs.jobs) {
   assert.equal(s.job_id, j.id);
   assert.ok(s.steps.length >= 4, `${j.id}: ${s.steps.length} steps`);
   assert.equal(filterValidSteps(s.steps, zoneIds).length, s.steps.length);
-  assert.ok(s.steps.every((st) => st.label === undefined));
+  assert.ok(s.steps.every((st) => typeof st.label === "string" && st.label.split(" ").length <= 4));
 }
 
 // ---- compact prompt is shorter and still asks for all three parts
