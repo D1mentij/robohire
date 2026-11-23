@@ -37,6 +37,8 @@ export interface RobotPose {
 export interface LoadedSimulationData {
   scene: Scene;
   scenario: Scenario;
+  /** Business type label (used for floor material and UI badge) */
+  businessType: string;
   /** Matched job metadata (title, gross savings in €, etc.) */
   job: Job;
   /** Full robot shift plan (net savings in €, payback months, included job_ids) */
@@ -49,5 +51,7 @@ export interface LoadedSimulationData {
 export interface WalkTargetInfo {
   zone: Zone;
   stopPoint: Vec2XZ;
+  /** Waypoints to reach stopPoint (1 point if direct, 2 points if bypassing obstacle furniture) */
+  waypoints: Vec2XZ[];
   lookAtAngle: number;
 }

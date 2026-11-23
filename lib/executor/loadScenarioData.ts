@@ -145,6 +145,19 @@ export function loadSimulationData(
     isScene((storedAnalysisRaw as { scene?: unknown }).scene)
       ? (storedAnalysisRaw as { scene: Scene }).scene
       : null;
+  const analysisBusinessType =
+    typeof storedAnalysisRaw === "object" &&
+    storedAnalysisRaw !== null &&
+    "businessType" in storedAnalysisRaw &&
+    typeof (storedAnalysisRaw as { businessType?: unknown }).businessType ===
+      "string"
+      ? (storedAnalysisRaw as { businessType: string }).businessType
+      : null;
+
+  const businessType =
+    (isJobsResult(storedJobsRaw) ? storedJobsRaw.business_type : null) ??
+    analysisBusinessType ??
+    mockJobs.business_type;
 
   if (!isScene(candidateScene)) {
     candidateScene = readFromSessionStorage(SCENE_STORAGE_KEYS) ?? analysisScene;
@@ -214,6 +227,7 @@ export function loadSimulationData(
   return {
     scene,
     scenario,
+    businessType,
     job,
     plan,
     steps,
@@ -229,6 +243,7 @@ export function loadDefaultMockSimulationData(): LoadedSimulationData {
   return {
     scene: mockScene,
     scenario: mockScenario,
+    businessType: mockJobs.business_type,
     job,
     plan: DEFAULT_MOCK_PLAN,
     steps,

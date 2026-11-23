@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { mockJobs, mockScenario, mockScene } from "@/mocks";
 import {
@@ -8,7 +9,6 @@ import {
   isJob,
   isJobsResult,
   isRobotPlan,
-  isScenario,
   isScene,
   type Fit,
   type Job,
@@ -24,6 +24,7 @@ import {
   JOBS_STORAGE_KEY,
   PLAN_STORAGE_KEY,
 } from "@/lib/ai/types";
+import { getOrCreateScenario } from "@/lib/ai/scenarioCache";
 import { clearHandoffStorage } from "@/lib/executor";
 
 const SCENARIO_TIMEOUT_MS = 25_000;
@@ -437,35 +438,16 @@ export default function JobsPage() {
     let scenario: Scenario | null = null;
 
     try {
-      const response = await fetch("/api/scenario", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job,
-          scene,
-          businessType: jobsData.business_type,
-        }),
-        signal: AbortSignal.timeout(SCENARIO_TIMEOUT_MS),
+      const { scenario: candidate } = await getOrCreateScenario(job, scene, {
+        businessType: jobsData.business_type,
+        timeoutMs: SCENARIO_TIMEOUT_MS,
       });
-
-      if (response.ok) {
-        const data = (await response.json()) as unknown;
-        const candidate =
-          typeof data === "object" &&
-          data !== null &&
-          "scenario" in data
-            ? (data as { scenario: unknown }).scenario
-            : data;
-
-        if (isScenario(candidate)) {
-          const validSteps = filterValidSteps(
-            candidate.steps,
-            scene.zones.map((z) => z.id),
-          );
-          if (validSteps.length > 0) {
-            scenario = { job_id: candidate.job_id, steps: validSteps };
-          }
-        }
+      const validSteps = filterValidSteps(
+        candidate.steps,
+        scene.zones.map((z) => z.id),
+      );
+      if (validSteps.length > 0) {
+        scenario = { job_id: candidate.job_id, steps: validSteps };
       }
     } catch {
       // Gracefully fall back to matching mock scenario below
@@ -553,25 +535,34 @@ export default function JobsPage() {
               )}
             </div>
 
-            {primaryHireJob && (
-              <button
-                type="button"
-                data-testid="hire-plan-btn"
-                disabled={hiringJob !== null}
-                onClick={() => handleHire(primaryHireJob)}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Link
+                href="/report"
+                data-testid="download-report-btn"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
-                {hiringJob !== null && (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  />
-                )}
-                <span>
-                  {hiringJob !== null ? "Hiring…" : "Hire this K1"}
-                </span>
-              </button>
-            )}
+                <span>Download report</span>
+              </Link>
+              {primaryHireJob && (
+                <button
+                  type="button"
+                  data-testid="hire-plan-btn"
+                  disabled={hiringJob !== null}
+                  onClick={() => handleHire(primaryHireJob)}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {hiringJob !== null && (
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                    />
+                  )}
+                  <span>
+                    {hiringJob !== null ? "Hiring…" : "Hire this K1"}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Shift Plan Economics Grid */}

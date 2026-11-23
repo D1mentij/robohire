@@ -139,6 +139,7 @@ export default function RobotSimulationPage() {
         <div className="relative flex-1 overflow-hidden">
           <SimCanvas
             scene={simData.scene}
+            businessType={simData.businessType}
             activeZoneId={executor.activeZoneId}
             startPosition={executor.startPosition}
             currentTargetInfo={executor.currentTargetInfo}

@@ -33,6 +33,7 @@ interface EngineInternalState {
   stepIndex: number | null;
   phase: StepPhase;
   targetInfo: WalkTargetInfo | null;
+  waypointIndex: number;
   targetAngle: number | null;
   phaseTimer: number;
   activeSpeech: string | null;
@@ -123,6 +124,7 @@ export function useScenarioExecutor(
     stepIndex: null,
     phase: "idle",
     targetInfo: null,
+    waypointIndex: 0,
     targetAngle: null,
     phaseTimer: 0,
     activeSpeech: null,
@@ -196,6 +198,7 @@ export function useScenarioExecutor(
         eng.status = "running";
         eng.stepIndex = i;
         eng.targetInfo = null;
+        eng.waypointIndex = 0;
         eng.targetAngle = null;
         eng.phaseTimer = 0;
         eng.activeSpeech = null;
@@ -212,15 +215,23 @@ export function useScenarioExecutor(
               { x: pose.x, z: pose.z },
               zone,
               scene.room,
+              scene.zones,
             );
+            const firstWp = targetInfo.waypoints[0] ?? targetInfo.stopPoint;
+            const firstLegAngle = Math.atan2(
+              firstWp.x - pose.x,
+              firstWp.z - pose.z,
+            );
+
             eng.targetInfo = targetInfo;
-            eng.targetAngle = targetInfo.lookAtAngle;
+            eng.waypointIndex = 0;
+            eng.targetAngle = firstLegAngle;
 
             const angleDiff = Math.abs(
-              shortestAngleDelta(pose.rotationY, targetInfo.lookAtAngle),
+              shortestAngleDelta(pose.rotationY, firstLegAngle),
             );
             if (angleDiff <= FIVE_DEGREES_RAD) {
-              pose.rotationY = targetInfo.lookAtAngle;
+              pose.rotationY = firstLegAngle;
               eng.phase = "walking";
               pose.animation = "Walking";
             } else {
@@ -396,6 +407,7 @@ export function useScenarioExecutor(
       eng.stepIndex = null;
       eng.phase = "idle";
       eng.targetInfo = null;
+      eng.waypointIndex = 0;
       eng.targetAngle = null;
       eng.phaseTimer = 0;
       eng.activeSpeech = null;
@@ -405,7 +417,7 @@ export function useScenarioExecutor(
       pose.pointTarget = null;
       syncUiState();
     },
-    [steps, zoneMap, scene.room, syncUiState],
+    [steps, zoneMap, scene.room, scene.zones, syncUiState],
   );
 
   const reset = useCallback(() => {
@@ -425,6 +437,7 @@ export function useScenarioExecutor(
       stepIndex: null,
       phase: "idle",
       targetInfo: null,
+      waypointIndex: 0,
       targetAngle: null,
       phaseTimer: 0,
       activeSpeech: null,
@@ -451,6 +464,7 @@ export function useScenarioExecutor(
       stepIndex: 0,
       phase: "idle",
       targetInfo: null,
+      waypointIndex: 0,
       targetAngle: null,
       phaseTimer: 0,
       activeSpeech: null,
@@ -540,19 +554,45 @@ export function useScenarioExecutor(
           return;
         }
 
-        const dx = targetInfo.stopPoint.x - pose.x;
-        const dz = targetInfo.stopPoint.z - pose.z;
+        const currentWp =
+          targetInfo.waypoints[eng.waypointIndex] ?? targetInfo.stopPoint;
+        const dx = currentWp.x - pose.x;
+        const dz = currentWp.z - pose.z;
         const remainingDist = Math.hypot(dx, dz);
         const stepDist = ROBOT_WALK_SPEED * dt;
 
-        pose.rotationY = targetInfo.lookAtAngle;
+        const legAngle =
+          remainingDist > 0.01
+            ? Math.atan2(dx, dz)
+            : (eng.targetAngle ?? targetInfo.lookAtAngle);
+        pose.rotationY = legAngle;
 
         if (remainingDist <= stepDist || remainingDist < 0.005) {
-          pose.x = targetInfo.stopPoint.x;
-          pose.z = targetInfo.stopPoint.z;
-          pose.rotationY = targetInfo.lookAtAngle;
-          pose.animation = "Idle";
-          beginStep(stepIndex + 1, activeRunId);
+          pose.x = currentWp.x;
+          pose.z = currentWp.z;
+
+          if (eng.waypointIndex + 1 < targetInfo.waypoints.length) {
+            // Advance to next waypoint (around obstacle furniture)
+            eng.waypointIndex += 1;
+            const nextWp = targetInfo.waypoints[eng.waypointIndex];
+            const nextLegAngle = Math.atan2(
+              nextWp.x - pose.x,
+              nextWp.z - pose.z,
+            );
+            eng.targetAngle = nextLegAngle;
+            if (
+              Math.abs(shortestAngleDelta(pose.rotationY, nextLegAngle)) >
+              FIVE_DEGREES_RAD
+            ) {
+              eng.phase = "rotating";
+              pose.animation = "Idle";
+              syncUiState();
+            }
+          } else {
+            pose.rotationY = targetInfo.lookAtAngle;
+            pose.animation = "Idle";
+            beginStep(stepIndex + 1, activeRunId);
+          }
         } else {
           pose.x += (dx / remainingDist) * stepDist;
           pose.z += (dz / remainingDist) * stepDist;

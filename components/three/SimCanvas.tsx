@@ -137,6 +137,7 @@ function FollowCameraController({
 
 export interface SimCanvasProps {
   scene: Scene;
+  businessType?: string;
   activeZoneId: string | null;
   startPosition: Vec2XZ;
   currentTargetInfo: WalkTargetInfo | null;
@@ -150,6 +151,7 @@ export interface SimCanvasProps {
 
 export function SimCanvas({
   scene,
+  businessType,
   activeZoneId,
   startPosition,
   currentTargetInfo,
@@ -179,7 +181,8 @@ export function SimCanvas({
       )}
 
       <Canvas
-        shadows
+        shadows="soft"
+        dpr={[1, 1.75]}
         onCreated={() => setCanvasReady(true)}
         camera={{
           position: [cx - 6.2, 13.2, -9.8],
@@ -188,31 +191,44 @@ export function SimCanvas({
           far: 100,
         }}
       >
-        <color attach="background" args={["#090d16"]} />
-        <fog attach="fog" args={["#090d16", 18, 36]} />
+        <color attach="background" args={["#0c1220"]} />
+        <fog attach="fog" args={["#0c1220", 18, 36]} />
 
-        {/* Balanced studio & room lighting */}
-        <ambientLight intensity={0.75} />
+        {/* Warm architectural & window lighting with soft shadows */}
+        <ambientLight color="#fff7ed" intensity={0.78} />
         <hemisphereLight
-          args={["#e2e8f0", "#1e293b", 0.65]}
+          args={["#fef3c7", "#1e293b", 0.72]}
           position={[0, 10, 0]}
         />
         <directionalLight
-          position={[cx + 6, 12, -5]}
-          intensity={1.35}
+          color="#fffbeb"
+          position={[cx + 5, 11, -4]}
+          intensity={1.45}
           castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+          shadow-bias={-0.0004}
+          shadow-radius={3}
           shadow-camera-left={-10}
           shadow-camera-right={10}
           shadow-camera-top={10}
           shadow-camera-bottom={-10}
         />
-        <directionalLight position={[-4, 8, cz + 6]} intensity={0.45} />
+        <directionalLight
+          color="#bae6fd"
+          position={[cx, 5, -3]}
+          intensity={0.45}
+        />
+        <directionalLight
+          color="#fde68a"
+          position={[-4, 7, cz + 5]}
+          intensity={0.38}
+        />
 
-        {/* Room floor, low walls, and labeled translucent zones */}
+        {/* Room floor, window wall, and procedural zone furniture */}
         <Room3D
           scene={scene}
+          businessType={businessType}
           activeZoneId={activeZoneId}
           startPosition={startPosition}
           currentTargetInfo={currentTargetInfo}
