@@ -427,3 +427,13 @@
 - AI-generated: all edits above by Antigravity (Gemini).
 - CONTRACT CHANGE: None
 - Tested: `npm run lint`, `npm run build` pass.
+
+## [2026-11-23 22:49] Person 2 / Antigravity — Part 4: Stage safety (offline fonts, robustness, Present mode)
+- Done:
+  1. Offline safety: removed `next/font/google` (`Geist` / `Geist_Mono`) from `app/layout.tsx` and switched `app/globals.css` to system UI + monospace font stacks so the frontend makes zero external network requests (no external fonts, CDNs, textures, or analytics; GLB model is served locally from `public/models/RobotExpressive.glb`).
+  2. Robustness: hardened `lib/executor/loadScenarioData.ts` to require positive room dimensions and non-empty zones (`zones.length > 0`) for custom scenes, falling back cleanly to demo data when `/robot` is opened directly with no data or with an invalid/empty scenario; unknown zones are skipped via `filterValidSteps()` and executor guards; double-clicking Hire is blocked by `isHiringRef`; mid-run Replay resets cleanly.
+  3. Present mode on `/robot` (`app/robot/page.tsx`, `app/globals.css`): added `"⛶ Present"` button (`data-testid="present-mode-btn"`) and keyboard shortcut `P` to enter fullscreen presentation mode (hides top `AppHeader` and sub-toolbar, showing only the 3D canvas + `"Shift tasks"` checklist); `Esc` or `"Exit Present (Esc)"` exits cleanly.
+- Changed files: app/layout.tsx, app/globals.css, app/robot/page.tsx, lib/executor/loadScenarioData.ts, PROGRESS.md.
+- AI-generated: all edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Tested: `npm run lint`, `npm run build`, `npm test` all pass.

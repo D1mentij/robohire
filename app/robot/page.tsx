@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
@@ -115,6 +115,92 @@ export default function RobotSimulationPage() {
   const simData = useSimulationData();
   const executor = useScenarioExecutor(simData.scene, simData.steps, true);
   const [followCamera, setFollowCamera] = useState<boolean>(true);
+  const [presentMode, setPresentMode] = useState<boolean>(false);
+
+  const enterPresentMode = useCallback(() => {
+    setPresentMode(true);
+    document.documentElement.classList.add("robohire-present-mode");
+    try {
+      if (
+        !document.fullscreenElement &&
+        typeof document.documentElement.requestFullscreen === "function"
+      ) {
+        void document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch {
+      // Fullscreen may be blocked by browser policy; visual present mode still activates
+    }
+  }, []);
+
+  const exitPresentMode = useCallback(() => {
+    setPresentMode(false);
+    document.documentElement.classList.remove("robohire-present-mode");
+    try {
+      if (
+        document.fullscreenElement &&
+        typeof document.exitFullscreen === "function"
+      ) {
+        void document.exitFullscreen().catch(() => {});
+      }
+    } catch {
+      // Ignore fullscreen exit errors
+    }
+  }, []);
+
+  const togglePresentMode = useCallback(() => {
+    if (presentMode) {
+      exitPresentMode();
+    } else {
+      enterPresentMode();
+    }
+  }, [presentMode, enterPresentMode, exitPresentMode]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "Escape" && presentMode) {
+        e.preventDefault();
+        exitPresentMode();
+      } else if (
+        (e.key === "p" || e.key === "P") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        togglePresentMode();
+      }
+    };
+
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && presentMode) {
+        setPresentMode(false);
+        document.documentElement.classList.remove("robohire-present-mode");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, [presentMode, exitPresentMode, togglePresentMode]);
+
+  useEffect(() => {
+    return () => {
+      document.documentElement.classList.remove("robohire-present-mode");
+    };
+  }, []);
 
   const isShiftScenario = simData.scenario.job_id === "shift";
 
@@ -202,85 +288,112 @@ export default function RobotSimulationPage() {
         : "Idle";
 
   return (
-    <main className="relative flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-slate-50 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100">
-      {/* Simulation Sub-Toolbar */}
-      <div className="z-20 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-2.5 backdrop-blur-md transition-colors dark:border-slate-800 dark:bg-slate-900/95">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
-              3D Workspace Simulation
-            </h1>
-            <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-200">
-              K1 (simulation stand-in)
-            </span>
-            <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              {simData.businessType}
-            </span>
+    <main
+      data-present-mode={presentMode ? "true" : "false"}
+      className={`relative flex w-full flex-col overflow-hidden bg-slate-50 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 ${
+        presentMode ? "h-screen" : "h-[calc(100vh-3.5rem)]"
+      }`}
+    >
+      {/* Simulation Sub-Toolbar (hidden in Present mode) */}
+      {!presentMode && (
+        <div className="z-20 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-2.5 backdrop-blur-md transition-colors dark:border-slate-800 dark:bg-slate-900/95">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+                3D Workspace Simulation
+              </h1>
+              <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-200">
+                K1 (simulation stand-in)
+              </span>
+              <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                {simData.businessType}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+              Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
+              {simData.scene.zones.length} zones •{" "}
+              <span className="font-semibold text-slate-900 dark:text-white">
+                {isShiftScenario ? "Full Shift" : simData.job.title}
+              </span>{" "}
+              <span className="font-mono text-slate-500 dark:text-slate-400">
+                ({taskGroups.length} {taskGroups.length === 1 ? "task" : "tasks"})
+              </span>
+            </p>
           </div>
-          <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
-            Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
-            {simData.scene.zones.length} zones •{" "}
-            <span className="font-semibold text-slate-900 dark:text-white">
-              {isShiftScenario ? "Full Shift" : simData.job.title}
-            </span>{" "}
-            <span className="font-mono text-slate-500 dark:text-slate-400">
-              ({taskGroups.length} {taskGroups.length === 1 ? "task" : "tasks"})
-            </span>
-          </p>
+
+          {/* Execution Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={executor.start}
+              className="cursor-pointer rounded-xl border border-emerald-500/50 bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-500 active:scale-95"
+            >
+              ▶ Start
+            </button>
+
+            <button
+              type="button"
+              onClick={executor.replay}
+              className="cursor-pointer rounded-xl border border-sky-400/50 bg-sky-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95"
+            >
+              ↻ Replay
+            </button>
+
+            <button
+              type="button"
+              onClick={executor.reset}
+              className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Reset
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFollowCamera((v) => !v)}
+              className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                followCamera
+                  ? "border-sky-500/50 bg-sky-500/15 text-sky-700 hover:bg-sky-500/25 dark:border-sky-400/50 dark:bg-sky-950/80 dark:text-sky-200"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              }`}
+            >
+              Follow Cam: {followCamera ? "ON" : "OFF"}
+            </button>
+
+            <button
+              type="button"
+              data-testid="present-mode-btn"
+              title="Fullscreen presentation mode (Press P)"
+              onClick={enterPresentMode}
+              className="cursor-pointer rounded-xl border border-indigo-400/50 bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-indigo-500 active:scale-95"
+            >
+              ⛶ Present
+            </button>
+
+            <button
+              type="button"
+              data-testid="export-k1-btn"
+              onClick={handleExportForRealK1}
+              className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Export for real K1 (.py)
+            </button>
+          </div>
         </div>
-
-        {/* Execution Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={executor.start}
-            className="cursor-pointer rounded-xl border border-emerald-500/50 bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-500 active:scale-95"
-          >
-            ▶ Start
-          </button>
-
-          <button
-            type="button"
-            onClick={executor.replay}
-            className="cursor-pointer rounded-xl border border-sky-400/50 bg-sky-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95"
-          >
-            ↻ Replay
-          </button>
-
-          <button
-            type="button"
-            onClick={executor.reset}
-            className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            Reset
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFollowCamera((v) => !v)}
-            className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-              followCamera
-                ? "border-sky-500/50 bg-sky-500/15 text-sky-700 hover:bg-sky-500/25 dark:border-sky-400/50 dark:bg-sky-950/80 dark:text-sky-200"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            }`}
-          >
-            Follow Cam: {followCamera ? "ON" : "OFF"}
-          </button>
-
-          <button
-            type="button"
-            data-testid="export-k1-btn"
-            onClick={handleExportForRealK1}
-            className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            Export for real K1 (.py)
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Main Content: Unobstructed 3D Viewport + Shift Tasks Checklist Sidebar */}
       <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="relative flex-1 overflow-hidden">
+          {presentMode && (
+            <button
+              type="button"
+              data-testid="exit-present-btn"
+              onClick={exitPresentMode}
+              className="absolute left-4 top-4 z-30 cursor-pointer rounded-xl border border-slate-600/70 bg-slate-900/75 px-3 py-1.5 text-xs font-semibold text-slate-200 backdrop-blur-md transition hover:bg-slate-800"
+            >
+              Exit Present (Esc)
+            </button>
+          )}
           <SimCanvas
             scene={simData.scene}
             businessType={simData.businessType}

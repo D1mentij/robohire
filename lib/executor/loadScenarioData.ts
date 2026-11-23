@@ -191,8 +191,15 @@ export function loadSimulationData(
     candidateScenario = null;
   }
 
-  const hasCustomScene = isScene(candidateScene);
-  const scene: Scene = isScene(candidateScene) ? candidateScene : mockScene;
+  const validCustomScene: Scene | null =
+    isScene(candidateScene) &&
+    candidateScene.room.width > 0 &&
+    candidateScene.room.depth > 0 &&
+    candidateScene.zones.length > 0
+      ? candidateScene
+      : null;
+  const hasCustomScene = validCustomScene !== null;
+  const scene: Scene = validCustomScene ?? mockScene;
 
   const storedJobRaw = readFromSessionStorage(JOB_STORAGE_KEYS);
   const validStoredJob =
