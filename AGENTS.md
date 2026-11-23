@@ -30,6 +30,16 @@ Next.js 16 has API changes — check node_modules/next/dist/docs/ before using N
 
 <!-- BEGIN:nextjs-agent-rules -->
 
+## Review round (applies to BOTH agents; trigger: the user says "round")
+a) `git pull`; read REVIEW.md; fix every open issue addressed to YOU — only in your own folders; shared files only for a
+   contract issue (then log CONTRACT CHANGE in PROGRESS.md). Move fixed items to "Resolved" with the fixing commit hash.
+b) Review the OTHER person's commits since your last round (`git log` + `git diff`). Run `npm run lint`, `npm run build`,
+   `npm run test:roi`, `npm run check:mocks`. Check data contracts (types/contracts.ts; storage keys robohire:analysis /
+   robohire:jobs / robohire:plan / robohire:scene / robohire:scenario; /api/scenario request/response), edge cases
+   (empty/invalid data, null payback, unknown zones) and UX bugs. NEVER edit the other person's folders — write issues to
+   their section in REVIEW.md. Max 5 issues per round, most important first; no style nitpicks.
+c) Commit + push with message "review round: fixed N, reported M". Report to the user in 3 lines.
+
 ## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
