@@ -1,4 +1,6 @@
 import { filterValidSteps, type Job, type Scenario, type Scene } from "@/types/contracts";
+import { finalizeSteps } from "./labels";
+import { jobLabel } from "./shiftFallback";
 import { buildScenarioPrompt, SCENARIO_SCHEMA } from "./prompts";
 import { ProviderUnavailableError, provider, scenarioBudgetMs } from "./provider";
 
@@ -27,7 +29,8 @@ export async function generateScenario(job: Job, scene: Scene, businessType: str
       const cleaned = rawSteps
         .filter((s): s is Record<string, unknown> => typeof s === "object" && s !== null)
         .map((s) => Object.fromEntries(Object.entries(s).filter(([, v]) => v !== null && v !== "")));
-      const steps = filterValidSteps(cleaned, zoneIds).slice(0, MAX_STEPS);
+      const label = jobLabel(job);
+      const steps = finalizeSteps(filterValidSteps(cleaned.map((c) => ({ ...c, label })), zoneIds).slice(0, MAX_STEPS), label);
       if (steps.length < MIN_STEPS) throw new Error(`Only ${steps.length} valid steps`);
       return { ok: true, scenario: { job_id: job.id, steps } };
     } catch (e) {

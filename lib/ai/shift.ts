@@ -1,8 +1,10 @@
 import { filterValidSteps, type Job, type RobotPlan, type Scenario, type ScenarioStep, type Scene } from "@/types/contracts";
+import { finalizeSteps } from "./labels";
 import { buildShiftPrompt, SHIFT_SCHEMA } from "./prompts";
 import { ProviderUnavailableError, provider, shiftBudgetMs } from "./provider";
 import {
   buildShiftFallback,
+  jobLabels,
   planJobs,
   SHIFT_END_LABEL,
   SHIFT_JOB_ID,
@@ -25,7 +27,7 @@ function toLabel(tag: unknown, titles: Map<string, string>, prev: string): strin
 
 /** Cleans raw AI steps: drop nulls/empties, map job tag → label, keep contract fields only, filterValidSteps. */
 export function cleanShiftSteps(rawSteps: unknown[], jobs: Job[], zoneIds: string[]): ScenarioStep[] {
-  const titles = new Map(jobs.map((j) => [j.id, j.title]));
+  const titles = jobLabels(jobs); // short, unique checklist labels per plan job
   let prev = SHIFT_START_LABEL;
   const shaped = rawSteps
     .filter((s): s is Record<string, unknown> => typeof s === "object" && s !== null)
@@ -36,7 +38,7 @@ export function cleanShiftSteps(rawSteps: unknown[], jobs: Job[], zoneIds: strin
       for (const k of ["target", "text", "seconds"] as const) if (s[k] !== null && s[k] !== "" && s[k] !== undefined) out[k] = s[k];
       return out;
     });
-  return filterValidSteps(shaped, zoneIds).slice(0, SHIFT_MAX_STEPS);
+  return finalizeSteps(filterValidSteps(shaped, zoneIds).slice(0, SHIFT_MAX_STEPS), SHIFT_START_LABEL);
 }
 
 /** One continuous whole-plan demo. Never fails: AI (≤ 2 attempts, 25 s total) → code fallback. */

@@ -161,7 +161,7 @@ Rules:
 - target MUST be one of the zone ids above, spelled exactly. Never invent zones.
 - The FIRST step must be walk_to the zone most relevant to the job.
 - At least 2 "say" steps and at least 1 gesture (wave or point_to).
-- say text: English, friendly, specific to this job and business, max 15 words.
+- say text: English, friendly, specific to this job and business, MAX 8 words.
 - wait seconds: 1 to 3.
 - Only things a robot WITHOUT hands can do: walking, turning, gestures, pointing, talking.
 - Do not mention prices, savings or money.`;
@@ -205,7 +205,7 @@ Structure:
 3. outro: one closing say.
 Rules:
 - target MUST be one of the zone ids above, spelled exactly. Never invent zones.
-- say text: English, friendly, specific to the job and business, max 15 words.
+- say text: English, friendly, specific to the job and business, MAX 8 words.
 - wait seconds: 1 to 3.
 - Only things a robot WITHOUT hands can do: walking, turning, gestures, pointing, talking.
 - Do not mention prices, savings or money.`;

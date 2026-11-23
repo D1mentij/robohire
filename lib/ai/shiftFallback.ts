@@ -1,3 +1,4 @@
+import { finalizeSteps, shortLabel, shortenSay } from "./labels";
 import { filterValidSteps, type Job, type RobotPlan, type Scenario, type ScenarioStep, type Scene, type Zone } from "@/types/contracts";
 
 /**
@@ -24,6 +25,28 @@ const KIND_WORDS: { kind: Kind; job: RegExp; zone: RegExp }[] = [
 ];
 type Kind = "greet" | "menu" | "guide" | "queue" | "generic";
 
+const KIND_LABEL: Record<Kind, string | null> = { greet: "Greet guests", menu: "Present menu", guide: "Guide to tables", queue: "Queue info", generic: null };
+
+/** Short checklist label of a job (≤ 4 words). */
+export function jobLabel(job: Job): string {
+  const kind = KIND_WORDS.find((k) => k.job.test(`${job.id} ${job.title}`))?.kind ?? "generic";
+  return KIND_LABEL[kind] ?? shortLabel(job.title, "Task");
+}
+
+/** One UNIQUE label per job, in plan order (two jobs of the same kind must not merge into one checklist group). */
+export function jobLabels(jobs: Job[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const taken = new Set<string>();
+  for (const j of jobs) {
+    let l = jobLabel(j);
+    if (taken.has(l)) l = shortLabel(j.title, l);
+    for (let i = 2; taken.has(l); i++) l = `${shortLabel(j.title, "Task").split(" ").slice(0, 3).join(" ")} ${i}`;
+    taken.add(l);
+    out.set(j.id, l);
+  }
+  return out;
+}
+
 const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
 
 /** Best zone for a job: shared words with id/title, then kind keywords, then the first zone not used yet. */
@@ -40,24 +63,23 @@ export function zoneForJob(job: Job, zones: Zone[], used: Set<string> = new Set(
   return { zone: zones.find((z) => !used.has(z.id)) ?? zones[0], kind };
 }
 
-function jobSteps(job: Job, zone: Zone, other: Zone | null, kind: Kind, budget: number): ScenarioStep[] {
-  const label = job.title;
+function jobSteps(job: Job, zone: Zone, other: Zone | null, kind: Kind, budget: number, label: string): ScenarioStep[] {
   const where = zone.label.toLowerCase();
   const lines: Record<Kind, [string, string]> = {
-    greet: [`Welcome! Come in, I'm your robot host today.`, `Let me know if you need help finding anything.`],
-    menu: [`Here is our ${where}. Ask me about today's offers.`, `I can explain any item before you decide.`],
-    guide: [`Free seats are this way, please follow me.`, `Enjoy your stay, I'll be nearby.`],
-    queue: [`Please queue here, the team will be with you shortly.`, `Thanks for your patience, it won't be long.`],
-    generic: [`Now handling: ${job.title}.`, `I'll keep an eye on the ${where} for you.`],
+    greet: [`Welcome! I'm your robot host today.`, `Ask me if you need help.`],
+    menu: [`This is our ${where}.`, `Ask me about today's offers.`],
+    guide: [`Free seats are this way, follow me.`, `Enjoy your stay!`],
+    queue: [`Please queue here, we'll be right with you.`, `Thanks for your patience!`],
+    generic: [`Now handling: ${label}.`, `I'll keep an eye on this area.`],
   };
   const [l1, l2] = lines[kind];
   const s: ScenarioStep[] = [
     { action: "walk_to", target: zone.id, label },
     kind === "greet" ? { action: "wave", label } : { action: "point_to", target: zone.id, label },
-    { action: "say", text: l1, label },
+    { action: "say", text: shortenSay(l1), label },
   ];
   if (other && other.id !== zone.id) s.push({ action: "point_to", target: other.id, label });
-  s.push({ action: "say", text: l2, label });
+  s.push({ action: "say", text: shortenSay(l2), label });
   return s.slice(0, Math.max(3, budget));
 }
 
@@ -67,7 +89,8 @@ export function buildShiftFallback(plan: RobotPlan, jobs: Job[], scene: Scene, b
   const zoneIds = zones.map((z) => z.id);
   const pj = planJobs(plan, jobs);
   const biz = businessType?.trim() || "this business";
-  const steps: ScenarioStep[] = [{ action: "say", text: `Starting my shift at ${biz}.`, label: SHIFT_START_LABEL }];
+  const steps: ScenarioStep[] = [{ action: "say", text: shortenSay(`Starting my shift at ${biz}.`), label: SHIFT_START_LABEL }];
+  const labels = jobLabels(pj);
   const used = new Set<string>();
   const budget = pj.length > 0 ? Math.floor((SHIFT_MAX_STEPS - 3) / pj.length) : 0;
   for (const job of pj) {
@@ -75,16 +98,16 @@ export function buildShiftFallback(plan: RobotPlan, jobs: Job[], scene: Scene, b
     if (!zone) continue;
     used.add(zone.id);
     const other = zones.find((z) => z.id !== zone.id && !used.has(z.id)) ?? zones.find((z) => z.id !== zone.id) ?? null;
-    steps.push(...jobSteps(job, zone, other, kind, budget));
+    steps.push(...jobSteps(job, zone, other, kind, budget, labels.get(job.id) ?? jobLabel(job)));
   }
   if (pj.length === 0 && zones[0]) {
     steps.push({ action: "walk_to", target: zones[0].id, label: SHIFT_START_LABEL }, { action: "wave", label: SHIFT_START_LABEL });
   }
   steps.push(
     { action: "wait", seconds: 1, label: SHIFT_END_LABEL },
-    { action: "say", text: `That's my shift routine. See you tomorrow!`, label: SHIFT_END_LABEL },
+    { action: "say", text: `That's my routine. See you tomorrow!`, label: SHIFT_END_LABEL },
   );
-  return { job_id: SHIFT_JOB_ID, steps: filterValidSteps(steps, zoneIds).slice(0, SHIFT_MAX_STEPS) };
+  return { job_id: SHIFT_JOB_ID, steps: finalizeSteps(filterValidSteps(steps, zoneIds).slice(0, SHIFT_MAX_STEPS), SHIFT_START_LABEL) };
 }
 
 /** Single-job scenario from the same templates as the shift fallback (no AI). Used by /api/scenario by default. */
@@ -92,8 +115,7 @@ export function buildJobScenario(job: Job, scene: Scene): Scenario {
   const zones = scene.zones;
   const { zone, kind } = zoneForJob(job, zones);
   const other = zone ? (zones.find((z) => z.id !== zone.id) ?? null) : null;
-  const raw: ScenarioStep[] = zone
-    ? jobSteps(job, zone, other, kind, 5).map((step) => { const copy = { ...step }; delete copy.label; return copy; })
-    : [{ action: "wave" }];
-  return { job_id: job.id, steps: filterValidSteps(raw, zones.map((z) => z.id)) };
+  const label = jobLabel(job);
+  const raw: ScenarioStep[] = zone ? jobSteps(job, zone, other, kind, 5, label) : [{ action: "wave", label }];
+  return { job_id: job.id, steps: finalizeSteps(filterValidSteps(raw, zones.map((z) => z.id)), label) };
 }
