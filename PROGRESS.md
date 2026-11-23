@@ -173,3 +173,9 @@
 - CONTRACT CHANGE: None
 - Next: Final review / Demo Day readiness.
 - Blocked by: nothing
+
+## [2026-11-23] Person 1 / Claude Code
+- Done: regenerated numbers in mocks/jobs.json with lib/roi (hourlyCost 8.5, current config, DAYS_OPEN 6) from the demo tasks in lib/ai/demoData.ts (freq/day × minutes). Titles/texts/fit/score unchanged. demoData.ts has no ROI numbers, so unchanged.
+- New: greeter 8 h/wk, €176/mo, 45 mo; menu_presenter 7.5 h, €161, 50 mo; table_guide 6 h, €28, 286 mo; dishwashing 12 h, €0, null.
+- CONTRACT CHANGE: mock numbers only (no schema change)
+- AI-generated: numbers computed by lib/roi code (no AI); edit by Claude Code (Claude Sonnet 5.5).
