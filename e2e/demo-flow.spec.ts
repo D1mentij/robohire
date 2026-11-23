@@ -45,3 +45,42 @@ test("landing → demo → plan → hire → robot completes → report + .py ex
 
   expect(errors, `page errors: ${errors.join(" | ")}`).toEqual([]);
 });
+
+/** Server API contract in demo mode (no AI reachable). */
+test("API: /api/scenario is code-built, /api/jobs needs no AI, /api/analyze says Start Ollama, /api/shift falls back", async ({ request }) => {
+  const mockScene = JSON.parse(await readFile("mocks/scene.json", "utf8"));
+  const mockJobs = JSON.parse(await readFile("mocks/jobs.json", "utf8"));
+  const job = mockJobs.jobs[0];
+
+  const sc = await request.post("/api/scenario", { data: { job, scene: mockScene } });
+  expect(sc.ok()).toBeTruthy();
+  const scJson = await sc.json();
+  expect(scJson.source).toBe("code");
+  expect(scJson.scenario.job_id).toBe(job.id);
+  expect(scJson.scenario.steps.length).toBeGreaterThanOrEqual(4);
+
+  // ?ai=1 with Ollama unreachable still answers (code fallback)
+  const sc2 = await request.post("/api/scenario?ai=1", { data: { job, scene: mockScene } });
+  expect((await sc2.json()).source).toBe("code");
+
+  const tasks = [{ id: "greet", title: "Greet guests", zone_id: "entrance", description: "Welcome visitors", frequency_per_day: 40, minutes_each: 1 }];
+  const jobs = await request.post("/api/jobs", { data: { tasks, scene: mockScene, businessType: "Café", hoursPerWeek: 60, hourlyCost: 8.5 } });
+  const jobsJson = await jobs.json();
+  expect(jobsJson.ok).toBe(true);
+  expect(jobsJson.jobs.jobs[0].fit).toBe("good"); // heuristic rating, no AI
+
+  const an = await request.post("/api/analyze", {
+    data: { businessType: "Café", hoursPerWeek: 60, hourlyCost: 8.5, frames: ["data:image/jpeg;base64,/9j/4AAQ"] },
+  });
+  expect(an.status()).toBe(503);
+  expect((await an.json()).error).toMatch(/Start Ollama/);
+
+  const plan = {
+    job_ids: mockJobs.jobs.slice(0, 3).map((j: { id: string }) => j.id), hours_per_week: 14.8, capacity_hours_per_week: 36,
+    gross_savings_eur_month: 545, running_cost_eur_month: 60, net_savings_eur_month: 485, robot_price_eur: 8000, payback_months: 16, assumptions: [],
+  };
+  const sh = await request.post("/api/shift", { data: { plan, jobs: mockJobs.jobs, scene: mockScene, businessType: "Café" } });
+  const shJson = await sh.json();
+  expect(shJson.source).toBe("fallback");
+  expect(shJson.scenario.job_id).toBe("shift");
+});

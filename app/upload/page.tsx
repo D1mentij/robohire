@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { applyShowcase, downloadCurrentAsShowcase, fetchShowcases, type Showcase } from "@/lib/ai/showcase";
 import { getCached, hashInputs, putCached } from "@/lib/ai/uploadCache";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
 import type { JobsResult, RobotPlan } from "@/types/contracts";
@@ -20,17 +21,31 @@ import {
 } from "@/lib/ai/types";
 
 const MAX_SECONDS = 60;
-const FETCH_TIMEOUT_MS = 35_000;
+// local models (Ollama) can need up to ~2 minutes for the one analysis call
+const FETCH_TIMEOUT_MS = 130_000;
 
 function netError(err: unknown, fallback: string): string {
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError"))
-    return "The AI took too long (35 s timeout).";
+    return "The AI took too long (over 2 minutes). Try the smaller model (OLLAMA_MODEL=qwen3-vl:4b-instruct) or demo mode.";
   if (err instanceof TypeError) return "Network error — could not reach the server.";
   return err instanceof Error ? err.message : fallback;
 }
 
+const noopSubscribe = () => () => {};
+/** /upload?dev=1 on a dev server only (never in a production build). */
+const readDev = () => process.env.NODE_ENV !== "production" && new URLSearchParams(window.location.search).get("dev") === "1";
+
 export default function UploadPage() {
   const router = useRouter();
+  const dev = useSyncExternalStore(noopSubscribe, readDev, () => false);
+  const [showcases, setShowcases] = useState<Showcase[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void fetchShowcases().then((l) => alive && setShowcases(l));
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [file, setFile] = useState<File | null>(null);
   const [businessType, setBusinessType] = useState("");
   const [hoursPerWeek, setHoursPerWeek] = useState("");
@@ -363,6 +378,35 @@ export default function UploadPage() {
             >
               Try demo (no video needed)
             </button>
+            {showcases.map((sc) => (
+              <button
+                key={sc.name}
+                type="button"
+                data-testid="showcase-btn"
+                onClick={() => {
+                  applyShowcase(sc);
+                  router.push("/jobs");
+                }}
+                disabled={busy || analyzing || jobsLoading}
+                title="A saved real analysis, no AI call"
+                className="cursor-pointer rounded-xl border border-violet-500/50 bg-violet-500/10 px-5 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-500/20 disabled:opacity-50 dark:border-violet-500/40 dark:text-violet-300 dark:hover:bg-violet-950"
+              >
+                Try real example: {sc.name}
+              </button>
+            ))}
+            {dev && jobs && plan && (
+              <button
+                type="button"
+                data-testid="save-showcase-btn"
+                onClick={() => {
+                  const name = window.prompt("Showcase name", analysis ? businessType.trim() || "My space" : "My space");
+                  if (name && !downloadCurrentAsShowcase(name)) window.alert("No complete run to save yet.");
+                }}
+                className="cursor-pointer rounded-xl border border-dashed border-slate-400 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Save as showcase (dev)
+              </button>
+            )}
           </div>
         </form>
 

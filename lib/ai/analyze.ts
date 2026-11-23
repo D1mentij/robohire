@@ -1,7 +1,8 @@
 import { isScene, type Scene, type Zone } from "@/types/contracts";
 import type { AnalysisResult, Task, UploadData } from "./types";
+import { parseRatings } from "./ratings";
 import { buildAnalysisPrompt, ANALYSIS_SCHEMA } from "./prompts";
-import { MissingKeyError, provider } from "./provider";
+import { ProviderUnavailableError, provider, providerName } from "./provider";
 
 /** Safety net: the model sometimes invents robot infrastructure. */
 const ROBOT_RE = /robot|charg|dock/i;
@@ -77,7 +78,7 @@ export function cleanScene(scene: Scene): Scene | null {
   return { room: { width, depth }, zones: kept };
 }
 
-function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, string>): Task[] {
+function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, string>, taskIdMap: Map<string, string>): Task[] {
   if (!Array.isArray(raw)) return [];
   const out: Task[] = [];
   const seen = new Set<string>();
@@ -94,6 +95,8 @@ function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, strin
     let id = slug(typeof o.id === "string" ? o.id : o.title);
     for (let i = 2; seen.has(id); i++) id = `${slug(String(o.id ?? o.title))}_${i}`;
     seen.add(id);
+    if (typeof o.id === "string") taskIdMap.set(o.id, id);
+    taskIdMap.set(o.title.trim(), id);
     out.push({
       id,
       title: o.title.trim(),
@@ -114,26 +117,36 @@ export function validateAnalysis(raw: unknown): AnalysisResult {
   for (const z of o.scene.zones) idMap.set(z.id, slug(z.id));
   const scene = cleanScene(o.scene);
   if (!scene) throw new Error("No usable zones after cleanup");
-  const tasks = cleanTasks(o.tasks, new Set(scene.zones.map((z) => z.id)), idMap);
+  const taskIdMap = new Map<string, string>(); // id/title the model wrote -> final task id, for the ratings
+  const tasks = cleanTasks(o.tasks, new Set(scene.zones.map((z) => z.id)), idMap, taskIdMap);
   if (tasks.length === 0) throw new Error("No valid tasks after cleanup");
-  return { scene, tasks };
+  // ratings are best-effort: missing/garbled ones are filled by heuristics in /api/jobs (lib/ai/ratings.ts)
+  const ratings = parseRatings(o.ratings, new Set(tasks.map((t) => t.id)), taskIdMap);
+  return { scene, tasks, ratings };
 }
 
 export type AnalyzeOutcome = { ok: true; result: AnalysisResult } | { ok: false; error: string };
 
+/** Total AI time for analysis: Ollama (local) gets 120 s across attempts, Gemini has none (it answers or errors). */
+const analyzeBudgetMs = () => (providerName() === "ollama" ? 120_000 : undefined);
+
 export async function analyze(data: UploadData): Promise<AnalyzeOutcome> {
-  const prompt = buildAnalysisPrompt(data.businessType);
+  const prompt = buildAnalysisPrompt(data.businessType, providerName() === "ollama");
+  const budget = analyzeBudgetMs();
+  const started = Date.now();
   let lastError = "Unknown error";
   for (let attempt = 0; attempt < 2; attempt++) {
+    const left = budget === undefined ? undefined : budget - (Date.now() - started);
+    if (left !== undefined && left < 20_000) break;
     try {
-      const raw = await provider.generateJson(prompt, data.frames, ANALYSIS_SCHEMA);
+      const raw = await provider.generateJson(prompt, data.frames, ANALYSIS_SCHEMA, left === undefined ? undefined : { timeoutMs: left });
       return { ok: true, result: validateAnalysis(raw) };
     } catch (e) {
-      if (e instanceof MissingKeyError) return { ok: false, error: e.message };
+      if (e instanceof ProviderUnavailableError) return { ok: false, error: e.message };
       lastError = e instanceof Error ? e.message : String(e);
-      if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
       console.error(`[analyze] attempt ${attempt + 1} failed:`, lastError.slice(0, 300));
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
     }
   }
-  return { ok: false, error: `AI analysis failed twice: ${lastError.slice(0, 200)}` };
+  return { ok: false, error: `AI analysis failed: ${lastError.slice(0, 200)}` };
 }

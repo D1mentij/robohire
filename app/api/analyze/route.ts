@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { analyze } from "@/lib/ai/analyze";
+import { isUnavailableMessage } from "@/lib/ai/provider";
 import type { AnalyzeResponse, UploadData } from "@/lib/ai/types";
-
-export const maxDuration = 60;
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const JPEG_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
@@ -42,7 +41,7 @@ export async function POST(req: Request) {
   };
   const out = await analyze(data);
   if (!out.ok) {
-    const status = out.error.includes("GEMINI_API_KEY") ? 503 : 502;
+    const status = isUnavailableMessage(out.error) ? 503 : 502;
     return fail(out.error, status);
   }
   return NextResponse.json<AnalyzeResponse>(out);

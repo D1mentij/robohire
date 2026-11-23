@@ -1,3 +1,5 @@
+import { k1Profile } from "./k1Profile";
+
 export const ANALYSIS_SCHEMA = {
   type: "object",
   properties: {
@@ -42,11 +44,53 @@ export const ANALYSIS_SCHEMA = {
         required: ["id", "title", "zone_id", "description", "frequency_per_day", "minutes_each"],
       },
     },
+    ratings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          fit: { type: "string", enum: ["good", "partial", "no"] },
+          score: { type: "number" },
+          why: { type: "string" },
+          limits: { type: "string" },
+        },
+        required: ["id", "fit", "why"],
+      },
+    },
   },
-  required: ["scene", "tasks"],
+  required: ["scene", "tasks", "ratings"],
 };
 
-export function buildAnalysisPrompt(businessType: string): string {
+/** K1 abilities / limits as short bullet lists (the only source of truth about the robot). */
+function k1Brief(): string {
+  return `K1 CAN: ${k1Profile.can.map((c) => c.ability).join("; ")}.
+K1 CANNOT: ${k1Profile.cannot.map((c) => c.limitation).join("; ")}.`;
+}
+
+const RATING_RULES = `RATINGS: for EACH task add one rating {id, fit, score, why, limits}: id = task id unchanged;
+fit = "good" (K1 can do essentially all of it), "partial" (only the talking/guiding/gesturing part), "no" (needs carrying, cleaning, hands, stairs, doors...);
+score 0-100 (good 70-95, partial 30-65, no 0-25); why = 1 sentence naming a concrete K1 ability; limits = 1 short sentence from the CANNOT list.
+No money, prices, hours or savings in any text. K1 is a small humanoid WITHOUT hands: do not oversell.`;
+
+/**
+ * ONE call does everything: floor plan + tasks + K1 fit ratings.
+ * compact = shorter prompt for small local models (Ollama).
+ */
+export function buildAnalysisPrompt(businessType: string, compact = false): string {
+  if (compact) {
+    return `Look at the frames of a "${businessType}" (the type only helps naming; describe what is VISIBLE).
+Return JSON only:
+{"scene":{"room":{"width":m,"depth":m},"zones":[{"id","label","x","z","w","d"}]},
+ "tasks":[{"id","title","zone_id","description","frequency_per_day","minutes_each"}],
+ "ratings":[{"id","fit","score","why","limits"}]}
+Floor plan in METERS, top-down, origin = room corner, X = width, Z = depth. Zone x,z = CENTER, w along X, d along Z.
+- 3-6 zones from visible things only; ids snake_case (e.g. "entrance"); inside the room; no overlaps; no robot/charging zones.
+- 4-6 tasks that HUMAN staff do there; zone_id must be a zone id; at least 2 are customer-facing talking tasks (greeting, guiding, explaining menu/offers, queue info, announcements) when visitors come.
+- frequency_per_day and minutes_each: realistic numbers.
+${k1Brief()}
+${RATING_RULES}`;
+  }
   return `You are analysing frames from a short walk-through video of a real space.
 The owner says the business type is: "${businessType}".
 
@@ -54,6 +98,7 @@ The owner says the business type is: "${businessType}".
    Return scene.room {width, depth} and scene.zones.
    Zone x,z = zone CENTER; w = size along X; d = size along Z.
 2. List repetitive tasks that HUMAN STAFF do (or would do) in this space today.
+3. Rate how well a Booster K1 humanoid robot could take over each task.
 
 GROUNDING RULES (most important):
 - Zones must be based ONLY on what is actually visible in the frames (furniture, doors, counters, equipment).
@@ -76,58 +121,13 @@ Include BOTH kinds of work:
      closing-time or safety announcements.
 When the space has visitors or customers, at least 2 of the tasks MUST be communication tasks (b), each tied to a visible zone.
 
+${k1Brief()}
+${RATING_RULES}
+
 Return STRICT JSON only, exactly this shape:
 { "scene": { "room": {"width": number, "depth": number}, "zones": [{"id","label","x","z","w","d"}] },
-  "tasks": [{"id","title","zone_id","description","frequency_per_day","minutes_each"}] }`;
-}
-
-export const JOBS_SCHEMA = {
-  type: "object",
-  properties: {
-    ratings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          fit: { type: "string", enum: ["good", "partial", "no"] },
-          score: { type: "number" },
-          why: { type: "string" },
-          limits: { type: "string" },
-        },
-        required: ["id", "fit", "score", "why", "limits"],
-      },
-    },
-  },
-  required: ["ratings"],
-};
-
-export function buildJobsPrompt(
-  businessType: string,
-  tasks: unknown,
-  zones: unknown,
-  profile: unknown,
-): string {
-  return `You are rating how well a Booster K1 humanoid robot could take over repetitive tasks in a "${businessType}".
-
-K1 CAPABILITY PROFILE (the only source of truth about the robot):
-${JSON.stringify(profile)}
-
-ZONES: ${JSON.stringify(zones)}
-
-TASKS (done by human staff today):
-${JSON.stringify(tasks)}
-
-For EACH task, return exactly one rating with:
-- id: the task id, unchanged
-- fit: "good" (K1 can do essentially all of it with its listed abilities), "partial" (K1 can do a meaningful part, e.g. the talking/guiding/gesturing part, but not the physical part), or "no" (needs something in the K1 "cannot" list: carrying, wiping/cleaning, fine manipulation, stairs, doors, wet work...)
-- score: integer 0-100 for overall suitability (good ~70-95, partial ~30-65, no ~0-25)
-- why: 1-2 sentences, why this rating, referring to concrete K1 abilities
-- limits: ONE honest sentence about what the K1 cannot do for this task, based on the "cannot" list
-
-Be realistic and do not oversell: K1 is a small (95 cm) humanoid with no hands.
-STRICT RULES: do NOT write any numbers about money, savings, prices, time or hours anywhere in the text. Do not add or remove tasks.
-Return STRICT JSON: { "ratings": [ {"id","fit","score","why","limits"} ] }`;
+  "tasks": [{"id","title","zone_id","description","frequency_per_day","minutes_each"}],
+  "ratings": [{"id","fit","score","why","limits"}] }`;
 }
 
 export const SCENARIO_SCHEMA = {

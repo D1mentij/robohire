@@ -293,3 +293,26 @@
 - Fix (lib/ai/provider.ts): default fallbacks now 3.7-flash, 3.6-flash, 3.5-flash-lite, 3.1-flash-lite; each fallback gets half of the remaining budget
   (last gets all) so one hung model cannot starve the rest. Verified: primary 3.8 and 3.5 both now answer a real scenario prompt (10 steps) within the 18 s budget via lite fallback.
 - CONTRACT CHANGE: none. AI-generated: code by Claude Code.
+
+## [2026-11-23] Person 1 / Claude Code — local-first AI (Ollama)
+- Decision (user): product runs locally on a MacBook Air M5; primary AI = Ollama, Gemini optional.
+- Model research (ollama.com library, checked today): qwen3.8 is 27B only (18 GB, too big for an Air). Picked `qwen3-vl:8b-instruct` (6.2 GB, vision, no thinking mode)
+  as default and `qwen3-vl:4b-instruct` (3.3 GB) as the smaller fallback; other candidates seen: qwen3.5:4b/9b (thinking models, 3.3/6.6 GB), gemma4:e4b (6.6 GB).
+  NOT run by me: Ollama is not installed on the dev machine and I did not download ~10 GB without being asked → quality/latency NOT measured yet (scripts/bench-ai.ts does it).
+- lib/ai/provider.ts: AI_PROVIDER ("ollama" default | "gemini"), chosen per call. Ollama: POST /api/chat with `format` = JSON schema, `think:false`, temperature 0.2, 8k ctx,
+  frames capped at OLLAMA_MAX_FRAMES (default 4, evenly spread), 90 s default timeout; GET /api/tags preflight → "Start Ollama…" / "ollama pull …" errors (HTTP 503,
+  /upload offers "Continue with demo"); primary model missing → fallback model. ProviderUnavailableError base class (MissingKeyError extends it).
+- Fewer AI calls: (a) /api/analyze = ONE call → scene + tasks + ratings (additive optional `ratings` in the response; Task shape unchanged); ratings validated leniently and gaps
+  filled by lib/ai/ratings.ts keyword heuristics; /api/jobs = ROI + buildPlan in code only (accepts optional `ratings`, same response shape). (b) /api/scenario builds per-job scripts
+  in code (shiftFallback templates, response + `source`); `?ai=1` uses the AI, falls back to code. (c) /api/shift unchanged (AI on Hire, code fallback), budget 60 s local / 25 s Gemini.
+  AI calls per full run (upload → one hire): before 3 (analyze, job rating, scenario; +1 per extra job hired) → after 2 (analyze+rating merged, shift script; 0 extra per job).
+- Compact analysis prompt for Ollama (≈45% shorter); same validation/post-processing. Showcase: lib/ai/showcase.ts + showcaseDisk.ts + GET /api/showcase reads lib/ai/showcase/*.json;
+  /upload shows "Try real example: <name>"; `/upload?dev=1` (dev server only) shows "Save as showcase (dev)" (downloads analysis+jobs+plan JSON). No file shipped yet.
+- Removed `maxDuration` exports (Vercel-only). e2e now runs with Ollama pointed at a closed port (demo mode); e2e:prod kept as optional.
+- Tests: `npm run test:ai` (fake Ollama HTTP server: request shape, frame cap, fences, model fallback, not-running/not-pulled errors; ratings, showcase), e2e API test.
+  lint, build (no warnings), npm test, e2e pass. scripts/bench-ai.ts measures latency + validation on a video/frames folder.
+- CONTRACT CHANGE: none (types/contracts.ts untouched; AnalysisResult.ratings is optional in lib/ai/types.ts).
+- Changed files: lib/ai/{provider,analyze,jobs,ratings,prompts,scenario,scenarioCache,shift,shiftFallback,showcase,showcaseDisk,types}.ts, lib/ai/showcase/.gitkeep,
+  app/api/{analyze,jobs,scenario,shift,showcase}/route.ts, app/upload/page.tsx, scripts/{test-ai,bench-ai}.ts, e2e/, playwright.config.ts, .env.example, README.md, package.json.
+- AI-generated: code by Claude Code (Claude Sonnet 5.5). Runtime AI: local Ollama model (or Gemini).
+- Review round: no new Person 2 commits since the last review → skipped. Fixed 0, reported 0.

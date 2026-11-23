@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { generateScenario } from "@/lib/ai/scenario";
+import { buildJobScenario } from "@/lib/ai/shiftFallback";
 import { isJob, isScene } from "@/types/contracts";
-
-export const maxDuration = 60;
 
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status });
 
+/**
+ * POST { job, scene, businessType? } → { scenario, source: "code" | "ai" }.
+ * Default: built in CODE from templates (instant, no AI). `?ai=1` asks the AI model; on any AI failure the code
+ * scenario is returned instead (source "code"), so this endpoint always answers for a valid job + scene.
+ */
 export async function POST(req: Request) {
   let b: Record<string, unknown>;
   try {
@@ -18,7 +22,10 @@ export async function POST(req: Request) {
   if (!isScene(b.scene) || b.scene.zones.length === 0) return fail("Invalid scene.", 400);
   const businessType = typeof b.businessType === "string" ? b.businessType.slice(0, 100) : null;
 
-  const out = await generateScenario(b.job, b.scene, businessType);
-  if (!out.ok) return fail(out.error, out.error.includes("GEMINI_API_KEY") ? 503 : 502);
-  return NextResponse.json({ scenario: out.scenario });
+  if (new URL(req.url).searchParams.get("ai") === "1") {
+    const out = await generateScenario(b.job, b.scene, businessType);
+    if (out.ok) return NextResponse.json({ scenario: out.scenario, source: "ai" });
+    console.warn(`[scenario] AI failed, using code template: ${out.error}`);
+  }
+  return NextResponse.json({ scenario: buildJobScenario(b.job, b.scene), source: "code" });
 }

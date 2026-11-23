@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { generateShift } from "@/lib/ai/shift";
 import { isJob, isRobotPlan, isScene } from "@/types/contracts";
 
-export const maxDuration = 60;
-
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status });
 
 /**

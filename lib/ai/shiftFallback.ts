@@ -86,3 +86,14 @@ export function buildShiftFallback(plan: RobotPlan, jobs: Job[], scene: Scene, b
   );
   return { job_id: SHIFT_JOB_ID, steps: filterValidSteps(steps, zoneIds).slice(0, SHIFT_MAX_STEPS) };
 }
+
+/** Single-job scenario from the same templates as the shift fallback (no AI). Used by /api/scenario by default. */
+export function buildJobScenario(job: Job, scene: Scene): Scenario {
+  const zones = scene.zones;
+  const { zone, kind } = zoneForJob(job, zones);
+  const other = zone ? (zones.find((z) => z.id !== zone.id) ?? null) : null;
+  const raw: ScenarioStep[] = zone
+    ? jobSteps(job, zone, other, kind, 5).map((step) => { const copy = { ...step }; delete copy.label; return copy; })
+    : [{ action: "wave" }];
+  return { job_id: job.id, steps: filterValidSteps(raw, zones.map((z) => z.id)) };
+}

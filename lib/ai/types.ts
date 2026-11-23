@@ -19,7 +19,11 @@ export type Task = {
   minutes_each: number;
 };
 
-export type AnalysisResult = { scene: Scene; tasks: Task[] };
+/** How well K1 fits one task. Comes from the AI (same call as the analysis) or from lib/ai/ratings.ts heuristics. */
+export type Rating = { id: string; fit: "good" | "partial" | "no"; score: number; why: string; limits: string };
+
+/** `ratings` is optional on the wire: if absent or incomplete, /api/jobs fills the gaps with code heuristics. */
+export type AnalysisResult = { scene: Scene; tasks: Task[]; ratings?: Rating[] };
 
 export type AnalyzeResponse =
   | { ok: true; result: AnalysisResult }

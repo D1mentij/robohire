@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { rateJobs, type JobsInput } from "@/lib/ai/jobs";
+import { buildJobs, type JobsInput } from "@/lib/ai/jobs";
+import { parseRatings } from "@/lib/ai/ratings";
 import { isScene, type JobsResult, type RobotPlan } from "@/types/contracts";
-
-export const maxDuration = 60;
 
 type Resp = { ok: true; jobs: JobsResult; plan: RobotPlan } | { ok: false; error: string };
 const fail = (error: string, status: number) => NextResponse.json<Resp>({ ok: false, error }, { status });
@@ -38,7 +37,9 @@ export async function POST(req: Request) {
     ids.add(t.id);
     tasks.push({ id: t.id, title: t.title, zone_id: t.zone_id, description: t.description, frequency_per_day: t.frequency_per_day, minutes_each: t.minutes_each });
   }
-  const out = await rateJobs({ tasks, scene: b.scene, businessType: b.businessType.trim(), hoursPerWeek: b.hoursPerWeek, hourlyCost: b.hourlyCost });
-  if (!out.ok) return fail(out.error, out.error.includes("GEMINI_API_KEY") ? 503 : 502);
-  return NextResponse.json<Resp>(out);
+  // AI ratings come from the /api/analyze call (optional); anything missing is rated by code heuristics. No AI call here.
+  const ratings = parseRatings(b.ratings, ids);
+  const out = buildJobs({ tasks, scene: b.scene, businessType: b.businessType.trim(), hoursPerWeek: b.hoursPerWeek, hourlyCost: b.hourlyCost, ratings });
+  if (!out.ok) return fail(out.error, 500);
+  return NextResponse.json<Resp>({ ok: true, jobs: out.jobs, plan: out.plan });
 }

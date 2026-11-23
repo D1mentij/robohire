@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * npm run e2e      → starts `next dev` on :3200 with GEMINI_API_KEY="" (demo mode, no AI calls) and tests it.
- * npm run e2e:prod → tests the deployed app (E2E_BASE_URL=https://robohire-six.vercel.app), no local server.
+ * npm run e2e      → starts `next dev` on :3200 with Ollama pointed at a closed port (demo mode: no AI at all, the app
+ *                     falls back to code) and tests it.
+ * npm run e2e:prod  → optional: tests a deployed app (E2E_BASE_URL=https://robohire-six.vercel.app), no local server.
  */
 const prodUrl = process.env.E2E_BASE_URL;
 const PORT = 3200;
@@ -30,7 +31,7 @@ export default defineConfig({
         url: `http://localhost:${PORT}`,
         reuseExistingServer: false,
         timeout: 120_000,
-        // empty key → server AI routes fail fast → the app's built-in fallbacks are used (demo mode)
-        env: { GEMINI_API_KEY: "" },
+        // closed port → "Start Ollama" error instantly → built-in code fallbacks (demo mode). Existing env vars win over .env.local.
+        env: { AI_PROVIDER: "ollama", OLLAMA_URL: "http://127.0.0.1:9", GEMINI_API_KEY: "" },
       },
 });

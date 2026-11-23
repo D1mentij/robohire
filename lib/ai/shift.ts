@@ -1,6 +1,6 @@
 import { filterValidSteps, type Job, type RobotPlan, type Scenario, type ScenarioStep, type Scene } from "@/types/contracts";
 import { buildShiftPrompt, SHIFT_SCHEMA } from "./prompts";
-import { MissingKeyError, provider } from "./provider";
+import { ProviderUnavailableError, provider, shiftBudgetMs } from "./provider";
 import {
   buildShiftFallback,
   planJobs,
@@ -14,7 +14,6 @@ import {
 
 export type ShiftOutcome = { scenario: Scenario; source: "ai" | "fallback"; warning?: string };
 
-const TOTAL_MS = 25_000;
 
 /** AI "job" tag → display label. Unknown tags keep the previous step's label. */
 function toLabel(tag: unknown, titles: Map<string, string>, prev: string): string {
@@ -65,7 +64,7 @@ export async function generateShift(plan: RobotPlan, jobs: Job[], scene: Scene, 
   const started = Date.now();
   let lastError = "Unknown error";
   for (let attempt = 0; attempt < 2; attempt++) {
-    const left = TOTAL_MS - (Date.now() - started);
+    const left = shiftBudgetMs() - (Date.now() - started);
     if (left < 3000) break;
     try {
       const raw = await provider.generateJson(prompt, [], SHIFT_SCHEMA, { timeoutMs: left });
@@ -76,7 +75,7 @@ export async function generateShift(plan: RobotPlan, jobs: Job[], scene: Scene, 
       return { scenario: { job_id: SHIFT_JOB_ID, steps }, source: "ai" };
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e);
-      if (e instanceof MissingKeyError) break;
+      if (e instanceof ProviderUnavailableError) break;
       console.error(`[shift] attempt ${attempt + 1} failed:`, lastError.slice(0, 300));
     }
   }

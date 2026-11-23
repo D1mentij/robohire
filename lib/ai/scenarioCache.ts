@@ -96,7 +96,7 @@ export async function getOrCreateShift(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ plan, jobs, scene, businessType: opts.businessType ?? null }),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 70_000), // server budget: 60 s (local model) + overhead
   });
   const json = (await res.json().catch(() => null)) as { scenario?: unknown; source?: string; error?: string } | null;
   if (!res.ok || !json || !isScenario(json.scenario)) throw new Error(json?.error ?? `Server error (${res.status})`);
