@@ -230,3 +230,22 @@
 - CONTRACT CHANGE: None
 - Tested: verified in browser with mock café, real analysis (sofa/desk lounge room with obstacle avoidance around central sofa), and landing Demo; `npm run lint`, `npm run build`, `npm run test:roi`, `npm run check:mocks` all pass.
 - Blocked by: nothing
+
+## [2026-11-23] Person 1 / Claude Code — Part A: shift scenario
+- Done: POST /api/shift ({plan, jobs, scene, businessType?} → {scenario, source: "ai"|"fallback", warning?}), scenario.job_id = "shift".
+  lib/ai/shift.ts: Gemini writes ONE continuous demo (intro say → each plan job in order: walk_to zone, gesture, 1–2 job-specific says,
+  transitions → closing say), 10–20 steps; each AI step carries `job` (plan job id | intro | outro) mapped to step `label` (job title /
+  "Shift start" / "Shift end"); filterValidSteps; retry once if < 6 valid; 25 s total budget. Fallback (never an error): lib/ai/shiftFallback.ts
+  `buildShiftFallback` = intro + per-job mock-style steps (zone picked by word/keyword match, then first unused zone) + closing; pure, client-safe.
+  lib/ai/scenarioCache.ts `getOrCreateShift(plan, jobs, scene, {businessType, timeoutMs=30s})` (key = SHA-256 of plan.job_ids + scene;
+  only AI results cached, fallback returned but not cached). `npm run test:shift` (scripts/test-shift.ts).
+- Fix: lib/ai/provider.ts `timeoutMs` is now a TOTAL budget across model fallbacks (was per model → /api/shift took 75 s with a hung model);
+  primary model gets 60% of the budget so a fallback model still has time. Also makes /api/scenario's 18 s cap real.
+- CONTRACT CHANGE: types/contracts.ts ScenarioStep gets optional `label?: string` (display only: which job/phase a step belongs to);
+  isScenarioStepShape accepts it if it is a string, ignores it if absent. Agreed by both (user request). New scenario job_id value "shift".
+- Changed files: types/contracts.ts, lib/ai/{shift,shiftFallback,prompts,provider,scenarioCache}.ts, app/api/shift/route.ts,
+  scripts/test-shift.ts, package.json (+test:shift script), REVIEW.md, PROGRESS.md.
+- Tested: lint, build, test:roi, test:shift, check:mocks. /api/shift live: Gemini (gemini-3.5/3.8-flash) timed out on every call today,
+  so the endpoint returned the code fallback (18 steps) in 25.0 s; bad body → 400. AI path not verified live yet.
+- AI-generated: code by Claude Code (Claude Opus 5.5). At runtime Gemini writes the shift steps/speech; fallback lines are hand-written templates.
+- For Person 2: see REVIEW.md (Hire this K1 → /api/shift; /robot must accept job_id "shift" and show step labels).

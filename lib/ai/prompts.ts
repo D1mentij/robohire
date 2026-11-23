@@ -166,3 +166,47 @@ Rules:
 - Only things a robot WITHOUT hands can do: walking, turning, gestures, pointing, talking.
 - Do not mention prices, savings or money.`;
 }
+
+// ---------- whole-shift scenario ----------
+
+export const SHIFT_SCHEMA = {
+  type: "object",
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          job: { type: "string" },
+          action: { type: "string", enum: ["walk_to", "turn_to", "wave", "point_to", "say", "wait"] },
+          target: { type: "string" },
+          text: { type: "string" },
+          seconds: { type: "number" },
+        },
+        required: ["job", "action"],
+      },
+    },
+  },
+  required: ["steps"],
+};
+
+export function buildShiftPrompt(jobs: unknown, businessType: string | null, zones: unknown): string {
+  return `Write ONE continuous demo script: a small humanoid service robot (Booster K1) performs its WHOLE shift plan in this exact space.
+${businessType ? `Business: "${businessType}".\n` : ""}PLAN JOBS, in this order: ${JSON.stringify(jobs)}
+ZONES (the only valid targets): ${JSON.stringify(zones)}
+
+Return JSON { "steps": [...] } with 10 to 20 steps total. Allowed actions ONLY:
+- walk_to {target}   - turn_to {target}   - point_to {target}   - wave   - say {text}   - wait {seconds}
+Every step has "job": the plan job id it belongs to, or "intro" / "outro".
+Structure:
+1. intro: one say, e.g. "Starting my shift at <business>".
+2. For EACH plan job, in order: walk_to its zone (suggested_zone is a good default), 1 gesture (wave, point_to or turn_to),
+   1-2 say lines specific to that job. Make the transition natural (e.g. a short say or turn when moving to the next zone).
+3. outro: one closing say.
+Rules:
+- target MUST be one of the zone ids above, spelled exactly. Never invent zones.
+- say text: English, friendly, specific to the job and business, max 15 words.
+- wait seconds: 1 to 3.
+- Only things a robot WITHOUT hands can do: walking, turning, gestures, pointing, talking.
+- Do not mention prices, savings or money.`;
+}

@@ -39,7 +39,11 @@ export const geminiProvider: AiProvider = {
       { text: prompt },
     ];
     const primary = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-    const call = async (model: string) => {
+    // One deadline for the whole call incl. model fallbacks (opts.timeoutMs is a TOTAL budget, not per model).
+    const deadline = opts?.timeoutMs ? Date.now() + opts.timeoutMs : null;
+    const call = async (model: string, share = 1) => {
+      const left = deadline === null ? null : Math.round((deadline - Date.now()) * share);
+      if (left !== null && left < 1000) throw new DOMException("AI time budget used up", "TimeoutError");
       const res = await ai.models.generateContent({
         model,
         contents: [{ role: "user", parts }],
@@ -47,7 +51,7 @@ export const geminiProvider: AiProvider = {
           responseMimeType: "application/json",
           ...(schema ? { responseJsonSchema: schema } : {}),
           temperature: 0.4,
-          ...(opts?.timeoutMs ? { abortSignal: AbortSignal.timeout(opts.timeoutMs) } : {}),
+          ...(left !== null ? { abortSignal: AbortSignal.timeout(left) } : {}),
         },
       });
       const text = res.text;
@@ -57,7 +61,8 @@ export const geminiProvider: AiProvider = {
       return json;
     };
     try {
-      return await call(primary);
+      // with a budget and fallbacks available, the primary gets 60% so a hung model leaves time for another
+      return await call(primary, deadline !== null && fallbackModels(primary).length > 0 ? 0.6 : 1);
     } catch (e) {
       if (!isRetryable(e)) throw e;
       console.warn(`[ai] ${primary} failed (${String(e instanceof Error ? e.message : e).slice(0, 120)}), trying fallback`);
@@ -67,7 +72,7 @@ export const geminiProvider: AiProvider = {
           return await call(model); // one retry round: first fallback that answers wins
         } catch (e2) {
           last = e2;
-          if (!isRetryable(e2)) break;
+          if (!isRetryable(e2) || (deadline !== null && deadline - Date.now() < 1000)) break;
         }
       }
       throw last;

@@ -1,4 +1,4 @@
-import type { Job, Scenario, Scene } from "@/types/contracts";
+import type { Job, RobotPlan, Scenario, Scene } from "@/types/contracts";
 import { isScenario } from "@/types/contracts";
 
 /**
@@ -8,9 +8,9 @@ import { isScenario } from "@/types/contracts";
 const PREFIX = "robohire:scenariocache:";
 const MAX_ENTRIES = 20;
 
-async function hash(job: Job, scene: Scene): Promise<string | null> {
+async function hash(keyData: unknown): Promise<string | null> {
   try {
-    const data = new TextEncoder().encode(JSON.stringify({ id: job.id, scene }));
+    const data = new TextEncoder().encode(JSON.stringify(keyData));
     const buf = await crypto.subtle.digest("SHA-256", data);
     return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
   } catch {
@@ -51,7 +51,7 @@ export async function getOrCreateScenario(
   scene: Scene,
   opts: { businessType?: string | null; timeoutMs?: number; force?: boolean } = {},
 ): Promise<{ scenario: Scenario; cached: boolean }> {
-  const h = await hash(job, scene);
+  const h = await hash({ id: job.id, scene });
   const key = h ? PREFIX + h : null;
   if (key && !opts.force) {
     const hit = load(key);
@@ -70,4 +70,37 @@ export async function getOrCreateScenario(
   if (!res.ok || !json || !isScenario(json.scenario)) throw new Error(json?.error ?? `Server error (${res.status})`);
   if (key) save(key, json.scenario);
   return { scenario: json.scenario, cached: false };
+}
+
+/**
+ * Whole-plan scenario ("shift", POST /api/shift). Key = SHA-256 of {plan.job_ids, scene} (same LRU store).
+ * Only AI results are cached; the server's built-in fallback (source "fallback") is returned but not cached,
+ * so the next click can still get an AI script. Throws on network/HTTP errors. Client-side only.
+ */
+export async function getOrCreateShift(
+  plan: RobotPlan,
+  jobs: Job[],
+  scene: Scene,
+  opts: { businessType?: string | null; timeoutMs?: number; force?: boolean } = {},
+): Promise<{ scenario: Scenario; cached: boolean; source: "ai" | "fallback" | "cache" }> {
+  const h = await hash({ shift: plan.job_ids, scene });
+  const key = h ? PREFIX + "shift:" + h : null;
+  if (key && !opts.force) {
+    const hit = load(key);
+    if (hit) {
+      save(key, hit.scenario);
+      return { scenario: hit.scenario, cached: true, source: "cache" };
+    }
+  }
+  const res = await fetch("/api/shift", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan, jobs, scene, businessType: opts.businessType ?? null }),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+  });
+  const json = (await res.json().catch(() => null)) as { scenario?: unknown; source?: string; error?: string } | null;
+  if (!res.ok || !json || !isScenario(json.scenario)) throw new Error(json?.error ?? `Server error (${res.status})`);
+  const source = json.source === "fallback" ? "fallback" : "ai";
+  if (key && source === "ai") save(key, json.scenario);
+  return { scenario: json.scenario, cached: false, source };
 }

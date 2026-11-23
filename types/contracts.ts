@@ -67,6 +67,8 @@ export interface ScenarioStep {
   target?: string; // zone id
   text?: string;
   seconds?: number;
+  /** Optional, display only: which job / phase this step belongs to (e.g. in a whole-shift scenario). */
+  label?: string;
 }
 
 export interface Scenario {
@@ -153,6 +155,7 @@ function isScenarioStepShape(v: unknown): v is ScenarioStep {
   if (v.text !== undefined && !isStr(v.text)) return false;
   if (v.seconds !== undefined && !(isNum(v.seconds) && v.seconds >= 0))
     return false;
+  if (v.label !== undefined && !isStr(v.label)) return false;
   return true;
 }
 

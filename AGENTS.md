@@ -30,20 +30,6 @@ Next.js 16 has API changes — check node_modules/next/dist/docs/ before using N
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-## Review round (applies to BOTH agents, automatically on EVERY task)
-Trigger: runs on every task, not only when the user says "round". The word "round" still works as a standalone command
-(review only, no new feature: do steps 1 and 2, then 3).
-1. START of every task: `git pull`; read REVIEW.md; fix every open issue addressed to YOU first — only in your own folders;
-   shared files only for a contract issue (then log CONTRACT CHANGE in PROGRESS.md). Move fixed items to "Resolved" with the
-   fixing commit hash.
-2. END of every task (before the final commit): review the OTHER person's commits since your last review (`git log` +
-   `git diff`). Run `npm run lint`, `npm run build`, `npm run test:roi`, `npm run check:mocks`. Check data contracts
-   (types/contracts.ts; storage keys robohire:analysis / robohire:jobs / robohire:plan / robohire:scene / robohire:scenario;
-   /api/scenario request/response), edge cases (empty/invalid data, null payback, unknown zones) and UX bugs. NEVER edit the
-   other person's folders — add up to 5 issues (most important first, no style nitpicks) to their section in REVIEW.md. If
-   there are no new commits from them, skip the review.
-3. Final commit + push. Mention in the commit message and in the report: "fixed N, reported M". Report to the user briefly.
-
 ## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
