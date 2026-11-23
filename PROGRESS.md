@@ -437,3 +437,11 @@
 - AI-generated: all edits above by Antigravity (Gemini).
 - CONTRACT CHANGE: None
 - Tested: `npm run lint`, `npm run build`, `npm test` all pass.
+
+## [2026-11-23 22:53] Person 2 / Antigravity — Part 5: Final end-to-end self-test
+- Done: Ran full Playwright browser self-test against production build (`next start`, offline env `OLLAMA_URL=http://127.0.0.1:9`, `GEMINI_API_KEY=""`) — **19/19 checks passed**:
+  - Flow 1 (Demo): `/` → `"Try demo"` → `/jobs` → double-click `"Hire this K1"` → `/robot` renders 3-task `"Shift tasks"` checklist + current action line → Present mode (`Present` button, `P` key, `Esc` exit) hides/restores nav & toolbar → mid-run Replay → all 3/3 tasks `✓` → `"Shift completed ✓"` card with net `€/month` + payback → `"Export for real K1"` downloads valid `robohire_k1_shift.py` → `/report` renders cleanly.
+  - Flow 2 (Real hotel lobby): `/upload` → `"Try real example: Real hotel lobby"` → `/jobs` shows custom analysis banner with hotel tasks (no café tasks, hotel preset unselected) → switching to Retail Shop and clicking `"← Back to my analysis"` restores the real hotel analysis intact → `"Hire this K1"` → `/robot` completes all 4/4 hotel lobby shift tasks `✓`.
+  - Offline & Robustness: 0 external network requests across all pages + 3D; 0 console/page errors; `/robot` opened directly with empty storage loads demo; invalid/empty scenario falls back to demo; unknown zone step skipped cleanly while valid steps complete.
+- Changed files: PROGRESS.md.
+- CONTRACT CHANGE: None
