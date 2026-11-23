@@ -144,7 +144,6 @@ export interface SimCanvasProps {
   poseRef: React.MutableRefObject<RobotPose>;
   animation: RobotAnimationName;
   isPointing: boolean;
-  activeSpeech: string | null;
   followCamera?: boolean;
   onTick: (deltaSeconds: number) => void;
 }
@@ -158,7 +157,6 @@ export function SimCanvas({
   poseRef,
   animation,
   isPointing,
-  activeSpeech,
   followCamera = true,
   onTick,
 }: SimCanvasProps) {
@@ -241,7 +239,6 @@ export function SimCanvas({
             startPosition={startPosition}
             animation={animation}
             isPointing={isPointing}
-            activeSpeech={activeSpeech}
             onTick={onTick}
           />
         </Suspense>

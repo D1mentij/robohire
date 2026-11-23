@@ -12,7 +12,7 @@ export interface Vec2XZ {
   z: number;
 }
 
-export type RobotAnimationName = "Idle" | "Walking" | "Wave";
+export type RobotAnimationName = "Idle" | "Walking" | "Wave" | "Yes";
 
 export type ExecutorStatus = "idle" | "running" | "completed";
 

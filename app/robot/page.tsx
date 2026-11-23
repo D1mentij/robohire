@@ -4,28 +4,110 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
+import { shortLabel } from "@/lib/ai/labels";
 import {
   scriptFileName,
   toBoosterScript,
 } from "@/lib/k1export/toBoosterScript";
 import type { ScenarioStep, Zone } from "@/types/contracts";
 
-function formatStepSummary(step: ScenarioStep, zones: Zone[]): string {
+interface ShiftTaskGroup {
+  id: string;
+  label: string;
+  zoneName: string | null;
+  startIndex: number;
+  endIndex: number;
+}
+
+const META_LABELS = new Set(["Shift start", "Shift end"]);
+
+function buildShiftTaskGroups(
+  steps: ScenarioStep[],
+  zones: Zone[],
+  fallbackTitle: string,
+): ShiftTaskGroup[] {
+  const zoneLabelById = new Map<string, string>();
+  for (const z of zones) {
+    zoneLabelById.set(z.id, z.label);
+  }
+
+  const fallbackLabel = shortLabel(fallbackTitle);
+  const rawGroups: {
+    label: string;
+    startIndex: number;
+    endIndex: number;
+    steps: ScenarioStep[];
+  }[] = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const label = step.label?.trim() || fallbackLabel;
+    const prev = rawGroups[rawGroups.length - 1];
+    if (prev && prev.label === label) {
+      prev.endIndex = i;
+      prev.steps.push(step);
+    } else {
+      rawGroups.push({
+        label,
+        startIndex: i,
+        endIndex: i,
+        steps: [step],
+      });
+    }
+  }
+
+  const hasNonMeta = rawGroups.some((g) => !META_LABELS.has(g.label));
+  const filtered = hasNonMeta
+    ? rawGroups.filter((g) => !META_LABELS.has(g.label))
+    : rawGroups;
+
+  return filtered.map((group, idx) => {
+    const walkTarget = group.steps.find(
+      (s) => s.action === "walk_to" && s.target,
+    )?.target;
+    const anyTarget = group.steps.find((s) => s.target)?.target;
+    const targetId = walkTarget ?? anyTarget ?? null;
+    const zoneName = targetId ? (zoneLabelById.get(targetId) ?? targetId) : null;
+
+    return {
+      id: `${group.label}-${idx}`,
+      label: group.label,
+      zoneName,
+      startIndex: group.startIndex,
+      endIndex: group.endIndex,
+    };
+  });
+}
+
+function formatCurrentActionLine(
+  status: "idle" | "running" | "completed",
+  step: ScenarioStep | undefined,
+  zones: Zone[],
+  activeTaskZoneName: string | null,
+): string {
+  if (status === "idle") return "Ready to start shift";
+  if (status === "completed") return "All shift tasks completed";
+  if (!step) return "Running shift…";
+
   const zoneLabel = step.target
     ? (zones.find((z) => z.id === step.target)?.label ?? step.target)
-    : "";
+    : activeTaskZoneName;
 
   switch (step.action) {
     case "walk_to":
+      return zoneLabel ? `Walking to ${zoneLabel}` : "Walking across space";
     case "turn_to":
+      return zoneLabel ? `Turning to ${zoneLabel}` : "Turning";
     case "point_to":
-      return `→ ${zoneLabel}`;
-    case "say":
-      return step.text ? `"${step.text}"` : "";
-    case "wait":
-      return `${step.seconds ?? 0}s`;
+      return zoneLabel ? `Pointing at ${zoneLabel}` : "Pointing";
     case "wave":
-      return zoneLabel ? `→ ${zoneLabel}` : "gesture";
+      return zoneLabel ? `Waving at ${zoneLabel}` : "Waving to guests";
+    case "say":
+      if (step.label === "Shift start") return "Starting shift…";
+      if (step.label === "Shift end") return "Finishing shift…";
+      return zoneLabel ? `Assisting at ${zoneLabel}` : "Assisting guests";
+    case "wait":
+      return zoneLabel ? `Pausing at ${zoneLabel}` : "Pausing briefly";
   }
 }
 
@@ -36,23 +118,54 @@ export default function RobotSimulationPage() {
 
   const isShiftScenario = simData.scenario.job_id === "shift";
 
-  const shiftJobTitles = useMemo(() => {
-    const titles: string[] = [];
-    for (const step of executor.steps) {
-      if (
-        step.label &&
-        step.label !== "Shift start" &&
-        step.label !== "Shift end" &&
-        !titles.includes(step.label)
-      ) {
-        titles.push(step.label);
-      }
+  const taskGroups = useMemo(
+    () =>
+      buildShiftTaskGroups(
+        executor.steps,
+        simData.scene.zones,
+        simData.job.title,
+      ),
+    [executor.steps, simData.scene.zones, simData.job.title],
+  );
+
+  const activeTaskGroup = useMemo(() => {
+    if (executor.status !== "running" || executor.currentStepIndex === null) {
+      return null;
     }
-    if (titles.length === 0) {
-      titles.push(simData.job.title);
-    }
-    return titles;
-  }, [executor.steps, simData.job.title]);
+    return (
+      taskGroups.find(
+        (g) =>
+          executor.currentStepIndex! >= g.startIndex &&
+          executor.currentStepIndex! <= g.endIndex,
+      ) ?? null
+    );
+  }, [executor.status, executor.currentStepIndex, taskGroups]);
+
+  const currentStep =
+    executor.currentStepIndex !== null
+      ? executor.steps[executor.currentStepIndex]
+      : undefined;
+
+  const currentActionText = useMemo(
+    () =>
+      formatCurrentActionLine(
+        executor.status,
+        currentStep,
+        simData.scene.zones,
+        activeTaskGroup?.zoneName ?? null,
+      ),
+    [
+      executor.status,
+      currentStep,
+      simData.scene.zones,
+      activeTaskGroup?.zoneName,
+    ],
+  );
+
+  const shiftJobTitles = useMemo(
+    () => taskGroups.map((g) => g.label),
+    [taskGroups],
+  );
 
   function handleExportForRealK1() {
     const py = toBoosterScript(simData.scenario, simData.scene, {
@@ -101,45 +214,23 @@ export default function RobotSimulationPage() {
               K1 (simulation stand-in)
             </span>
             <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              {simData.source === "mock" ? "Demo Mode (mocks)" : "Custom Data"}
+              {simData.businessType}
             </span>
           </div>
           <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
             Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
-            {simData.scene.zones.length} zones • Job:{" "}
+            {simData.scene.zones.length} zones •{" "}
             <span className="font-semibold text-slate-900 dark:text-white">
-              {simData.job.title}
+              {isShiftScenario ? "Full Shift" : simData.job.title}
             </span>{" "}
             <span className="font-mono text-slate-500 dark:text-slate-400">
-              ({simData.scenario.job_id} • {executor.steps.length} steps)
+              ({taskGroups.length} {taskGroups.length === 1 ? "task" : "tasks"})
             </span>
           </p>
         </div>
 
         {/* Execution Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-950/90">
-            <span className="text-slate-500 dark:text-slate-400">Status:</span>
-            <span
-              className={`rounded border px-2 py-0.5 font-mono text-xs font-bold ${statusBadgeClass}`}
-            >
-              {statusLabel}
-            </span>
-            {executor.status === "running" && (
-              <>
-                <span className="text-slate-400 dark:text-slate-600">•</span>
-                <span className="font-mono text-xs font-semibold text-sky-600 dark:text-sky-300">
-                  {executor.phase}
-                </span>
-              </>
-            )}
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-            <span className="text-slate-500 dark:text-slate-400">Anim:</span>
-            <span className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">
-              {executor.animation}
-            </span>
-          </div>
-
           <button
             type="button"
             onClick={executor.start}
@@ -187,7 +278,7 @@ export default function RobotSimulationPage() {
         </div>
       </div>
 
-      {/* Main Content: Unobstructed 3D Viewport + Dedicated Step List Sidebar */}
+      {/* Main Content: Unobstructed 3D Viewport + Shift Tasks Checklist Sidebar */}
       <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="relative flex-1 overflow-hidden">
           <SimCanvas
@@ -199,52 +290,49 @@ export default function RobotSimulationPage() {
             poseRef={executor.poseRef}
             animation={executor.animation}
             isPointing={executor.isPointing}
-            activeSpeech={executor.activeSpeech}
             followCamera={followCamera}
             onTick={executor.tick}
           />
 
-          {/* High-Contrast Speech Banner (synced with 3D speech bubble) */}
-          {executor.activeSpeech && (
-            <div className="pointer-events-none absolute bottom-6 left-1/2 z-30 w-full max-w-xl -translate-x-1/2 px-4">
-              <div className="flex items-center gap-3 rounded-2xl border-2 border-sky-400 bg-slate-900/95 px-5 py-3 text-white shadow-2xl backdrop-blur-md">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-base text-sky-300">
-                  🔊
-                </span>
-                <div>
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-sky-300">
-                    K1 (simulation stand-in) speaking
-                  </div>
-                  <p className="text-sm font-semibold leading-snug text-white">
-                    &ldquo;{executor.activeSpeech}&rdquo;
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Job / Shift Completed ✓ Overlay Card showing NET savings from the RobotPlan */}
+          {/* Job / Shift Completed ✓ Overlay Card */}
           {executor.status === "completed" && (
             <div
               data-testid="job-completed-card"
-              className="pointer-events-auto absolute bottom-6 left-1/2 z-30 w-full max-w-md -translate-x-1/2 px-4"
+              className="pointer-events-auto absolute bottom-6 left-1/2 z-30 w-full max-w-lg -translate-x-1/2 px-4"
             >
               <div className="rounded-2xl border-2 border-emerald-400/80 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur-md dark:bg-slate-900/95 dark:text-white">
                 <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-1 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
                     {isShiftScenario ? "Shift completed ✓" : "Job Completed ✓"}
                   </span>
-                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                    {executor.steps.length}/{executor.steps.length} steps
+                  <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    {taskGroups.length}/{taskGroups.length} tasks done
                   </span>
                 </div>
 
-                <h3 className="mt-3 text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  {isShiftScenario
-                    ? shiftJobTitles.join(" + ")
-                    : simData.job.title}
-                </h3>
+                {/* Same checklist, all ✓ */}
+                <ul className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                  {taskGroups.map((task) => (
+                    <li
+                      key={task.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-50/70 px-3 py-2 text-sm dark:bg-emerald-950/40"
+                    >
+                      <span className="flex items-center gap-2 font-bold text-emerald-900 dark:text-emerald-100">
+                        <span className="text-base text-emerald-600 dark:text-emerald-400">
+                          ✓
+                        </span>
+                        <span>{task.label}</span>
+                      </span>
+                      {task.zoneName && (
+                        <span className="shrink-0 rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                          {task.zoneName}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
 
+                {/* Plan Net €/month + Payback from robohire:plan */}
                 <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -254,23 +342,19 @@ export default function RobotSimulationPage() {
                       €{simData.plan.net_savings_eur_month}/month net
                     </span>
                   </div>
-                  <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                  <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <span>
                       Payback:{" "}
-                      <strong className="font-mono">
+                      <strong className="font-mono text-slate-900 dark:text-white">
                         {simData.plan.payback_months !== null
-                          ? `${simData.plan.payback_months} mo`
+                          ? `${simData.plan.payback_months} months`
                           : "—"}
                       </strong>
                     </span>
                     <span>
-                      {isShiftScenario ? "Plan gross:" : "This job gross:"}{" "}
-                      <strong className="font-mono">
-                        €
-                        {isShiftScenario
-                          ? simData.plan.gross_savings_eur_month
-                          : simData.job.savings_eur_month}
-                        /mo
+                      Robot price:{" "}
+                      <strong className="font-mono text-slate-900 dark:text-white">
+                        €{simData.plan.robot_price_eur}
                       </strong>
                     </span>
                   </div>
@@ -296,7 +380,7 @@ export default function RobotSimulationPage() {
                     onClick={executor.replay}
                     className="cursor-pointer rounded-xl border border-sky-400/60 bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-500 active:scale-95"
                   >
-                    ↻ Replay Job
+                    ↻ Replay
                   </button>
                 </div>
               </div>
@@ -304,110 +388,114 @@ export default function RobotSimulationPage() {
           )}
         </div>
 
-        {/* Dedicated Step List Sidebar (never overlaps 3D scene) */}
-        <aside className="z-20 flex max-h-64 w-full shrink-0 flex-col border-t border-slate-200 bg-white p-4 transition-colors dark:border-slate-800 dark:bg-slate-900/95 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0 xl:w-96">
-          <div className="mb-2.5 flex items-center justify-between border-b border-slate-200 pb-2 dark:border-slate-800">
+        {/* Dedicated "Shift tasks" Checklist Sidebar */}
+        <aside
+          data-testid="shift-tasks-panel"
+          className="z-20 flex max-h-72 w-full shrink-0 flex-col border-t border-slate-200 bg-white p-5 transition-colors dark:border-slate-800 dark:bg-slate-900/95 lg:max-h-none lg:w-96 lg:border-l lg:border-t-0 xl:w-[26rem]"
+        >
+          <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
             <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                Scenario Steps ({executor.steps.length})
+              <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+                Shift tasks
               </h2>
-              <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                Start ({executor.startPosition.x.toFixed(1)}m,{" "}
-                {executor.startPosition.z.toFixed(1)}m)
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {simData.businessType}
               </p>
             </div>
             <span
-              className={`rounded-md border px-2 py-0.5 font-mono text-[11px] font-bold ${statusBadgeClass}`}
+              className={`rounded-lg border px-2.5 py-1 font-mono text-xs font-bold ${statusBadgeClass}`}
             >
               {statusLabel}
             </span>
           </div>
 
-          <ol className="flex-1 space-y-1.5 overflow-y-auto pr-1 text-xs">
-            {executor.steps.map((step, index) => {
-              const isCurrent =
-                executor.status === "running" &&
-                executor.currentStepIndex === index;
+          {/* One row per task grouped by step.label */}
+          <ol className="flex-1 space-y-2.5 overflow-y-auto pr-1">
+            {taskGroups.map((task) => {
               const isDone =
                 executor.status === "completed" ||
                 (executor.status === "running" &&
                   executor.currentStepIndex !== null &&
-                  executor.currentStepIndex > index);
-              const summary = formatStepSummary(step, simData.scene.zones);
-              const prevLabel =
-                index > 0 ? executor.steps[index - 1]?.label : undefined;
-              const showGroupLabel =
-                Boolean(step.label) && step.label !== prevLabel;
+                  executor.currentStepIndex > task.endIndex);
+              const isInProgress =
+                executor.status === "running" &&
+                executor.currentStepIndex !== null &&
+                executor.currentStepIndex >= task.startIndex &&
+                executor.currentStepIndex <= task.endIndex;
 
               return (
                 <li
-                  key={`${step.action}-${step.target ?? index}-${index}`}
-                  className="space-y-1"
+                  key={task.id}
+                  data-testid="shift-task-row"
+                  data-status={
+                    isDone ? "done" : isInProgress ? "in_progress" : "pending"
+                  }
+                  className={`flex items-center justify-between gap-3 rounded-2xl border-2 px-4 py-3.5 transition ${
+                    isInProgress
+                      ? "border-sky-500 bg-sky-50 text-slate-900 shadow-sm ring-1 ring-sky-400/40 dark:border-sky-400 dark:bg-sky-950/80 dark:text-white"
+                      : isDone
+                        ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
+                        : "border-slate-200 bg-slate-50/80 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300"
+                  }`}
                 >
-                  {showGroupLabel && (
-                    <div className="pt-1 font-mono text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
-                      {step.label}
-                    </div>
-                  )}
-                  <div
-                    className={`flex items-start justify-between gap-2 rounded-xl border px-2.5 py-2 transition ${
-                      isCurrent
-                        ? "border-sky-500 bg-sky-50 text-slate-900 shadow-xs ring-1 ring-sky-400/50 dark:border-sky-400 dark:bg-sky-950/90 dark:text-white"
-                        : isDone
-                          ? "border-emerald-500/40 bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
-                          : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300"
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[11px] font-bold opacity-75">
-                          #{index + 1}
-                        </span>
-                        <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[11px] font-bold text-sky-700 dark:bg-slate-800/90 dark:text-sky-300">
-                          {step.action}
-                        </span>
-                        {step.action !== "say" && summary && (
-                          <span className="truncate font-semibold text-slate-900 dark:text-white">
-                            {summary}
-                          </span>
-                        )}
-                      </div>
-                      {step.action === "say" && summary && (
-                        <p className="mt-1 line-clamp-2 text-[11px] italic text-slate-600 dark:text-slate-200">
-                          {summary}
-                        </p>
-                      )}
-                    </div>
-
+                  <div className="flex min-w-0 items-center gap-3">
                     <span
-                      className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
-                        isCurrent
-                          ? "bg-sky-500/20 text-sky-700 dark:bg-sky-500/30 dark:text-sky-200"
-                          : isDone
-                            ? "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-                            : "text-slate-400 dark:text-slate-500"
+                      aria-hidden="true"
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg font-extrabold ${
+                        isDone
+                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300"
+                          : isInProgress
+                            ? "bg-sky-500/20 text-sky-600 dark:text-sky-300"
+                            : "bg-slate-200/80 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
                       }`}
                     >
-                      {isCurrent
-                        ? executor.phase
-                        : isDone
-                          ? "✓ done"
-                          : "queued"}
+                      {isDone ? "✓" : isInProgress ? "▶" : "○"}
                     </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-bold leading-snug">
+                        {task.label}
+                      </div>
+                      {task.zoneName && (
+                        <div className="truncate text-sm font-medium text-slate-500 dark:text-slate-400">
+                          {task.zoneName}
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  <span
+                    className={`shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-bold ${
+                      isDone
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        : isInProgress
+                          ? "bg-sky-500/20 text-sky-700 dark:text-sky-200"
+                          : "text-slate-400 dark:text-slate-500"
+                    }`}
+                  >
+                    {isDone ? "✓ done" : isInProgress ? "▶ active" : "○ pending"}
+                  </span>
                 </li>
               );
             })}
           </ol>
 
-          {executor.currentTargetInfo && (
-            <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] text-slate-700 dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-300">
-              Edge stop: (
-              {executor.currentTargetInfo.stopPoint.x.toFixed(2)}m,{" "}
-              {executor.currentTargetInfo.stopPoint.z.toFixed(2)}m) • outside{" "}
-              {executor.currentTargetInfo.zone.id}
-            </div>
-          )}
+          {/* Single line below with the current action */}
+          <div
+            data-testid="current-action-line"
+            className="mt-4 flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-100/90 px-4 py-3 text-base font-bold text-slate-800 dark:border-slate-800 dark:bg-slate-950/90 dark:text-sky-200"
+          >
+            <span
+              aria-hidden="true"
+              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                executor.status === "running"
+                  ? "animate-pulse bg-sky-500"
+                  : executor.status === "completed"
+                    ? "bg-emerald-500"
+                    : "bg-slate-400"
+              }`}
+            />
+            <span className="truncate">{currentActionText}</span>
+          </div>
         </aside>
       </div>
     </main>

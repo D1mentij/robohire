@@ -27,6 +27,7 @@ import type {
 const FIVE_DEGREES_RAD = (5 * Math.PI) / 180;
 const WAVE_DURATION_SECONDS = 1.78;
 const POINT_HOLD_SECONDS = 1.25;
+const SAY_GESTURE_SECONDS = 1.5;
 
 interface EngineInternalState {
   status: ExecutorStatus;
@@ -36,8 +37,6 @@ interface EngineInternalState {
   waypointIndex: number;
   targetAngle: number | null;
   phaseTimer: number;
-  activeSpeech: string | null;
-  speechDone: boolean;
 }
 
 export interface ScenarioExecutorController {
@@ -47,8 +46,6 @@ export interface ScenarioExecutorController {
   currentStepIndex: number | null;
   /** Overall execution status */
   status: ExecutorStatus;
-  /** Currently spoken text for the speech bubble, or null */
-  activeSpeech: string | null;
   /** Granular sub-phase of the active step */
   phase: StepPhase;
   /** Target zone id of the active step (if any) */
@@ -67,9 +64,9 @@ export interface ScenarioExecutorController {
   poseRef: React.MutableRefObject<RobotPose>;
   /** Start execution from step 0 */
   start: () => void;
-  /** Immediately abort any active step/speech, reset to start pose, and restart from step 0 */
+  /** Immediately abort any active step, reset to start pose, and restart from step 0 */
   replay: () => void;
-  /** Abort any active step/speech and return robot to start pose in idle state */
+  /** Abort any active step and return robot to start pose in idle state */
   reset: () => void;
   /** Frame tick called by R3F useFrame */
   tick: (deltaSeconds: number) => void;
@@ -127,18 +124,13 @@ export function useScenarioExecutor(
     waypointIndex: 0,
     targetAngle: null,
     phaseTimer: 0,
-    activeSpeech: null,
-    speechDone: false,
   });
 
   const runIdRef = useRef<number>(0);
-  const timersRef = useRef<number[]>([]);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const [status, setStatus] = useState<ExecutorStatus>("idle");
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<StepPhase>("idle");
-  const [activeSpeech, setActiveSpeech] = useState<string | null>(null);
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
   const [animation, setAnimation] = useState<RobotAnimationName>("Idle");
   const [isPointing, setIsPointing] = useState<boolean>(false);
@@ -146,34 +138,12 @@ export function useScenarioExecutor(
   const [currentTargetInfo, setCurrentTargetInfo] =
     useState<WalkTargetInfo | null>(null);
 
-  const clearTimersAndSpeech = useCallback(() => {
-    for (const id of timersRef.current) {
-      window.clearTimeout(id);
-    }
-    timersRef.current = [];
-
-    if (utteranceRef.current) {
-      utteranceRef.current.onend = null;
-      utteranceRef.current.onerror = null;
-      utteranceRef.current = null;
-    }
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        // Ignore speechSynthesis errors
-      }
-    }
-  }, []);
-
   const syncUiState = useCallback(() => {
     const eng = engineRef.current;
     const pose = poseRef.current;
     setStatus(eng.status);
     setCurrentStepIndex(eng.stepIndex);
     setPhase(eng.phase);
-    setActiveSpeech(eng.activeSpeech);
     setAnimation(pose.animation);
     setIsPointing(pose.isPointing);
     setPointTarget(pose.pointTarget);
@@ -201,8 +171,6 @@ export function useScenarioExecutor(
         eng.waypointIndex = 0;
         eng.targetAngle = null;
         eng.phaseTimer = 0;
-        eng.activeSpeech = null;
-        eng.speechDone = false;
         pose.isPointing = false;
         pose.pointTarget = null;
 
@@ -310,82 +278,11 @@ export function useScenarioExecutor(
           }
 
           case "say": {
-            const text = (step.text ?? "").trim();
-            if (!text) continue;
-
-            const wordCount = text.split(/\s+/).filter(Boolean).length;
-            const fallbackMs = Math.max(2500, wordCount * 550 + 1500);
-            const minBubbleSeconds =
-              Math.min(fallbackMs, Math.max(1700, wordCount * 200)) / 1000;
-
+            // No speech output on stage: ~1.5s pause with a small nod/gesture
             eng.phase = "speaking";
-            eng.activeSpeech = text;
-            eng.phaseTimer = minBubbleSeconds;
-            eng.speechDone = false;
-            pose.animation = "Idle";
+            eng.phaseTimer = SAY_GESTURE_SECONDS;
+            pose.animation = "Yes";
             syncUiState();
-
-            const markSpeechFinished = () => {
-              if (
-                runId !== runIdRef.current ||
-                engineRef.current.stepIndex !== i
-              ) {
-                return;
-              }
-              engineRef.current.speechDone = true;
-            };
-
-            const fallbackId = window.setTimeout(() => {
-              if (
-                runId === runIdRef.current &&
-                engineRef.current.stepIndex === i &&
-                !engineRef.current.speechDone
-              ) {
-                if (
-                  typeof window !== "undefined" &&
-                  "speechSynthesis" in window
-                ) {
-                  try {
-                    window.speechSynthesis.cancel();
-                  } catch {
-                    // Ignore
-                  }
-                }
-                markSpeechFinished();
-              }
-            }, fallbackMs);
-            timersRef.current.push(fallbackId);
-
-            if (
-              typeof window !== "undefined" &&
-              "speechSynthesis" in window &&
-              typeof SpeechSynthesisUtterance !== "undefined"
-            ) {
-              try {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text);
-                const voices = window.speechSynthesis.getVoices();
-                const englishVoice =
-                  voices.find(
-                    (v) => /^en(-|_|$)/i.test(v.lang) && v.localService,
-                  ) ??
-                  voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ??
-                  null;
-                if (englishVoice) {
-                  utterance.voice = englishVoice;
-                }
-                utterance.lang = englishVoice?.lang ?? "en-US";
-                utterance.rate = 1.0;
-                utterance.onend = () => markSpeechFinished();
-                utterance.onerror = () => markSpeechFinished();
-                utteranceRef.current = utterance;
-                window.speechSynthesis.speak(utterance);
-              } catch {
-                markSpeechFinished();
-              }
-            } else {
-              markSpeechFinished();
-            }
             return;
           }
 
@@ -410,8 +307,6 @@ export function useScenarioExecutor(
       eng.waypointIndex = 0;
       eng.targetAngle = null;
       eng.phaseTimer = 0;
-      eng.activeSpeech = null;
-      eng.speechDone = false;
       pose.animation = "Idle";
       pose.isPointing = false;
       pose.pointTarget = null;
@@ -422,7 +317,6 @@ export function useScenarioExecutor(
 
   const reset = useCallback(() => {
     runIdRef.current += 1;
-    clearTimersAndSpeech();
 
     poseRef.current = {
       x: startPosition.x,
@@ -440,16 +334,13 @@ export function useScenarioExecutor(
       waypointIndex: 0,
       targetAngle: null,
       phaseTimer: 0,
-      activeSpeech: null,
-      speechDone: false,
     };
     syncUiState();
-  }, [clearTimersAndSpeech, startPosition, initialRotationY, syncUiState]);
+  }, [startPosition, initialRotationY, syncUiState]);
 
   const replay = useCallback(() => {
     runIdRef.current += 1;
     const nextRunId = runIdRef.current;
-    clearTimersAndSpeech();
 
     poseRef.current = {
       x: startPosition.x,
@@ -467,22 +358,19 @@ export function useScenarioExecutor(
       waypointIndex: 0,
       targetAngle: null,
       phaseTimer: 0,
-      activeSpeech: null,
-      speechDone: false,
     };
     beginStep(0, nextRunId);
-  }, [clearTimersAndSpeech, startPosition, initialRotationY, beginStep]);
+  }, [startPosition, initialRotationY, beginStep]);
 
   const start = useCallback(() => {
     replay();
   }, [replay]);
 
-  // Auto-start on mount and clean up timers + speechSynthesis on unmount
+  // Auto-start on mount and clean up on unmount
   useEffect(() => {
     if (!autoStart || steps.length === 0) {
       return () => {
         runIdRef.current += 1;
-        clearTimersAndSpeech();
       };
     }
     const timerId = window.setTimeout(() => {
@@ -491,9 +379,8 @@ export function useScenarioExecutor(
     return () => {
       window.clearTimeout(timerId);
       runIdRef.current += 1;
-      clearTimersAndSpeech();
     };
-  }, [autoStart, steps.length, replay, clearTimersAndSpeech]);
+  }, [autoStart, steps.length, replay]);
 
   const tick = useCallback(
     (deltaSeconds: number) => {
@@ -622,8 +509,8 @@ export function useScenarioExecutor(
 
       if (eng.phase === "speaking") {
         eng.phaseTimer -= dt;
-        if (eng.speechDone && eng.phaseTimer <= 0) {
-          eng.activeSpeech = null;
+        if (eng.phaseTimer <= 0) {
+          pose.animation = "Idle";
           beginStep(stepIndex + 1, activeRunId);
         }
         return;
@@ -644,7 +531,6 @@ export function useScenarioExecutor(
     steps,
     currentStepIndex,
     status,
-    activeSpeech,
     phase,
     activeZoneId,
     animation,

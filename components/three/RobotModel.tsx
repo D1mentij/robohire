@@ -7,7 +7,6 @@ import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { RobotAnimationName, RobotPose, Vec2XZ } from "@/lib/executor";
 import { LabelSprite } from "./LabelSprite";
-import { SpeechBubbleSprite } from "./SpeechBubbleSprite";
 
 const ROBOT_MODEL_URL = "/models/RobotExpressive.glb";
 /** RobotExpressive raw height is ~4.5 units; 0.26 scale ≈ 1.17m (Booster K1 height) */
@@ -51,7 +50,6 @@ export interface RobotModelProps {
   startPosition: Vec2XZ;
   animation: RobotAnimationName;
   isPointing: boolean;
-  activeSpeech: string | null;
   onTick: (deltaSeconds: number) => void;
 }
 
@@ -60,7 +58,6 @@ export function RobotModel({
   startPosition,
   animation,
   isPointing,
-  activeSpeech,
   onTick,
 }: RobotModelProps) {
   const outerGroupRef = useRef<THREE.Group>(null);
@@ -115,14 +112,17 @@ export function RobotModel({
     (nextAnim: RobotAnimationName) => {
       if (!actions) return;
       const prevAnim = activeAnimRef.current;
-      const nextAction = actions[nextAnim] ?? actions["Idle"];
+      const nextAction =
+        actions[nextAnim] ??
+        (nextAnim === "Yes" ? actions["Wave"] : undefined) ??
+        actions["Idle"];
       if (!nextAction) return;
 
       if (prevAnim !== nextAnim && actions[prevAnim]) {
         actions[prevAnim]?.fadeOut(0.16);
       }
 
-      if (nextAnim === "Wave") {
+      if (nextAnim === "Wave" || nextAnim === "Yes") {
         nextAction.setLoop(THREE.LoopOnce, 1);
       } else {
         nextAction.setLoop(THREE.LoopRepeat, Infinity);
@@ -222,11 +222,6 @@ export function RobotModel({
             <meshBasicMaterial color="#fde047" />
           </mesh>
         </group>
-      )}
-
-      {/* 3D Speech Bubble above robot while speaking */}
-      {activeSpeech && (
-        <SpeechBubbleSprite text={activeSpeech} position={[0, 2.24, 0]} />
       )}
 
       {/* Robot identifier badge above head */}

@@ -419,3 +419,11 @@
 - AI-generated: edits above by Antigravity (Gemini).
 - CONTRACT CHANGE: None
 - Tested: `npm run lint`, `npm run build`, `npm test` all pass.
+
+## [2026-11-23 22:47] Person 2 / Antigravity — Part 3: Remove speech, build Shift tasks checklist on /robot
+- Done: Removed all speech bubbles (`SpeechBubbleSprite.tsx`), subtitles banner, and `window.speechSynthesis` calls (`lib/executor/useScenarioExecutor.ts`, `components/three/RobotModel.tsx`, `components/three/SimCanvas.tsx`, `app/robot/page.tsx`). `"say"` steps now execute as a ~1.5 s silent pause with a subtle nod gesture (`"Yes"` clip with `"Wave"`/`"Idle"` fallback). Replaced the old per-step sidebar on `/robot` with a large-font `"Shift tasks"` checklist grouping contiguous steps by `step.label` (one row per task with `○` pending / `▶` in progress / `✓` done, task title + zone name) and a single current-action line below (`"Walking to Entrance"`, `"Pointing at Menu board"`, etc.). Updated the `"Job Completed"` / `"Shift completed"` overlay card to show the same all-`✓` checklist + plan net `€/month` + payback from `robohire:plan` + `"Export for real K1"` `.py` download button (`lib/k1export`).
+- Note for Person 1: `e2e/demo-flow.spec.ts` previously asserted `ol > li` count `>= 6` (old per-step list); with the new one-row-per-task checklist, `ol > li` has one row per task (`>= 2` for shifts, each showing `"✓ done"` on completion and `0` `"pending"`).
+- Changed files: app/robot/page.tsx, lib/executor/useScenarioExecutor.ts, lib/executor/types.ts, components/three/RobotModel.tsx, components/three/SimCanvas.tsx, (removed components/three/SpeechBubbleSprite.tsx), PROGRESS.md.
+- AI-generated: all edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Tested: `npm run lint`, `npm run build` pass.
