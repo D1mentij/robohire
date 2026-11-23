@@ -1,0 +1,235 @@
+{
+  "name": "Real hotel lobby",
+  "analysis": {
+    "scene": {
+      "room": {
+        "width": 7,
+        "depth": 5
+      },
+      "zones": [
+        {
+          "id": "corridor",
+          "label": "corridor",
+          "x": 4,
+          "z": 3,
+          "w": 2,
+          "d": 2
+        },
+        {
+          "id": "entrance",
+          "label": "entrance",
+          "x": 0.5,
+          "z": 1.5,
+          "w": 1,
+          "d": 3
+        },
+        {
+          "id": "counter",
+          "label": "counter",
+          "x": 2,
+          "z": 2,
+          "w": 2,
+          "d": 1
+        },
+        {
+          "id": "seating",
+          "label": "seating",
+          "x": 4,
+          "z": 1.75,
+          "w": 1,
+          "d": 0.5
+        }
+      ]
+    },
+    "tasks": [
+      {
+        "id": "corridor_way",
+        "title": "Guide guests to elevators via corridor",
+        "zone_id": "corridor",
+        "description": "Show guests the way to reception, elevators and rooms through corridor.",
+        "frequency_per_day": 40,
+        "minutes_each": 1
+      },
+      {
+        "id": "entrance_greet",
+        "title": "Greet guests at entrance",
+        "zone_id": "entrance",
+        "description": "Welcome arriving guests at entrance.",
+        "frequency_per_day": 60,
+        "minutes_each": 0.5
+      },
+      {
+        "id": "counter_reception",
+        "title": "Guide guests to reception at counter",
+        "zone_id": "counter",
+        "description": "Direct arriving guests to counter and explain the check-in steps.",
+        "frequency_per_day": 50,
+        "minutes_each": 1
+      },
+      {
+        "id": "seating_lounge",
+        "title": "Tell guests about lounge hours at seating",
+        "zone_id": "seating",
+        "description": "Explain lounge and bar opening hours to guests in seating.",
+        "frequency_per_day": 20,
+        "minutes_each": 1
+      },
+      {
+        "id": "entrance_luggage",
+        "title": "Carry luggage from entrance to rooms",
+        "zone_id": "entrance",
+        "description": "Take guests' bags from entrance to their rooms.",
+        "frequency_per_day": 25,
+        "minutes_each": 6
+      },
+      {
+        "id": "seating_tidy",
+        "title": "Tidy cushions and tables in seating",
+        "zone_id": "seating",
+        "description": "Straighten furniture and clear cups in seating.",
+        "frequency_per_day": 30,
+        "minutes_each": 3
+      }
+    ],
+    "ratings": [
+      {
+        "id": "corridor_way",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "entrance_greet",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "counter_reception",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "seating_lounge",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk."
+      },
+      {
+        "id": "entrance_luggage",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects."
+      },
+      {
+        "id": "seating_tidy",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects."
+      }
+    ],
+    "businessType": "Hotel lobby",
+    "hoursPerWeek": 60,
+    "hourlyCost": 8.5
+  },
+  "jobs": {
+    "business_type": "Hotel lobby",
+    "jobs": [
+      {
+        "id": "corridor_way",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Guide guests to elevators via corridor",
+        "hours_per_week": 4,
+        "savings_eur_month": 118,
+        "payback_months": null
+      },
+      {
+        "id": "entrance_greet",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Greet guests at entrance",
+        "hours_per_week": 3,
+        "savings_eur_month": 88,
+        "payback_months": null
+      },
+      {
+        "id": "counter_reception",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Guide guests to reception at counter",
+        "hours_per_week": 5,
+        "savings_eur_month": 147,
+        "payback_months": null
+      },
+      {
+        "id": "seating_lounge",
+        "fit": "good",
+        "score": 80,
+        "why": "Mostly talking, greeting or guiding, which K1 can do by speech, head turns and arm gestures.",
+        "limits": "Cannot hand over or touch anything: it can only walk, gesture and talk.",
+        "title": "Tell guests about lounge hours at seating",
+        "hours_per_week": 2,
+        "savings_eur_month": 59,
+        "payback_months": null
+      },
+      {
+        "id": "entrance_luggage",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
+        "title": "Carry luggage from entrance to rooms",
+        "hours_per_week": 15,
+        "savings_eur_month": 0,
+        "payback_months": null
+      },
+      {
+        "id": "seating_tidy",
+        "fit": "no",
+        "score": 10,
+        "why": "Mainly physical work that needs hands or carrying.",
+        "limits": "K1 has no hands and cannot carry, wipe, clean or manipulate objects.",
+        "title": "Tidy cushions and tables in seating",
+        "hours_per_week": 9,
+        "savings_eur_month": 0,
+        "payback_months": null
+      }
+    ]
+  },
+  "plan": {
+    "job_ids": [
+      "corridor_way",
+      "seating_lounge",
+      "counter_reception",
+      "entrance_greet"
+    ],
+    "hours_per_week": 11.2,
+    "capacity_hours_per_week": 36,
+    "gross_savings_eur_month": 412,
+    "running_cost_eur_month": 60,
+    "net_savings_eur_month": 352,
+    "robot_price_eur": 8000,
+    "payback_months": 23,
+    "assumptions": [
+      "Robot price €8000 (assumption — Booster publishes no price)",
+      "Coverage: good fit 80%, partial 40% of task hours",
+      "Robot active 6 h/day × 6 days = 36 h/week (battery + charging)",
+      "Staff cost €8.5/h; running cost €60/month for the one robot",
+      "4.33 weeks/month; jobs under €20/month gross are skipped"
+    ]
+  }
+}

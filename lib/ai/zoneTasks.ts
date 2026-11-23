@@ -1,6 +1,7 @@
 import { isScene, type Scene } from "@/types/contracts";
 import type { AnalysisResult, Rating, Task } from "./types";
 import { heuristicRating, makeRating } from "./ratings";
+import { detectBusiness, genericBasics, templatesFor, type Template } from "./businessTemplates";
 
 /**
  * Local (Ollama) analysis split: the small model only describes the SPACE (zones with a fixed type + a few visible
@@ -86,80 +87,48 @@ export function parseZonesAnswer(raw: unknown): { scene: Scene; activities: stri
   return { scene, activities };
 }
 
-type Template = { title: string; desc: string; perDay: number; minutes: number; fit: "good" | "partial" | "no"; why?: string };
-
-/** Frequencies are defaults for a ~60 h/week business; they are scaled by opening hours. Not measured data. */
-const TEMPLATES: Record<ZoneType, Template[]> = {
-  entrance: [
-    { title: "Greet arriving visitors", desc: "Welcome people at {zone} and tell them where to go.", perDay: 80, minutes: 0.5, fit: "good" },
-  ],
-  counter: [
-    { title: "Explain menu and offers at the counter", desc: "Answer repeated questions about products, prices and offers at {zone}.", perDay: 45, minutes: 1.5, fit: "good" },
-    { title: "Carry orders from the counter to customers", desc: "Bring finished items from {zone} to where customers are.", perDay: 35, minutes: 2, fit: "no" },
-  ],
-  seating: [
-    { title: "Guide visitors to a free seat", desc: "Show arriving guests to a free place in {zone}.", perDay: 40, minutes: 1, fit: "good" },
-    { title: "Clear and wipe tables", desc: "Remove dishes and wipe surfaces in {zone}.", perDay: 50, minutes: 2.5, fit: "no" },
-  ],
-  display: [
-    { title: "Present offers and products", desc: "Point out and explain products or offers shown at {zone}.", perDay: 30, minutes: 1.5, fit: "good" },
-  ],
-  waiting: [
-    { title: "Give queue and waiting-time information", desc: "Tell people in {zone} how long they wait and what happens next.", perDay: 35, minutes: 1, fit: "good" },
-  ],
-  shelves: [
-    { title: "Answer 'where can I find...' questions", desc: "Point visitors to items at {zone}.", perDay: 25, minutes: 1, fit: "good" },
-    { title: "Restock shelves", desc: "Carry and arrange goods at {zone}.", perDay: 6, minutes: 20, fit: "no" },
-  ],
-  desk: [
-    { title: "Answer visitor questions and check-in", desc: "Handle repeated questions and check-in at {zone}.", perDay: 40, minutes: 2, fit: "partial", why: "K1 can talk and point, but cannot handle documents, keys or payments." },
-  ],
-  corridor: [
-    { title: "Wayfinding: point visitors to their destination", desc: "Show people the way through {zone}.", perDay: 30, minutes: 1, fit: "good" },
-  ],
-  other: [
-    { title: "Answer general visitor questions", desc: "Respond to repeated questions near {zone}.", perDay: 20, minutes: 1, fit: "partial" },
-  ],
-};
-
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const MAX_TASKS = 7;
 const MAX_NO = 2;
 
 /** Tasks + rule-based ratings from zone types. Always 4–7 tasks, with at least 2 K1-suitable ones. */
-export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek: number): { tasks: Task[]; ratings: Rating[] } {
+export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek: number, businessType = ""): { tasks: Task[]; ratings: Rating[] } {
+  const kind = detectBusiness(businessType);
   const scale = Math.min(2.5, Math.max(0.3, hoursPerWeek / 60));
   const zones = scene.zones.map((z) => ({ z, type: zoneTypeOfId(z.id) }));
   if (!zones.length) return { tasks: [], ratings: [] };
   const entries: { task: Task; rating: Rating }[] = [];
   const used = new Set<string>();
+  const fill = (text: string, label: string) => text.replaceAll("{zone}", label);
   const add = (zoneId: string, t: Template) => {
-    if (used.has(t.title)) return; // one task per template, first matching zone wins
-    used.add(t.title);
+    if (used.has(t.key)) return; // one task per template, first matching zone wins
+    used.add(t.key);
     const zone = scene.zones.find((z) => z.id === zoneId)!;
-    const id = slug(`${zoneId}_${t.title}`).slice(0, 48);
-    const task: Task = { id, title: t.title, zone_id: zoneId, description: t.desc.replace("{zone}", zone.label.toLowerCase()), frequency_per_day: r1(t.perDay * scale), minutes_each: t.minutes };
-    const rating = makeRating(id, t.fit, t.why);
-    entries.push({ task, rating });
+    const label = zone.label.trim().slice(0, 30);
+    const title = fill(t.title, label);
+    const id = slug(`${zoneId}_${t.key}`).slice(0, 48);
+    const task: Task = { id, title, zone_id: zoneId, description: fill(t.desc, label.toLowerCase()), frequency_per_day: r1(t.perDay * scale), minutes_each: t.minutes };
+    entries.push({ task, rating: makeRating(id, t.fit, t.why) });
   };
-  for (const { z, type } of zones) for (const t of TEMPLATES[type]) add(z.id, t);
+  for (const { z, type } of zones) for (const t of templatesFor(kind, type)) add(z.id, t);
   // visible activities become extra tasks (generic numbers, heuristic rating), at the most relevant zone
   const home = zones.find((x) => x.type === "counter") ?? zones.find((x) => x.type === "seating") ?? zones[0];
   for (const a of activities.slice(0, 2)) {
+    if (entries.length >= 5) break; // templates already cover the business; raw activity phrases make poor task titles
     if (/robot|charg|dock/i.test(a)) continue;
     const title = a[0].toUpperCase() + a.slice(1);
-    if (used.has(title)) continue;
-    used.add(title);
+    if (used.has(`act:${title}`)) continue;
+    used.add(`act:${title}`);
     const task: Task = { id: slug(`${home.z.id}_${title}`).slice(0, 48), title, zone_id: home.z.id, description: `Seen in the video: ${a}.`, frequency_per_day: r1(15 * scale), minutes_each: 3 };
     entries.push({ task, rating: heuristicRating(task) });
   }
   // always have enough K1-suitable work: top up with entrance/zone-agnostic basics
   const goodCount = () => entries.filter((e) => e.rating.fit !== "no").length;
   const first = zones[0].z.id;
-  for (const t of [TEMPLATES.entrance[0], TEMPLATES.corridor[0], TEMPLATES.display[0]]) if (goodCount() < 2) add(first, t);
+  for (const t of genericBasics()) if (goodCount() < 2) add(first, t);
   // cap: all suitable first, then at most MAX_NO unsuitable
-  const suitable = entries.filter((e) => e.rating.fit !== "no").slice(0, MAX_TASKS - 1);
+  const suitable = entries.filter((e) => e.rating.fit !== "no").slice(0, MAX_TASKS - 2); // leave room for a physical ("no") task: the demo should show K1 limits
   const no = entries.filter((e) => e.rating.fit === "no").slice(0, Math.min(MAX_NO, MAX_TASKS - suitable.length));
   const picked = [...suitable, ...no].slice(0, MAX_TASKS);
   // keep at least 4 tasks if possible
@@ -167,11 +136,11 @@ export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek:
   return { tasks: picked.map((e) => e.task), ratings: picked.map((e) => e.rating) };
 }
 
-export function validateZonesAnalysis(raw: unknown, hoursPerWeek: number, cleanScene: (s: Scene) => Scene | null): AnalysisResult {
+export function validateZonesAnalysis(raw: unknown, hoursPerWeek: number, cleanScene: (s: Scene) => Scene | null, businessType = ""): AnalysisResult {
   const { scene: rawScene, activities } = parseZonesAnswer(raw);
   const scene = cleanScene(rawScene);
   if (!scene) throw new Error("No usable zones after cleanup");
-  const { tasks, ratings } = tasksFromZones(scene, activities, hoursPerWeek);
+  const { tasks, ratings } = tasksFromZones(scene, activities, hoursPerWeek, businessType);
   if (!tasks.length) throw new Error("No tasks could be derived");
   return { scene, tasks, ratings };
 }

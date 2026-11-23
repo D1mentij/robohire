@@ -14,8 +14,9 @@ import { OllamaUnavailableError, parseModelJson, provider, providerName, isUnava
 import { parseShowcase } from "../lib/ai/showcase";
 import { readShowcasesFromDisk } from "../lib/ai/showcaseDisk";
 import { ANALYSIS_SCHEMA, buildAnalysisPrompt } from "../lib/ai/prompts";
+import { detectBusiness } from "../lib/ai/businessTemplates";
 import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis } from "../lib/ai/zoneTasks";
-import { filterValidSteps, isJobsResult, isRobotPlan } from "../types/contracts";
+import { filterValidSteps, isJobsResult, isRobotPlan, type Scene } from "../types/contracts";
 
 const zoneIds = mockScene.zones.map((z) => z.id);
 
@@ -213,6 +214,48 @@ delete process.env.AI_PROVIDER;
   const one = tasksFromZones({ room: { width: 4, depth: 4 }, zones: [{ id: "other", label: "Room", x: 2, z: 2, w: 3, d: 3 }] }, [], 60);
   assert.ok(one.tasks.length >= 1 && one.ratings.some((r) => r.fit !== "no"));
   assert.throws(() => parseZonesAnswer({ room: { width: 4, depth: 4 }, zones: [] }));
+}
+// ---- business-type templates: tasks fit the business, mention the real zone label
+{
+  const labels: Record<string, string> = { entrance: "Main door", counter: "Front counter", seating: "Lounge seats", display: "Info board", waiting: "Waiting nook", shelves: "Book racks", desk: "Help desk", corridor: "Long corridor" };
+  const types = Object.keys(labels);
+  const mk = (): Scene => ({
+    room: { width: 20, depth: 20 },
+    zones: types.map((t, i) => ({ id: t, label: labels[t], x: 2 + (i % 4) * 4.5, z: 3 + Math.floor(i / 4) * 8, w: 3, d: 3 })),
+  });
+  const CAFE_ONLY = /menu|barista|orders|wipe tables|free table|specials|coffee/i;
+  const kinds: [string[], string, RegExp?][] = [
+    [["Hotel lobby", "Boutique hotel", "viesnīca", "Viesnīca Rīgā", "отель", "Гостиница"], "hotel"],
+    [["Car showroom", "Auto salons", "Mazda dealership", "автосалон", "autosalons"], "showroom"],
+    [["Public library", "bibliotēka", "библиотека"], "library"],
+    [["Small café", "Coffee shop", "restaurant", "kafejnīca", "кафе", "ресторан"], "cafe"],
+    [["Retail shop", "Clothing store", "veikals", "магазин"], "retail"],
+    [["Office reception", "Dental clinic", "birojs", "офис"], "office"],
+    [["University lobby", "Riga Technical University", "universitāte", "университет"], "university"],
+    [["", "Something else", "Other"], "generic"],
+  ];
+  for (const [names, kind] of kinds) {
+    for (const n of names) assert.equal(detectBusiness(n), kind, `${n} → ${detectBusiness(n)}`);
+    const { tasks, ratings } = tasksFromZones(mk(), [], 60, names[0]);
+    assert.ok(tasks.length >= 4 && tasks.length <= 7, `${kind}: ${tasks.length} tasks`);
+    assert.ok(ratings.filter((r) => r.fit !== "no").length >= 2, `${kind}: suitable tasks`);
+    assert.ok(ratings.some((r) => r.fit === "no"), `${kind}: has a physical task K1 cannot do`);
+    for (const t of tasks) {
+      assert.ok(Object.values(labels).some((l) => t.title.includes(l)), `${kind}: title "${t.title}" has no zone label`);
+      if (kind === "hotel" || kind === "showroom" || kind === "library") assert.ok(!CAFE_ONLY.test(t.title), `${kind}: café task "${t.title}"`);
+    }
+    const ids = new Set(tasks.map((t) => t.id));
+    assert.equal(ids.size, tasks.length);
+  }
+  const titles = (b: string) => tasksFromZones(mk(), [], 60, b).tasks.map((t) => t.title).join(" | ");
+  assert.match(titles("Hotel"), /luggage/i);
+  assert.match(titles("Hotel"), /breakfast and amenities/i);
+  assert.match(titles("Car showroom"), /test-drive/i);
+  assert.match(titles("Library"), /self-service return/i);
+  assert.match(titles("Library"), /Reshelve|quiet hours/i);
+  // a kind with a missing zone type falls back to generic templates (no crash, still labelled)
+  const only = tasksFromZones({ room: { width: 6, depth: 6 }, zones: [{ id: "other", label: "Bay", x: 3, z: 3, w: 2, d: 2 }] }, [], 60, "Library");
+  assert.ok(only.tasks.length >= 1 && only.tasks.every((t) => t.title.includes("Bay") || t.zone_id));
 }
 console.log("test:ai OK");
 }

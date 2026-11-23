@@ -362,3 +362,14 @@
 - Note: Person 2's own preset scenarios in app/jobs/page.tsx are not touched (their folder); they should apply `finalizeSteps` or use ≤ 4-word labels too.
 - CONTRACT CHANGE: none. AI-generated: code by Claude Code (Claude Sonnet 5.5).
 - Review round: no new Person 2 commits since the last review → skipped. Fixed 0, reported 0.
+
+## [2026-11-23] Person 1 / Claude Code — business-type task templates (local AI)
+- lib/ai/businessTemplates.ts: template sets for café/restaurant, hotel, car showroom, shop/retail, library, office/reception, university + generic fallback (also used for zone types a set does not define).
+  `detectBusiness(businessType)` by keywords EN/LV/RU (e.g. "viesnīca", "отель", "автосалон", "bibliotēka"); unknown/empty → generic. Titles/descriptions contain the REAL zone label ("Guide guests to elevators via corridor").
+  Each set has ≥ 1 physical task K1 cannot do (hotel: luggage; showroom: polish cars; library: reshelve books …). Raw "activities" only become tasks when fewer than 5 template tasks exist.
+  `/api/analyze` passes businessType through (tasksFromZones / validateZonesAnalysis got an optional businessType arg).
+- Tests (scripts/test-ai.ts): detection per kind incl. LV/RU; per kind 4–7 tasks, ≥ 2 suitable, ≥ 1 "no", every title contains a zone label, no café-only task for hotel/showroom/library, kind-specific tasks present.
+- Bench (4B, 4 @ 512): Hotel 3/3 valid, 10–11 s warm, 4–5 zones, 7 tasks; Auto 3/3 valid, 12–14 s, 4–6 zones, 5 tasks. Second showcase: lib/ai/showcase/real-hotel-lobby.json ("Real hotel lobby", from the hotel video; no video committed).
+- Known limits: frequencies/minutes in templates are assumptions; label quality still depends on the 4B model (it sometimes just repeats the zone type as label).
+- Tested: tsc, lint, build, npm test, e2e. CONTRACT CHANGE: none. AI-generated: code by Claude Code (Claude Sonnet 5.5); showcase by qwen3-vl:4b-instruct + rule-based code.
+- Review round: no new Person 2 commits since the last review → skipped. Fixed 0, reported 0 (the earlier preset issue in REVIEW.md is still open).

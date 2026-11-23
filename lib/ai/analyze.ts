@@ -147,7 +147,7 @@ export async function analyze(data: UploadData): Promise<AnalyzeOutcome> {
     if (left !== undefined && left < 20_000) break;
     try {
       const raw = await provider.generateJson(prompt, data.frames, schema, left === undefined ? undefined : { timeoutMs: Math.min(left, ATTEMPT_CAP_MS) });
-      return { ok: true, result: local ? validateZonesAnalysis(raw, data.hoursPerWeek, cleanScene) : validateAnalysis(raw) };
+      return { ok: true, result: local ? validateZonesAnalysis(raw, data.hoursPerWeek, cleanScene, data.businessType) : validateAnalysis(raw) };
     } catch (e) {
       if (e instanceof ProviderUnavailableError) return { ok: false, error: e.message };
       lastError = e instanceof Error ? e.message : String(e);
