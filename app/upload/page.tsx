@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getCached, hashInputs, putCached } from "@/lib/ai/uploadCache";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
 import type { JobsResult, RobotPlan } from "@/types/contracts";
 import {
@@ -11,6 +12,7 @@ import {
   JOBS_STORAGE_KEY,
   PLAN_STORAGE_KEY,
   UPLOAD_STORAGE_KEY,
+  clearRunStorage,
   type AnalysisResult,
   type AnalyzeResponse,
   type StoredAnalysis,
@@ -39,6 +41,7 @@ export default function UploadPage() {
 
   const [checking, setChecking] = useState(false);
   const checkId = useRef(0);
+  const hashRef = useRef<string | null>(null);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -49,11 +52,31 @@ export default function UploadPage() {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
 
+  const [cached, setCached] = useState(false);
+  const [runStart, setRunStart] = useState(0);
+  const [jobsStart, setJobsStart] = useState(0);
+  const [now, setNow] = useState(0);
+  const running = analyzing || jobsLoading;
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [running]);
+  const elapsed = running && runStart ? Math.max(0, Math.round((Math.max(now, runStart) - runStart) / 1000)) : 0;
+  const STEPS = ["Reading frames", "Mapping zones", "Matching K1 jobs", "Building shift plan"];
+  // The first call does reading + mapping in one go; the split is a time-based estimate.
+  const stage = analyzing
+    ? elapsed < 6 ? 0 : 1
+    : jobsLoading
+      ? Math.max(now, jobsStart) - jobsStart < 8000 ? 2 : 3
+      : -1;
+
   const busy = progress !== null;
   const totalKb = Math.round(frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024);
 
   async function onFile(f: File | null) {
     const id = ++checkId.current;
+    clearRunStorage();
     setFile(null);
     setFrames([]);
     setAnalysis(null);
@@ -98,6 +121,7 @@ export default function UploadPage() {
     setErrors(errs);
     if (Object.keys(errs).length || !file) return;
 
+    clearRunStorage();
     setFrames([]);
     setAnalysis(null);
     setJobs(null);
@@ -122,18 +146,39 @@ export default function UploadPage() {
     }
   }
 
-  async function onAnalyze() {
-    if (!frames.length || analyzing) return;
-    setAnalyzing(true);
+  async function onAnalyze(force = false) {
+    if (!frames.length || analyzing || jobsLoading) return;
     setAnalyzeError("");
+    setJobsError("");
+    setCached(false);
+    const data: UploadData = {
+      businessType: businessType.trim(),
+      hoursPerWeek: Number(hoursPerWeek),
+      hourlyCost: Number(hourlyCost),
+      frames,
+    };
+    const hash = await hashInputs(frames, data.businessType, data.hoursPerWeek, data.hourlyCost);
+    hashRef.current = hash;
+    const hit = hash && !force ? getCached(hash) : null;
+    if (hit) {
+      clearRunStorage({ keepUpload: true });
+      setAnalysis({ scene: hit.analysis.scene, tasks: hit.analysis.tasks });
+      setJobs(hit.jobs);
+      setPlan(hit.plan);
+      setCached(true);
+      sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(hit.analysis));
+      sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(hit.jobs));
+      sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(hit.plan));
+      return;
+    }
+    clearRunStorage({ keepUpload: true });
     setAnalysis(null);
+    setJobs(null);
+    setPlan(null);
+    setRunStart(Date.now());
+    setNow(Date.now());
+    setAnalyzing(true);
     try {
-      const data: UploadData = {
-        businessType: businessType.trim(),
-        hoursPerWeek: Number(hoursPerWeek),
-        hourlyCost: Number(hourlyCost),
-        frames,
-      };
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,6 +212,7 @@ export default function UploadPage() {
 
   async function loadJobs(stored: StoredAnalysis) {
     setJobsLoading(true);
+    setJobsStart(Date.now());
     setJobsError("");
     try {
       sessionStorage.removeItem(JOBS_STORAGE_KEY);
@@ -190,6 +236,7 @@ export default function UploadPage() {
       setPlan(json.plan);
       sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.jobs));
       sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(json.plan));
+      if (hashRef.current) putCached(hashRef.current, { analysis: stored, jobs: json.jobs, plan: json.plan });
     } catch (err) {
       setJobsError(netError(err, "Job rating failed"));
     } finally {
@@ -301,7 +348,7 @@ export default function UploadPage() {
             </button>
             <button
               type="button"
-              onClick={onAnalyze}
+              onClick={() => void onAnalyze()}
               disabled={!frames.length || busy || analyzing || jobsLoading}
               title={frames.length ? "" : "Extract frames first"}
               className="cursor-pointer rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 shadow-2xs transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
@@ -347,10 +394,30 @@ export default function UploadPage() {
           </section>
         )}
 
-        {analyzing && (
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-            AI is studying your space… this can take 10–40 seconds.
-          </p>
+        {running && (
+          <section aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+            <ol className="flex flex-wrap gap-x-2 gap-y-1 text-sm">
+              {STEPS.map((name, i) => (
+                <li
+                  key={name}
+                  className={
+                    i < stage
+                      ? "font-medium text-emerald-700 dark:text-emerald-400"
+                      : i === stage
+                        ? "font-bold text-sky-700 dark:text-sky-300"
+                        : "text-slate-400 dark:text-slate-600"
+                  }
+                >
+                  {i < stage ? "✓ " : i === stage ? "● " : "○ "}
+                  {name}
+                  {i < STEPS.length - 1 && <span className="ml-2 text-slate-400">→</span>}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+              {elapsed} s elapsed · usually 10–40 s
+            </p>
+          </section>
         )}
         {analyzeError && (
           <p
@@ -429,12 +496,28 @@ export default function UploadPage() {
                 </ul>
               </details>
             )}
-            <Link
-              href="/jobs"
-              className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
-            >
-              See robot jobs →
-            </Link>
+            {cached && (
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                <span className="mr-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-700 dark:text-amber-300">
+                  cached
+                </span>
+                Same video and settings as before — no AI call made.{" "}
+                <button type="button" className="cursor-pointer underline" onClick={() => void onAnalyze(true)}>
+                  Re-run AI
+                </button>
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-4">
+              <Link
+                href="/jobs"
+                className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
+              >
+                See robot jobs →
+              </Link>
+              <Link href="/report" className="text-sm font-semibold text-sky-700 underline dark:text-sky-300">
+                Open business report →
+              </Link>
+            </div>
           </section>
         )}
 

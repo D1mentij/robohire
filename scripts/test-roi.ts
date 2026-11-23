@@ -62,4 +62,14 @@ const job = (id: string, fit: Job["fit"], hours: number, gross: number): Job => 
   assert.equal(e.running_cost_eur_month, 0);
   assert.equal(e.payback_months, null);
 }
+// opening hours cap task hours and plan capacity
+{
+  const base = computeRoi({ frequency_per_day: 20, minutes_each: 30, fit: "good", hourlyCost: 8.5 });
+  const capped = computeRoi({ frequency_per_day: 20, minutes_each: 30, fit: "good", hourlyCost: 8.5, hoursPerWeek: 10 });
+  assert.equal(base.hours_per_week, 60);
+  assert.equal(capped.hours_per_week, 10);
+  const p = buildPlan([job("a", "good", 10, 300)], 8.5, 10);
+  assert.equal(p.capacity_hours_per_week, 10);
+  assert.ok(p.hours_per_week <= 10);
+}
 console.log("roi tests passed");

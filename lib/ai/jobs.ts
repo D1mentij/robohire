@@ -47,11 +47,11 @@ export async function rateJobs(input: JobsInput): Promise<JobsOutcome> {
       const raw = await provider.generateJson(prompt, [], JOBS_SCHEMA);
       const ratings = parseRatings(raw, input.tasks);
       const jobs = input.tasks
-        .map((t) => buildJob({ ...ratings.get(t.id)!, title: t.title }, t, input.hourlyCost))
+        .map((t) => buildJob({ ...ratings.get(t.id)!, title: t.title }, t, input.hourlyCost, input.hoursPerWeek))
         .sort((a, b) => b.score - a.score);
       const result: JobsResult = { business_type: input.businessType, jobs };
       if (!isJobsResult(result)) throw new Error("Result failed JobsResult validation");
-      const plan = buildPlan(result.jobs, input.hourlyCost);
+      const plan = buildPlan(result.jobs, input.hourlyCost, input.hoursPerWeek);
       if (!isRobotPlan(plan)) throw new Error("Plan failed RobotPlan validation");
       return { ok: true, jobs: result, plan };
     } catch (e) {
