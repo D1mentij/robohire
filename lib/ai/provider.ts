@@ -10,7 +10,7 @@ export class MissingKeyError extends Error {}
 
 const DEFAULT_MODEL = "gemini-3.8-flash";
 /** Other current fast flash models listed in the @google/genai SDK `Model` type. */
-const DEFAULT_FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash"];
+const DEFAULT_FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
 function fallbackModels(primary: string): string[] {
   const env = process.env.GEMINI_FALLBACK_MODELS;
@@ -67,9 +67,11 @@ export const geminiProvider: AiProvider = {
       if (!isRetryable(e)) throw e;
       console.warn(`[ai] ${primary} failed (${String(e instanceof Error ? e.message : e).slice(0, 120)}), trying fallback`);
       let last: unknown = e;
-      for (const model of fallbackModels(primary)) {
+      const chain = fallbackModels(primary);
+      for (const [i, model] of chain.entries()) {
         try {
-          return await call(model); // one retry round: first fallback that answers wins
+          // each fallback gets half of what is left (the last one all of it), so one hung model cannot starve the rest
+          return await call(model, deadline !== null && i < chain.length - 1 ? 0.5 : 1); // first fallback that answers wins
         } catch (e2) {
           last = e2;
           if (!isRetryable(e2) || (deadline !== null && deadline - Date.now() < 1000)) break;

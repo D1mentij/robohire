@@ -284,3 +284,12 @@
 - Review round: no new Person 2 commits since 2b702af (reviewed in Part A) → skipped.
 - CONTRACT CHANGE: none
 - AI-generated: test + config by Claude Code (Claude Opus 5.5).
+
+## [2026-11-23] Person 1 / Claude Code — Gemini timeout diagnosis
+- Root cause: Google-side capacity, not our code/key/network. Key valid, models list OK (275 ms), all configured model names exist. Direct tests:
+  gemini-3.8-flash and 3.7-flash → 503 UNAVAILABLE "high demand" (fast); gemini-3.5-flash (our .env.local GEMINI_MODEL) hangs/takes 12–35 s even for "say OK";
+  3.6-flash 12–32 s; gemini-3.5-flash-lite 1.8 s and gemini-3.1-flash-lite 0.9–1.4 s OK. gemini-2.5-flash → 404 (retired, not used). No 401/403/429, no proxy.
+  Our shared deadline was not expired at call time (budget starts at call); the 18 s/25 s caps simply were shorter than the slow models.
+- Fix (lib/ai/provider.ts): default fallbacks now 3.7-flash, 3.6-flash, 3.5-flash-lite, 3.1-flash-lite; each fallback gets half of the remaining budget
+  (last gets all) so one hung model cannot starve the rest. Verified: primary 3.8 and 3.5 both now answer a real scenario prompt (10 steps) within the 18 s budget via lite fallback.
+- CONTRACT CHANGE: none. AI-generated: code by Claude Code.
