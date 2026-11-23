@@ -201,3 +201,11 @@
 - CONTRACT CHANGE: None
 - Next: Ready for final demo.
 - Blocked by: nothing
+
+## [2026-11-23 12:34] Person 2 / Antigravity
+- Done: Fixed all 3 open issues in `REVIEW.md` and built the `"Recommended: hire 1 Booster K1"` shift plan panel on `/jobs` (`app/jobs/page.tsx`). Reads `robohire:plan` (`isRobotPlan`) and `robohire:jobs` (`isJobsResult`) from `sessionStorage` (fallback `mockJobs` + `buildPlan`), displaying included jobs, net savings €/month, payback months, robot price, running cost, robot hours used vs capacity bar, collapsible Assumptions, and one `"Hire this K1"` button (with 25s `AbortSignal.timeout`). Updated job cards to show `"Gross value €X/mo"`, no per-job payback, and `"In plan"` badge. Updated `/robot` `"Job Completed ✓"` overlay (`app/robot/page.tsx`) to display NET shift plan savings (`€X/month net`) and payback. Switched `robohire:scene|scenario|job` handoff to `sessionStorage` and cleared stale keys on new runs (`lib/executor/loadScenarioData.ts`, `app/page.tsx`, `app/jobs/page.tsx`). Completed review round (fixed 3, reported 3 in `REVIEW.md`).
+- Changed files: app/jobs/page.tsx, app/robot/page.tsx, app/page.tsx, lib/executor/types.ts, lib/executor/loadScenarioData.ts, REVIEW.md, PROGRESS.md.
+- AI-generated: all of the above code and review entries by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Next: Ready for Demo Day.
+- Blocked by: nothing
