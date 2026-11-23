@@ -270,3 +270,17 @@
 - CONTRACT CHANGE: none
 - AI-generated: code by Claude Code (Claude Opus 5.5); SDK research done by a Claude Code research subagent reading Booster's GitHub sources.
 - For Person 2: REVIEW.md — "Export for real K1" button on /robot using toBoosterScript.
+
+## [2026-11-23] Person 1 / Claude Code — Part C: end-to-end smoke test
+- Done: Playwright (@playwright/test devDependency, Chromium). e2e/demo-flow.spec.ts: landing → Try demo → /jobs plan panel shows
+  "Net savings" €…/mo → Hire this K1 → /robot ▶ Start → job-completed-card ("completed") → /report renders + "Run on a real Booster K1"
+  section + Download .py (file content checked: header, safety warning, def main) + no page errors.
+  `npm run e2e`: playwright.config.ts starts `next dev -p 3200` with GEMINI_API_KEY="" (an existing env var wins over .env.local in
+  @next/env, so no Gemini calls → app fallbacks = demo mode). `npm run e2e:prod`: same test against https://robohire-six.vercel.app.
+  No ?fast=1 flag was needed (local run 31 s, prod 50 s; timeouts are generous: 180 s for the robot run).
+- Changed files: playwright.config.ts, e2e/demo-flow.spec.ts, .gitignore (test-results/, playwright-report/), package.json
+  (@playwright/test + e2e/e2e:prod scripts — committed with Part B), PROGRESS.md.
+- Tested: lint, build, npm test (roi, shift, k1export, check:mocks), e2e local PASS, e2e:prod PASS.
+- Review round: no new Person 2 commits since 2b702af (reviewed in Part A) → skipped.
+- CONTRACT CHANGE: none
+- AI-generated: test + config by Claude Code (Claude Opus 5.5).
