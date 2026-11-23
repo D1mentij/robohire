@@ -405,3 +405,10 @@
 - Next allows one dev server per dist dir (a different port is not enough), so e2e now starts its own `next dev -p 3100` with `NEXT_DIST_DIR=.next-e2e` (next.config.ts `distDir`, gitignored).
   demo:check's doctor ignores a busy :3000. Verified: demo:check READY while a dev server was running on :3000. tsconfig.json: Next added the `.next-e2e` type globs (and reformatted arrays) — committed as is so it does not churn.
 - CONTRACT CHANGE: none. No new Person 2 commits → review skipped.
+
+## [2026-11-23 22:42] Person 2 / Antigravity — Part 1: Fix REVIEW.md /jobs preset bug
+- Done: Replaced name-based `matchPresetByBusinessType` in `app/jobs/page.tsx` with data-driven `matchExactPreset` (matches strictly by exact preset job IDs and zone IDs, never by business type name). Real analyses and showcases whose business type contains "café", "hotel", "shop", or "hall" are now recognized as custom analyses (`hasCustomUpload = true`), display a `"Showing your analyzed space"` banner, keep all preset tabs unselected under `"Try other demo spaces"`, and back up the user's `robohire:analysis|jobs|plan|scene` before switching to any demo preset so `"← Back to my analysis"` restores the full real analysis intact. Also populated preset tasks (never `tasks: []`) and applied `finalizeSteps` to fallback scenarios for ≤4-word checklist labels. Resolved the open Person 2 issue in `REVIEW.md`.
+- Changed files: app/jobs/page.tsx, REVIEW.md, PROGRESS.md.
+- AI-generated: edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Tested: `npm run lint`, `npm run build` pass.

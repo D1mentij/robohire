@@ -23,14 +23,18 @@ import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
   PLAN_STORAGE_KEY,
+  type Task,
 } from "@/lib/ai/types";
+import { demoTasks } from "@/lib/ai/demoData";
+import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
 import { getOrCreateScenario, getOrCreateShift } from "@/lib/ai/scenarioCache";
 import { clearHandoffStorage } from "@/lib/executor";
 
 const SCENARIO_TIMEOUT_MS = 25_000;
-const SHIFT_TIMEOUT_MS = 30_000;
+const SHIFT_TIMEOUT_MS = 65_000;
 const DEFAULT_HOURLY_COST = 8.5;
 const ROBOT_PRICE_EUR = 8000;
+const SAVED_CUSTOM_ANALYSIS_KEY = "robohire:savedCustomAnalysis";
 
 export type SpacePresetId = "cafe" | "retail" | "hotel" | "hall";
 
@@ -385,23 +389,74 @@ export const SPACE_PRESET_LIST: SpacePreset[] = [
   SPACE_PRESETS.hall,
 ];
 
-function matchPresetByBusinessType(businessType: string): SpacePreset | null {
-  const norm = businessType.trim().toLowerCase();
-  if (norm.includes("caf") || norm.includes("coffee")) {
-    return SPACE_PRESETS.cafe;
+/**
+ * Matches a SpacePreset strictly by its data (exact job IDs + zone IDs if scene
+ * is present), NEVER by business_type name — so a real upload or showcase named
+ * "Small café" or "Hotel lobby" is never mistaken for a hardcoded preset.
+ */
+function matchExactPreset(
+  jobsData: JobsResult,
+  scene?: Scene | null,
+): SpacePreset | null {
+  for (const preset of SPACE_PRESET_LIST) {
+    if (jobsData.business_type !== preset.jobsData.business_type) continue;
+    if (jobsData.jobs.length !== preset.jobsData.jobs.length) continue;
+    const sameJobIds = preset.jobsData.jobs.every(
+      (pj, idx) => jobsData.jobs[idx]?.id === pj.id,
+    );
+    if (!sameJobIds) continue;
+    if (scene) {
+      const sameZoneIds =
+        scene.zones.length === preset.scene.zones.length &&
+        preset.scene.zones.every((pz, idx) => scene.zones[idx]?.id === pz.id);
+      if (!sameZoneIds) continue;
+    }
+    return preset;
   }
-  if (norm.includes("retail") || norm.includes("shop") || norm.includes("store")) {
-    return SPACE_PRESETS.retail;
-  }
-  if (norm.includes("hotel") || norm.includes("lobby")) {
-    return SPACE_PRESETS.hotel;
-  }
-  if (
-    norm.includes("event") ||
-    norm.includes("university") ||
-    norm.includes("hall")
-  ) {
-    return SPACE_PRESETS.hall;
+  return null;
+}
+
+function buildPresetTasks(preset: SpacePreset): Task[] {
+  if (preset.id === "cafe") return demoTasks;
+  const fallbackZoneId = preset.scene.zones[0]?.id ?? "entrance";
+  return preset.jobsData.jobs.map((job, idx) => ({
+    id: job.id,
+    title: job.title,
+    zone_id: preset.scene.zones[idx % preset.scene.zones.length]?.id ?? fallbackZoneId,
+    description: job.why,
+    frequency_per_day: Math.max(1, Math.round((job.hours_per_week * 60) / 6 / 3)),
+    minutes_each: 3,
+  }));
+}
+
+interface SavedCustomAnalysis {
+  businessType: string;
+  rawAnalysis: string | null;
+  rawJobs: string;
+  rawPlan: string | null;
+  rawScene: string | null;
+}
+
+function parseSavedCustomAnalysis(raw: string | null): SavedCustomAnalysis | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SavedCustomAnalysis> | null;
+    if (
+      parsed &&
+      typeof parsed.businessType === "string" &&
+      typeof parsed.rawJobs === "string" &&
+      parsed.rawJobs.length > 0
+    ) {
+      return {
+        businessType: parsed.businessType,
+        rawAnalysis: typeof parsed.rawAnalysis === "string" ? parsed.rawAnalysis : null,
+        rawJobs: parsed.rawJobs,
+        rawPlan: typeof parsed.rawPlan === "string" ? parsed.rawPlan : null,
+        rawScene: typeof parsed.rawScene === "string" ? parsed.rawScene : null,
+      };
+    }
+  } catch {
+    // Ignore malformed saved backup
   }
   return null;
 }
@@ -646,6 +701,8 @@ interface JobsAndPlanSnapshot {
   plan: RobotPlan;
   scene: Scene;
   hasCustomUpload: boolean;
+  activePresetId: SpacePresetId | null;
+  savedCustomAnalysis: SavedCustomAnalysis | null;
 }
 
 const SERVER_JOBS_PLAN_SNAPSHOT: JobsAndPlanSnapshot = {
@@ -653,6 +710,8 @@ const SERVER_JOBS_PLAN_SNAPSHOT: JobsAndPlanSnapshot = {
   plan: SPACE_PRESETS.cafe.plan,
   scene: SPACE_PRESETS.cafe.scene,
   hasCustomUpload: false,
+  activePresetId: "cafe",
+  savedCustomAnalysis: null,
 };
 
 let cachedStorageKey = "";
@@ -666,46 +725,62 @@ function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
     const rawAnalysis =
       window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) ?? "";
     const rawScene = window.sessionStorage.getItem("robohire:scene") ?? "";
-    const key = `${rawJobs}|${rawPlan}|${rawAnalysis}|${rawScene}`;
+    const rawSavedCustom =
+      window.sessionStorage.getItem(SAVED_CUSTOM_ANALYSIS_KEY) ?? "";
+    const key = `${rawJobs}|${rawPlan}|${rawAnalysis}|${rawScene}|${rawSavedCustom}`;
 
     if (key !== cachedStorageKey) {
       cachedStorageKey = key;
 
       let jobsData: JobsResult = mockJobs;
+      let hasStoredJobs = false;
       if (rawJobs) {
         try {
           const parsedJobs = JSON.parse(rawJobs) as unknown;
           if (isJobsResult(parsedJobs)) {
             jobsData = parsedJobs;
+            hasStoredJobs = true;
           }
         } catch {
           jobsData = mockJobs;
         }
       }
 
-      const matchedPreset = matchPresetByBusinessType(jobsData.business_type);
-      const hasCustomUpload = matchedPreset === null;
-
-      let scene: Scene = matchedPreset?.scene ?? mockScene;
+      let storedScene: Scene | null = null;
+      let analysisTasksCount = 0;
       if (rawAnalysis) {
         try {
-          const parsedAnalysis = JSON.parse(rawAnalysis) as { scene?: unknown };
+          const parsedAnalysis = JSON.parse(rawAnalysis) as {
+            scene?: unknown;
+            tasks?: unknown;
+          };
           if (isScene(parsedAnalysis?.scene)) {
-            scene = parsedAnalysis.scene;
+            storedScene = parsedAnalysis.scene;
+          }
+          if (Array.isArray(parsedAnalysis?.tasks)) {
+            analysisTasksCount = parsedAnalysis.tasks.length;
           }
         } catch {
-          // keep preset scene
+          // ignore malformed analysis
         }
-      } else if (rawScene) {
+      }
+      if (!storedScene && rawScene) {
         try {
           const parsedScene = JSON.parse(rawScene) as unknown;
           if (isScene(parsedScene)) {
-            scene = parsedScene;
+            storedScene = parsedScene;
           }
         } catch {
-          // keep preset scene
+          // ignore malformed scene
         }
       }
+
+      const matchedPreset = matchExactPreset(jobsData, storedScene);
+      const hasCustomUpload =
+        matchedPreset === null && (hasStoredJobs || analysisTasksCount > 0);
+      const activePresetId = matchedPreset ? matchedPreset.id : null;
+
+      const scene: Scene = storedScene ?? matchedPreset?.scene ?? mockScene;
 
       const jobIdsSet = new Set(jobsData.jobs.map((j) => j.id));
       let plan: RobotPlan | null = null;
@@ -727,7 +802,18 @@ function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
         plan = buildPlan(jobsData.jobs, DEFAULT_HOURLY_COST);
       }
 
-      cachedSnapshot = { jobsData, plan, scene, hasCustomUpload };
+      const savedCustomAnalysis = hasCustomUpload
+        ? null
+        : parseSavedCustomAnalysis(rawSavedCustom);
+
+      cachedSnapshot = {
+        jobsData,
+        plan,
+        scene,
+        hasCustomUpload,
+        activePresetId,
+        savedCustomAnalysis,
+      };
     }
   } catch {
     cachedSnapshot = SERVER_JOBS_PLAN_SNAPSHOT;
@@ -756,11 +842,12 @@ function subscribeJobsStorage(callback: () => void): () => void {
 
 function buildFallbackScenario(job: Job, scene: Scene): Scenario {
   const zoneIds = scene.zones.map((z) => z.id);
+  const label = shortLabel(job.title);
   const preset = PRESET_SCENARIOS[job.id];
   if (preset) {
     const validPreset = filterValidSteps(preset, zoneIds);
     if (validPreset.length >= 2) {
-      return { job_id: job.id, steps: validPreset };
+      return { job_id: job.id, steps: finalizeSteps(validPreset, label) };
     }
   }
 
@@ -773,7 +860,7 @@ function buildFallbackScenario(job: Job, scene: Scene): Scenario {
         { action: "wave" },
         {
           action: "say",
-          text: `Hello! I am performing the ${job.title} role.`,
+          text: `Performing ${label}.`,
         },
         ...(secondZone
           ? ([
@@ -784,14 +871,14 @@ function buildFallbackScenario(job: Job, scene: Scene): Scenario {
         { action: "wait", seconds: 2 },
         {
           action: "say",
-          text: "Please let our team know if you need further assistance.",
+          text: "Task complete. Ready to help.",
         },
       ]
     : [{ action: "wave" }];
 
   return {
     job_id: job.id,
-    steps: filterValidSteps(genericSteps, zoneIds),
+    steps: finalizeSteps(filterValidSteps(genericSteps, zoneIds), label),
   };
 }
 
@@ -970,7 +1057,14 @@ function JobCard({
 export default function JobsPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { jobsData, plan, scene } = useSyncExternalStore(
+  const {
+    jobsData,
+    plan,
+    scene,
+    hasCustomUpload,
+    activePresetId,
+    savedCustomAnalysis,
+  } = useSyncExternalStore(
     subscribeJobsStorage,
     getJobsAndPlanClientSnapshot,
     getJobsAndPlanServerSnapshot,
@@ -979,11 +1073,6 @@ export default function JobsPage() {
     null,
   );
   const [hiringJobId, setHiringJobId] = useState<string | null>(null);
-
-  const activePreset = useMemo(
-    () => matchPresetByBusinessType(jobsData.business_type),
-    [jobsData.business_type],
-  );
 
   useEffect(() => {
     try {
@@ -995,15 +1084,37 @@ export default function JobsPage() {
           clearHandoffStorage();
         }
       }
+      if (hasCustomUpload) {
+        // Fresh real analysis is active — discard any older saved backup
+        window.sessionStorage.removeItem(SAVED_CUSTOM_ANALYSIS_KEY);
+      }
     } catch {
       // Ignore storage errors
     }
     window.dispatchEvent(new Event("robohire:storage"));
-  }, [pathname, jobsData.jobs]);
+  }, [pathname, jobsData.jobs, hasCustomUpload]);
 
   function handleSelectPreset(preset: SpacePreset) {
     if (hiringTargetTitle !== null) return;
     try {
+      // Preserve the user's real analysis before switching to a demo preset
+      if (hasCustomUpload) {
+        const rawJobs = window.sessionStorage.getItem(JOBS_STORAGE_KEY);
+        if (rawJobs) {
+          const backup: SavedCustomAnalysis = {
+            businessType: jobsData.business_type,
+            rawAnalysis: window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY),
+            rawJobs,
+            rawPlan: window.sessionStorage.getItem(PLAN_STORAGE_KEY),
+            rawScene: window.sessionStorage.getItem("robohire:scene"),
+          };
+          window.sessionStorage.setItem(
+            SAVED_CUSTOM_ANALYSIS_KEY,
+            JSON.stringify(backup),
+          );
+        }
+      }
+
       clearHandoffStorage();
       window.sessionStorage.setItem(
         JOBS_STORAGE_KEY,
@@ -1017,7 +1128,7 @@ export default function JobsPage() {
         ANALYSIS_STORAGE_KEY,
         JSON.stringify({
           scene: preset.scene,
-          tasks: [],
+          tasks: buildPresetTasks(preset),
           businessType: preset.jobsData.business_type,
           hoursPerWeek: 60,
           hourlyCost: DEFAULT_HOURLY_COST,
@@ -1031,6 +1142,43 @@ export default function JobsPage() {
         "robohire:scene",
         JSON.stringify(preset.scene),
       );
+      window.dispatchEvent(new Event("robohire:storage"));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  function handleRestoreCustomAnalysis() {
+    if (hiringTargetTitle !== null || !savedCustomAnalysis) return;
+    try {
+      clearHandoffStorage();
+      window.sessionStorage.setItem(
+        JOBS_STORAGE_KEY,
+        savedCustomAnalysis.rawJobs,
+      );
+      if (savedCustomAnalysis.rawPlan) {
+        window.sessionStorage.setItem(
+          PLAN_STORAGE_KEY,
+          savedCustomAnalysis.rawPlan,
+        );
+      } else {
+        window.sessionStorage.removeItem(PLAN_STORAGE_KEY);
+      }
+      if (savedCustomAnalysis.rawAnalysis) {
+        window.sessionStorage.setItem(
+          ANALYSIS_STORAGE_KEY,
+          savedCustomAnalysis.rawAnalysis,
+        );
+      } else {
+        window.sessionStorage.removeItem(ANALYSIS_STORAGE_KEY);
+      }
+      if (savedCustomAnalysis.rawScene) {
+        window.sessionStorage.setItem(
+          "robohire:scene",
+          savedCustomAnalysis.rawScene,
+        );
+      }
+      window.sessionStorage.removeItem(SAVED_CUSTOM_ANALYSIS_KEY);
       window.dispatchEvent(new Event("robohire:storage"));
     } catch {
       // Ignore storage errors
@@ -1212,21 +1360,59 @@ export default function JobsPage() {
           data-testid="space-preset-tabs"
           className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
         >
+          {hasCustomUpload && (
+            <div
+              data-testid="custom-analysis-banner"
+              className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-200"
+            >
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                Showing your analyzed space:{" "}
+                <strong className="font-bold">{jobsData.business_type}</strong>
+              </span>
+              <span className="font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
+                zones
+              </span>
+            </div>
+          )}
+
+          {!hasCustomUpload && savedCustomAnalysis && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3.5 py-2 text-xs text-sky-900 dark:text-sky-200">
+              <span className="font-medium">
+                Previewing demo preset. Your real analysis is saved.
+              </span>
+              <button
+                type="button"
+                data-testid="back-to-my-analysis-btn"
+                disabled={hiringTargetTitle !== null}
+                onClick={handleRestoreCustomAnalysis}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-500/50 bg-sky-600 px-3 py-1 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95 disabled:opacity-50"
+              >
+                ← Back to my analysis ({savedCustomAnalysis.businessType})
+              </button>
+            </div>
+          )}
+
           <div className="mb-2 flex items-center justify-between px-1">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Select Business Space Preset
+              {hasCustomUpload || savedCustomAnalysis
+                ? "Try other demo spaces"
+                : "Select Business Space Preset"}
             </span>
-            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-              {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
-              zones
-            </span>
+            {!hasCustomUpload && (
+              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
+                zones
+              </span>
+            )}
           </div>
           <div
             role="tablist"
             className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           >
             {SPACE_PRESET_LIST.map((preset) => {
-              const isSelected = activePreset?.id === preset.id;
+              const isSelected = !hasCustomUpload && activePresetId === preset.id;
               return (
                 <button
                   key={preset.id}
