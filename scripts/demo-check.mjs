@@ -29,7 +29,7 @@ if (!input) {
   console.log(warning);
 } else {
   const env = { ...process.env, BENCH_FRAMES: "4", BENCH_SIZE: "512", BENCH_SKIP_SHIFT: "1", BENCH_WARMUP: "1", BENCH_MAX_SECONDS: "60" };
-  const ok = spawnSync("npx", ["tsx", "scripts/bench-ai.ts", input, "Small café", "1"], { stdio: "inherit", cwd: root, env, shell: process.platform === "win32" }).status === 0;
+  const ok = spawnSync("npx", ["tsx", "scripts/bench-ai.ts", input, path.basename(input, path.extname(input)), "1"], { stdio: "inherit", cwd: root, env, shell: process.platform === "win32" }).status === 0;
   steps.push(["real analyze (valid, < 60 s after warm-up)", ok]);
 }
 console.log("\nSummary");

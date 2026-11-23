@@ -373,3 +373,14 @@
 - Known limits: frequencies/minutes in templates are assumptions; label quality still depends on the 4B model (it sometimes just repeats the zone type as label).
 - Tested: tsc, lint, build, npm test, e2e. CONTRACT CHANGE: none. AI-generated: code by Claude Code (Claude Sonnet 5.5); showcase by qwen3-vl:4b-instruct + rule-based code.
 - Review round: no new Person 2 commits since the last review → skipped. Fixed 0, reported 0 (the earlier preset issue in REVIEW.md is still open).
+
+## [2026-11-23] Person 1 / Claude Code — stage QA pass
+- e2e extended (e2e/demo-flow.spec.ts): demo → plan panel net €/month → Hire this K1 → /robot checklist shows ≥ 2 task groups (step.label, ≤ 4 words) → ▶ Start → every step "✓ done", none queued →
+  Job Completed card shows net €/month → "Export for real K1 (.py)" on /robot downloads a valid script → /report export. Second test: "Try real example: Real hotel lobby" → /jobs has elevator/reception tasks and no café-only task → Hire plays.
+  Optional `npm run e2e:real` (e2e/real-upload.spec.ts, needs Ollama + test-videos + ffmpeg): real video upload → frame extraction → /api/analyze → /jobs → hire → robot plays. PASSED (analyze 39 s in headless Chromium, existing dev server on :3000 via E2E_BASE_URL).
+- demo:check on this Mac: READY (e2e 3 passed; real analyze 21 s). Fixed in my folders: demo:check now uses the video's file name as business type (it analysed a car showroom as "Small café");
+  /upload text said "Extract 8 key frames" but 4 are extracted. Note for Person 2 / UX: /upload "Opening hours per week" is empty by default → "Extract frames" silently needs it (error text shown under the field) — my folder, left as is.
+- DEMO_DAY.md added (10-line stage checklist).
+- Person 2 folders: nothing new found; REVIEW.md preset-detection issue (open) was re-confirmed relevant: the hotel showcase is matched to the "Hotel" preset by name.
+- Tested: lint, build, npm test, e2e (3), demo:check READY. CONTRACT CHANGE: none. AI-generated: tests/docs by Claude Code (Claude Sonnet 5.5).
+- Review round: no new Person 2 commits → skipped. Fixed 0, reported 0 new.

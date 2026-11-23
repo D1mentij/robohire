@@ -285,7 +285,7 @@ export default function UploadPage() {
             Upload a video of your space
           </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Extract 8 key frames in your browser and let AI map floor zones and repetitive tasks.
+            Extract 4 key frames in your browser and let AI map floor zones and repetitive tasks.
           </p>
         </div>
 

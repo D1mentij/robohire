@@ -10,6 +10,7 @@ const PORT = 3200;
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: process.env.E2E_REAL ? [] : /real-upload/, // needs real Ollama + a test video: run with npm run e2e:real
   timeout: 240_000,
   expect: { timeout: 15_000 },
   retries: 0,
@@ -32,6 +33,7 @@ export default defineConfig({
         reuseExistingServer: false,
         timeout: 120_000,
         // closed port → "Start Ollama" error instantly → built-in code fallbacks (demo mode). Existing env vars win over .env.local.
-        env: { AI_PROVIDER: "ollama", OLLAMA_URL: "http://127.0.0.1:9", GEMINI_API_KEY: "" },
+        // E2E_REAL=1 (npm run e2e:real) keeps the real local Ollama for the upload test
+        env: process.env.E2E_REAL ? { AI_PROVIDER: "ollama", GEMINI_API_KEY: "" } : { AI_PROVIDER: "ollama", OLLAMA_URL: "http://127.0.0.1:9", GEMINI_API_KEY: "" },
       },
 });

@@ -11,6 +11,7 @@
     "test:roi": "tsx scripts/test-roi.ts",
     "test:shift": "tsx scripts/test-shift.ts",
     "e2e": "playwright test",
+    "e2e:real": "E2E_REAL=1 playwright test e2e/real-upload.spec.ts",
     "e2e:prod": "E2E_BASE_URL=https://robohire-six.vercel.app playwright test",
     "test:k1export": "tsx scripts/test-k1export.ts",
     "test": "npm run test:roi && npm run test:shift && npm run test:k1export && npm run test:ai && npm run check:mocks",
