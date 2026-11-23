@@ -209,3 +209,12 @@
 - CONTRACT CHANGE: None
 - Next: Ready for Demo Day.
 - Blocked by: nothing
+
+## [2026-11-23] Person 1 / Claude Code
+- Done (A, reliability): lib/ai/provider.ts retries once-per-model on 429/503/overloaded/timeout with GEMINI_FALLBACK_MODELS (default gemini-3.7-flash, gemini-3.6-flash — from the @google/genai Model type); logs which model answered, never the key. .env.example updated.
+  /upload caches analysis+jobs+plan in localStorage "robohire:cache:<sha256>" (hash of frames + businessType + hoursPerWeek + hourlyCost; hoursPerWeek added because it now changes the plan), max 5, LRU; "cached" badge + "Re-run AI". lib/ai/scenarioCache.ts getOrCreateScenario(job, scene). Progress steps with elapsed seconds (reading/mapping split is a time-based estimate).
+- Done (B): /report (app/report/page.tsx): header, recommended plan, all-jobs table, SVG floor plan, assumptions, disclaimer, Print/Save as PDF (A4 print CSS). Demo fallback via buildDemoData() (lib/ai/demo.ts). Link "Open business report →" on /upload.
+- Review fixes (3): hoursPerWeek now caps task hours and plan capacity (computeRoi/buildJob/buildPlan optional param, test added); /upload and startDemo clear stale robohire:* storage incl. scene/scenario/job (clearRunStorage in lib/ai/types.ts). Commit 210bf6d.
+- CONTRACT CHANGE: None (no change to types/contracts.ts; buildJob/buildPlan got an optional hoursPerWeek arg).
+- AI-generated: code by Claude Code (Claude Sonnet 5.5); report numbers come from lib/roi, not AI.
+- For Person 2: see REVIEW.md (use scenarioCache in Hire; "Download report" button on /jobs).
