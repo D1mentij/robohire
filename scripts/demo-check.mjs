@@ -9,8 +9,8 @@ const root = process.cwd();
 const steps = [];
 const run = (cmd, args) => spawnSync(cmd, args, { stdio: "inherit", cwd: root, shell: process.platform === "win32" }).status === 0;
 
-// 1 doctor (port 3000 does not matter for the checks below, which use other ports/no server)
-steps.push(["doctor", await runDoctor()]);
+// 1 doctor (the e2e runs on :3100 with its own dist dir, so a dev server on :3000 is fine)
+steps.push(["doctor", await runDoctor({ ignorePort3000: true })]);
 // 2 e2e in demo mode
 console.log("\n— e2e (demo mode) —");
 steps.push(["e2e (demo mode)", run("npx", ["playwright", "test"])]);

@@ -49,3 +49,4 @@ next-env.d.ts
 
 # local test videos (never commit)
 test-videos/
+.next-e2e/

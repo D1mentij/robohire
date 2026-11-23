@@ -44,7 +44,7 @@ No AI at all? Use **Try demo** (mock café) or **Try real example: ...** (a save
 **Showcase (a real example with no AI call):** `lib/ai/showcase/real-room-test.json` ships with the repo (analysis of a real café video). To add your own: run a real analysis, open `http://localhost:3000/upload?dev=1`, click *Save as showcase (dev)*,
 and put the downloaded `.json` into `lib/ai/showcase/`. It then appears as "Try real example: <name>" next to *Try demo*.
 
-Scripts: `npm run doctor` (is this laptop ready? green/red checklist with fix commands), `npm run demo:check` (doctor → e2e → one real local analyze → READY / NOT READY), `npm run lint`, `npm run build`, `npm test` (roi, shift, k1export, ai, mocks), `npm run e2e` (Playwright, demo mode, no AI),
+Scripts: `npm run doctor` (is this laptop ready? green/red checklist with fix commands), `npm run demo:check` (doctor → e2e → one real local analyze → READY / NOT READY), `npm run lint`, `npm run build`, `npm test` (roi, shift, k1export, ai, mocks), `npm run e2e` (Playwright on its own port :3100, demo mode, no AI),
 `npx tsx scripts/bench-ai.ts <video|frames-folder> [businessType] [runs]` (latency + validation of the real AI path; env `BENCH_FRAMES`, `BENCH_SIZE`). `npm run e2e:prod` is optional (tests a deployed site).
 
 ## Backup laptop setup

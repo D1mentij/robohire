@@ -1,12 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * npm run e2e      → starts `next dev` on :3200 with Ollama pointed at a closed port (demo mode: no AI at all, the app
+ * npm run e2e      → starts its own `next dev` on :3100 (dist dir .next-e2e) with Ollama pointed at a closed port (demo mode: no AI at all, the app
  *                     falls back to code) and tests it.
  * npm run e2e:prod  → optional: tests a deployed app (E2E_BASE_URL=https://robohire-six.vercel.app), no local server.
  */
 const prodUrl = process.env.E2E_BASE_URL;
-const PORT = 3200;
+const PORT = 3100; // own port + own dist dir (NEXT_DIST_DIR): never conflicts with `npm run dev` on :3000
 
 export default defineConfig({
   testDir: "./e2e",
@@ -34,6 +34,6 @@ export default defineConfig({
         timeout: 120_000,
         // closed port → "Start Ollama" error instantly → built-in code fallbacks (demo mode). Existing env vars win over .env.local.
         // E2E_REAL=1 (npm run e2e:real) keeps the real local Ollama for the upload test
-        env: process.env.E2E_REAL ? { AI_PROVIDER: "ollama", GEMINI_API_KEY: "" } : { AI_PROVIDER: "ollama", OLLAMA_URL: "http://127.0.0.1:9", GEMINI_API_KEY: "" },
+        env: { NEXT_DIST_DIR: ".next-e2e", ...(process.env.E2E_REAL ? { AI_PROVIDER: "ollama", GEMINI_API_KEY: "" } : { AI_PROVIDER: "ollama", OLLAMA_URL: "http://127.0.0.1:9", GEMINI_API_KEY: "" }) },
       },
 });

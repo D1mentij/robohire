@@ -400,3 +400,8 @@
 - Tests: scripts/test-ai.ts (detection synonyms + hint inference, labels/uniqueness/bare detection, rounding, layout fixes incl. end-to-end weak "Autodealer" answer). lint, build, npm test, e2e (3), demo:check READY.
 - Stopped a second foreign `next dev` (PID 70601 on :3000) with the user's OK. CONTRACT CHANGE: none. AI-generated: code by Claude Code (Claude Sonnet 5.5); showcases by qwen3-vl:4b-instruct + code.
 - Review round: no new Person 2 commits → skipped. Fixed 0, reported 0.
+
+## [2026-11-23] Person 1 / Claude Code — e2e / demo:check never clash with `npm run dev`
+- Next allows one dev server per dist dir (a different port is not enough), so e2e now starts its own `next dev -p 3100` with `NEXT_DIST_DIR=.next-e2e` (next.config.ts `distDir`, gitignored).
+  demo:check's doctor ignores a busy :3000. Verified: demo:check READY while a dev server was running on :3000. tsconfig.json: Next added the `.next-e2e` type globs (and reformatted arrays) — committed as is so it does not churn.
+- CONTRACT CHANGE: none. No new Person 2 commits → review skipped.

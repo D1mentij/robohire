@@ -24,7 +24,8 @@ function loadEnv() {
   return { ...env, ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("OLLAMA") || k === "AI_PROVIDER")) };
 }
 
-export async function runDoctor({ quiet = false } = {}) {
+/** `ignorePort3000`: demo:check runs on its own port, so a dev server on :3000 is fine there. */
+export async function runDoctor({ quiet = false, ignorePort3000 = false } = {}) {
   results.length = 0;
   // Node
   const major = Number(process.versions.node.split(".")[0]);
@@ -63,7 +64,7 @@ export async function runDoctor({ quiet = false } = {}) {
     s.once("listening", () => s.close(() => resolve(true)));
     s.listen(3000); // all interfaces: also catches servers bound to IPv6 (next dev)
   });
-  add(free, "Port 3000 free", free ? "" : "something is already listening (a second `next dev` in this folder also blocks the e2e test)", win ? "netstat -ano | findstr :3000   then   taskkill /PID <pid> /F" : "lsof -ti :3000 | xargs kill");
+  add(free || ignorePort3000, "Port 3000 free", free ? "" : ignorePort3000 ? "in use (your dev server?) — fine for demo:check, which uses :3100" : "something is already listening — stop it before `npm run dev`", win ? "netstat -ano | findstr :3000   then   taskkill /PID <pid> /F" : "lsof -ti :3000 | xargs kill");
   // Playwright browser
   const cache = process.env.PLAYWRIGHT_BROWSERS_PATH || (win ? path.join(process.env.LOCALAPPDATA || "", "ms-playwright") : process.platform === "darwin" ? path.join(os.homedir(), "Library", "Caches", "ms-playwright") : path.join(os.homedir(), ".cache", "ms-playwright"));
   let pw = false;
