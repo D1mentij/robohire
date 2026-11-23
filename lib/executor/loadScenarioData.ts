@@ -17,6 +17,7 @@ import {
   type Scene,
 } from "@/types/contracts";
 import { buildPlan } from "@/lib/roi/roi";
+import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
 import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
@@ -94,6 +95,7 @@ export function clearHandoffStorage(): void {
 
 function buildGenericScenarioForJob(job: Job, scene: Scene): Scenario {
   const zoneIds = scene.zones.map((z) => z.id);
+  const label = shortLabel(job.title);
   const firstZone = scene.zones[0]?.id;
   const secondZone = scene.zones[1]?.id ?? firstZone;
   const steps: ScenarioStep[] = firstZone
@@ -102,7 +104,7 @@ function buildGenericScenarioForJob(job: Job, scene: Scene): Scenario {
         { action: "wave" },
         {
           action: "say",
-          text: `Hello! I am performing the ${job.title} role.`,
+          text: `Performing ${label}.`,
         },
         ...(secondZone
           ? ([
@@ -113,13 +115,13 @@ function buildGenericScenarioForJob(job: Job, scene: Scene): Scenario {
         { action: "wait", seconds: 2 },
         {
           action: "say",
-          text: "Please let our team know if you need further assistance.",
+          text: "Task complete. Ready to help.",
         },
       ]
     : [{ action: "wave" }];
   return {
     job_id: job.id,
-    steps: filterValidSteps(steps, zoneIds),
+    steps: finalizeSteps(filterValidSteps(steps, zoneIds), label),
   };
 }
 
@@ -228,10 +230,29 @@ export function loadSimulationData(
 
   const zoneIds = scene.zones.map((z) => z.id);
   let steps = filterValidSteps(scenario.steps, zoneIds);
-  if (steps.length === 0 && scene.zones.length > 0) {
-    scenario = buildGenericScenarioForJob(job, scene);
-    steps = scenario.steps;
+  if (steps.length === 0) {
+    if (hasCustomScene && scene.zones.length > 0) {
+      scenario = buildGenericScenarioForJob(job, scene);
+      steps = scenario.steps;
+    } else {
+      // Invalid/empty scenario with no custom room → fall back cleanly to demo
+      const mockZoneIds = mockScene.zones.map((z) => z.id);
+      scenario = mockScenario;
+      steps = finalizeSteps(
+        filterValidSteps(mockScenario.steps, mockZoneIds),
+        shortLabel(job.title),
+      );
+      hasCustomScenario = false;
+    }
+  } else {
+    // Ensure every step has a clean short label for the checklist without altering existing labels
+    const needsLabels = steps.some((s) => !s.label || !s.label.trim());
+    if (needsLabels) {
+      steps = finalizeSteps(steps, shortLabel(job.title));
+    }
   }
+
+  const sanitizedScenario: Scenario = { ...scenario, steps };
 
   const source: "custom" | "mock" =
     hasCustomScene || hasCustomScenario || isJobsResult(storedJobsRaw)
@@ -239,8 +260,11 @@ export function loadSimulationData(
       : "mock";
 
   return {
-    scene,
-    scenario,
+    scene:
+      steps.length > 0 && scenario === mockScenario && !hasCustomScene
+        ? mockScene
+        : scene,
+    scenario: sanitizedScenario,
     businessType,
     job,
     plan,
@@ -251,12 +275,15 @@ export function loadSimulationData(
 
 export function loadDefaultMockSimulationData(): LoadedSimulationData {
   const zoneIds = mockScene.zones.map((z) => z.id);
-  const steps = filterValidSteps(mockScenario.steps, zoneIds);
   const job =
     mockJobs.jobs.find((j) => j.id === mockScenario.job_id) ?? mockJobs.jobs[0];
+  const steps = finalizeSteps(
+    filterValidSteps(mockScenario.steps, zoneIds),
+    shortLabel(job.title),
+  );
   return {
     scene: mockScene,
-    scenario: mockScenario,
+    scenario: { ...mockScenario, steps },
     businessType: mockJobs.business_type,
     job,
     plan: DEFAULT_MOCK_PLAN,

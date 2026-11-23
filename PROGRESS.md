@@ -412,3 +412,10 @@
 - AI-generated: edits above by Antigravity (Gemini).
 - CONTRACT CHANGE: None
 - Tested: `npm run lint`, `npm run build` pass.
+
+## [2026-11-23 22:44] Person 2 / Antigravity — Part 2: Harden whole-shift Hire flow & /robot "shift" loader
+- Done: Hardened whole-shift hiring on `/jobs` (`app/jobs/page.tsx`): `"Hire this K1"` calls `getOrCreateShift` (`lib/ai/scenarioCache.ts` → `/api/shift`, 65 s budget) with automatic fallback to the first plan job's scenario (`getOrCreateScenario` → `buildFallbackScenario`), per-job `"Hire"` buttons keep working, and a synchronous `isHiringRef` guard prevents double-clicks from starting concurrent runs. Hardened `lib/executor/loadScenarioData.ts`: `/robot` always accepts `job_id === "shift"` without swapping it for a mock, keeps `scenario.steps` synchronized with `filterValidSteps()`, ensures missing step labels are filled via `finalizeSteps`, and falls back cleanly to demo data if a scenario is invalid or empty.
+- Changed files: app/jobs/page.tsx, lib/executor/loadScenarioData.ts, PROGRESS.md.
+- AI-generated: edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Tested: `npm run lint`, `npm run build`, `npm test` all pass.

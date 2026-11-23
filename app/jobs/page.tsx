@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { mockJobs, mockScenario, mockScene } from "@/mocks";
@@ -1073,6 +1073,7 @@ export default function JobsPage() {
     null,
   );
   const [hiringJobId, setHiringJobId] = useState<string | null>(null);
+  const isHiringRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -1237,93 +1238,107 @@ export default function JobsPage() {
   }
 
   async function handleHireJob(job: Job) {
-    if (hiringTargetTitle !== null) return;
+    if (isHiringRef.current || hiringTargetTitle !== null) return;
+    isHiringRef.current = true;
     setHiringTargetTitle(job.title);
     setHiringJobId(job.id);
 
-    clearHandoffStorage();
-    let scenario: Scenario | null = null;
-
     try {
-      const { scenario: candidate } = await getOrCreateScenario(job, scene, {
-        businessType: jobsData.business_type,
-        timeoutMs: SCENARIO_TIMEOUT_MS,
-      });
-      const validSteps = filterValidSteps(
-        candidate.steps,
-        scene.zones.map((z) => z.id),
-      );
-      if (validSteps.length > 0) {
-        scenario = { job_id: candidate.job_id, steps: validSteps };
+      clearHandoffStorage();
+      let scenario: Scenario | null = null;
+
+      try {
+        const { scenario: candidate } = await getOrCreateScenario(job, scene, {
+          businessType: jobsData.business_type,
+          timeoutMs: SCENARIO_TIMEOUT_MS,
+        });
+        const validSteps = filterValidSteps(
+          candidate.steps,
+          scene.zones.map((z) => z.id),
+        );
+        if (validSteps.length > 0) {
+          scenario = { job_id: candidate.job_id, steps: validSteps };
+        }
+      } catch {
+        // Gracefully fall back to matching preset scenario below
       }
+
+      if (!scenario) {
+        scenario = buildFallbackScenario(job, scene);
+      }
+
+      persistHandoff(scene, scenario, job);
+      router.push("/robot");
     } catch {
-      // Gracefully fall back to matching preset scenario below
+      isHiringRef.current = false;
+      setHiringTargetTitle(null);
+      setHiringJobId(null);
     }
-
-    if (!scenario) {
-      scenario = buildFallbackScenario(job, scene);
-    }
-
-    persistHandoff(scene, scenario, job);
-    router.push("/robot");
   }
 
   async function handleHireShift() {
-    if (hiringTargetTitle !== null || !primaryHireJob) return;
+    if (isHiringRef.current || hiringTargetTitle !== null || !primaryHireJob) return;
+    isHiringRef.current = true;
     setHiringTargetTitle(
       includedJobs.map((j) => j.title).join(" + ") || primaryHireJob.title,
     );
     setHiringJobId("shift");
 
-    clearHandoffStorage();
-    let scenario: Scenario | null = null;
-
     try {
-      const { scenario: shiftCandidate } = await getOrCreateShift(
-        plan,
-        jobsData.jobs,
-        scene,
-        {
-          businessType: jobsData.business_type,
-          timeoutMs: SHIFT_TIMEOUT_MS,
-        },
-      );
-      const validSteps = filterValidSteps(
-        shiftCandidate.steps,
-        scene.zones.map((z) => z.id),
-      );
-      if (validSteps.length > 0) {
-        scenario = { job_id: shiftCandidate.job_id, steps: validSteps };
-      }
-    } catch {
-      // If shift endpoint fails, fall back to primary job scenario
+      clearHandoffStorage();
+      let scenario: Scenario | null = null;
+
       try {
-        const { scenario: jobCandidate } = await getOrCreateScenario(
-          primaryHireJob,
+        const { scenario: shiftCandidate } = await getOrCreateShift(
+          plan,
+          jobsData.jobs,
           scene,
           {
             businessType: jobsData.business_type,
-            timeoutMs: SCENARIO_TIMEOUT_MS,
+            timeoutMs: SHIFT_TIMEOUT_MS,
           },
         );
         const validSteps = filterValidSteps(
-          jobCandidate.steps,
+          shiftCandidate.steps,
           scene.zones.map((z) => z.id),
         );
         if (validSteps.length > 0) {
-          scenario = { job_id: jobCandidate.job_id, steps: validSteps };
+          scenario = { job_id: shiftCandidate.job_id, steps: validSteps };
         }
       } catch {
-        // Fall through to buildFallbackScenario
+        // If shift endpoint fails, fall back to first plan job's scenario
+        try {
+          const { scenario: jobCandidate } = await getOrCreateScenario(
+            primaryHireJob,
+            scene,
+            {
+              businessType: jobsData.business_type,
+              timeoutMs: SCENARIO_TIMEOUT_MS,
+            },
+          );
+          const validSteps = filterValidSteps(
+            jobCandidate.steps,
+            scene.zones.map((z) => z.id),
+          );
+          if (validSteps.length > 0) {
+            scenario = { job_id: jobCandidate.job_id, steps: validSteps };
+          }
+        } catch {
+          // Fall through to buildFallbackScenario
+        }
       }
-    }
 
-    if (!scenario) {
-      scenario = buildFallbackScenario(primaryHireJob, scene);
-    }
+      if (!scenario) {
+        scenario = buildFallbackScenario(primaryHireJob, scene);
+      }
 
-    persistHandoff(scene, scenario, primaryHireJob);
-    router.push("/robot");
+      persistHandoff(scene, scenario, primaryHireJob);
+      router.push("/robot");
+    } catch {
+      isHiringRef.current = false;
+      setHiringTargetTitle(null);
+      setHiringJobId(null);
+    }
   }
 
   const capacityPercent =
