@@ -12,12 +12,14 @@ import {
   type Job,
   type JobsResult,
   type RobotPlan,
+  type RobotType,
   type Scenario,
   type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
 import { buildPlan } from "@/lib/roi/roi";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
+import { inferRobotType, isHelperRobot } from "@/lib/robots/catalog";
 import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
@@ -181,12 +183,22 @@ export function loadSimulationData(
     candidateScenario = readFromSessionStorage(SCENARIO_STORAGE_KEYS);
   }
 
-  // Guard against stale scenario whose job_id is not in the current robohire:jobs list (allow whole-plan "shift")
+  const storedJobRaw = readFromSessionStorage(JOB_STORAGE_KEYS);
+  const validStoredJob =
+    isJob(storedJobRaw) &&
+    (currentJobIds.has(storedJobRaw.id) ||
+      isHelperRobot(inferRobotType(storedJobRaw)))
+      ? storedJobRaw
+      : null;
+
+  // Guard against stale scenario whose job_id is not in the current robohire:jobs list
+  // (allow whole-plan "shift" and freshly hired helper robot jobs)
   if (
     isScenario(candidateScenario) &&
     isJobsResult(storedJobsRaw) &&
     candidateScenario.job_id !== "shift" &&
-    !currentJobIds.has(candidateScenario.job_id)
+    !currentJobIds.has(candidateScenario.job_id) &&
+    !(validStoredJob && candidateScenario.job_id === validStoredJob.id)
   ) {
     candidateScenario = null;
   }
@@ -200,12 +212,6 @@ export function loadSimulationData(
       : null;
   const hasCustomScene = validCustomScene !== null;
   const scene: Scene = validCustomScene ?? mockScene;
-
-  const storedJobRaw = readFromSessionStorage(JOB_STORAGE_KEYS);
-  const validStoredJob =
-    isJob(storedJobRaw) && currentJobIds.has(storedJobRaw.id)
-      ? storedJobRaw
-      : null;
 
   let job: Job =
     validStoredJob ??
@@ -266,6 +272,9 @@ export function loadSimulationData(
       ? "custom"
       : "mock";
 
+  const robotType: RobotType =
+    sanitizedScenario.job_id === "shift" ? "k1" : inferRobotType(job);
+
   return {
     scene:
       steps.length > 0 && scenario === mockScenario && !hasCustomScene
@@ -274,6 +283,7 @@ export function loadSimulationData(
     scenario: sanitizedScenario,
     businessType,
     job,
+    robotType,
     plan,
     steps,
     source,
@@ -293,6 +303,7 @@ export function loadDefaultMockSimulationData(): LoadedSimulationData {
     scenario: { ...mockScenario, steps },
     businessType: mockJobs.business_type,
     job,
+    robotType: "k1",
     plan: DEFAULT_MOCK_PLAN,
     steps,
     source: "mock",

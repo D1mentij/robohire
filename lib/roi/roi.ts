@@ -59,7 +59,13 @@ export function buildPlan(jobs: Job[], hourlyCost: number, hoursPerWeek?: number
     hoursPerWeek && hoursPerWeek > 0 ? Math.min(ROBOT_CAPACITY_HOURS_PER_WEEK, hoursPerWeek) : ROBOT_CAPACITY_HOURS_PER_WEEK;
   const robotHours = (j: Job) => j.hours_per_week * COVERAGE[j.fit];
   const candidates = jobs
-    .filter((j) => j.fit !== "no" && j.savings_eur_month >= MIN_JOB_GROSS_EUR_MONTH && robotHours(j) > 0)
+    .filter(
+      (j) =>
+        (!j.robot_type || j.robot_type === "k1") &&
+        j.fit !== "no" &&
+        j.savings_eur_month >= MIN_JOB_GROSS_EUR_MONTH &&
+        robotHours(j) > 0,
+    )
     .sort((a, b) => b.savings_eur_month / robotHours(b) - a.savings_eur_month / robotHours(a));
   const picked: Job[] = [];
   let hours = 0;

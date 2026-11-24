@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
 import { shortLabel } from "@/lib/ai/labels";
+import { getRobotMeta, isHelperRobot } from "@/lib/robots/catalog";
 import {
   scriptFileName,
   toBoosterScript,
@@ -203,6 +204,8 @@ export default function RobotSimulationPage() {
   }, []);
 
   const isShiftScenario = simData.scenario.job_id === "shift";
+  const robotMeta = getRobotMeta(simData.robotType);
+  const isHelper = isHelperRobot(simData.robotType);
 
   const taskGroups = useMemo(
     () =>
@@ -302,8 +305,16 @@ export default function RobotSimulationPage() {
               <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
                 3D Workspace Simulation
               </h1>
-              <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2.5 py-0.5 text-xs font-semibold text-sky-700 dark:text-sky-200">
-                K1 (simulation stand-in)
+              <span
+                data-testid="active-robot-badge"
+                data-robot-type={simData.robotType}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                  isHelper
+                    ? robotMeta.badgeClass
+                    : "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-200"
+                }`}
+              >
+                {isHelper ? robotMeta.roleBadge : "K1 (simulation stand-in)"}
               </span>
               <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {simData.businessType}
@@ -369,14 +380,16 @@ export default function RobotSimulationPage() {
               ⛶ Present
             </button>
 
-            <button
-              type="button"
-              data-testid="export-k1-btn"
-              onClick={handleExportForRealK1}
-              className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              Export for real K1 (.py)
-            </button>
+            {!isHelper && (
+              <button
+                type="button"
+                data-testid="export-k1-btn"
+                onClick={handleExportForRealK1}
+                className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                Export for real K1 (.py)
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -397,6 +410,7 @@ export default function RobotSimulationPage() {
           <SimCanvas
             scene={simData.scene}
             businessType={simData.businessType}
+            robotType={simData.robotType}
             activeZoneId={executor.activeZoneId}
             startPosition={executor.startPosition}
             currentTargetInfo={executor.currentTargetInfo}
@@ -445,29 +459,37 @@ export default function RobotSimulationPage() {
                   ))}
                 </ul>
 
-                {/* Plan Net €/month + Payback from robohire:plan */}
+                {/* Plan Net €/month + Payback (K1) or Helper Robot Savings + Payback */}
                 <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Net Shift Plan Savings
+                      {isHelper
+                        ? `${robotMeta.name} Est. Savings`
+                        : "Net Shift Plan Savings"}
                     </span>
                     <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
-                      €{simData.plan.net_savings_eur_month}/month net
+                      {isHelper
+                        ? `€${simData.job.savings_eur_month}/month`
+                        : `€${simData.plan.net_savings_eur_month}/month net`}
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <span>
                       Payback:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        {simData.plan.payback_months !== null
-                          ? `${simData.plan.payback_months} months`
-                          : "—"}
+                        {isHelper
+                          ? simData.job.payback_months !== null
+                            ? `${simData.job.payback_months} months`
+                            : "—"
+                          : simData.plan.payback_months !== null
+                            ? `${simData.plan.payback_months} months`
+                            : "—"}
                       </strong>
                     </span>
                     <span>
                       Robot price:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        €{simData.plan.robot_price_eur}
+                        €{isHelper ? robotMeta.priceEur : simData.plan.robot_price_eur}
                       </strong>
                     </span>
                   </div>
@@ -480,14 +502,16 @@ export default function RobotSimulationPage() {
                   >
                     ← Back to Jobs
                   </Link>
-                  <button
-                    type="button"
-                    data-testid="export-k1-completed-btn"
-                    onClick={handleExportForRealK1}
-                    className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    Export for real K1
-                  </button>
+                  {!isHelper && (
+                    <button
+                      type="button"
+                      data-testid="export-k1-completed-btn"
+                      onClick={handleExportForRealK1}
+                      className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      Export for real K1
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={executor.replay}

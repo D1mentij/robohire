@@ -1,6 +1,7 @@
 import type {
   Job,
   RobotPlan,
+  RobotType,
   Scenario,
   ScenarioStep,
   Scene,
@@ -41,6 +42,8 @@ export interface LoadedSimulationData {
   businessType: string;
   /** Matched job metadata (title, gross savings in €, etc.) */
   job: Job;
+  /** Active robot platform ("k1" primary humanoid or one of the 7 optional helper robots) */
+  robotType: RobotType;
   /** Full robot shift plan (net savings in €, payback months, included job_ids) */
   plan: RobotPlan;
   /** Sanitized steps for the full scenario via filterValidSteps */

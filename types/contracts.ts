@@ -21,6 +21,19 @@ export interface Scene {
 
 export type Fit = "good" | "partial" | "no";
 
+export const ROBOT_TYPES = [
+  "k1",
+  "vacuum",
+  "window_cleaner",
+  "tray_delivery",
+  "uvc_disinfection",
+  "shelf_scanner",
+  "air_purifier",
+  "security_rover",
+] as const;
+
+export type RobotType = (typeof ROBOT_TYPES)[number];
+
 export interface Job {
   id: string;
   title: string;
@@ -31,6 +44,8 @@ export interface Job {
   hours_per_week: number;
   savings_eur_month: number;
   payback_months: number | null;
+  /** Optional robot platform identifier; omitted defaults to primary "k1" (Booster K1). */
+  robot_type?: RobotType;
 }
 
 export interface JobsResult {
@@ -87,6 +102,9 @@ const isNum = (v: unknown): v is number =>
 const isAction = (v: unknown): v is Action =>
   isStr(v) && (ALLOWED_ACTIONS as readonly string[]).includes(v);
 
+export const isRobotType = (v: unknown): v is RobotType =>
+  isStr(v) && (ROBOT_TYPES as readonly string[]).includes(v);
+
 // ---------- type guards ----------
 
 export function isZone(v: unknown): v is Zone {
@@ -119,7 +137,8 @@ export function isJob(v: unknown): v is Job {
     isStr(v.limits) &&
     isNum(v.hours_per_week) &&
     isNum(v.savings_eur_month) &&
-    (v.payback_months === null || isNum(v.payback_months))
+    (v.payback_months === null || isNum(v.payback_months)) &&
+    (v.robot_type === undefined || isRobotType(v.robot_type))
   );
 }
 

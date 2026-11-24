@@ -14,6 +14,7 @@ import {
   type Job,
   type JobsResult,
   type RobotPlan,
+  type RobotType,
   type Scenario,
   type ScenarioStep,
   type Scene,
@@ -28,6 +29,15 @@ import {
 import { demoTasks } from "@/lib/ai/demoData";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
 import { getOrCreateScenario, getOrCreateShift } from "@/lib/ai/scenarioCache";
+import {
+  ROBOT_CATALOG,
+  ROBOT_FILTER_ORDER,
+  buildHelperRobotScenario,
+  ensureHelperJobs,
+  getRobotMeta,
+  inferRobotType,
+  isHelperRobot,
+} from "@/lib/robots/catalog";
 import { clearHandoffStorage } from "@/lib/executor";
 
 const SCENARIO_TIMEOUT_MS = 25_000;
@@ -398,11 +408,12 @@ function matchExactPreset(
   jobsData: JobsResult,
   scene?: Scene | null,
 ): SpacePreset | null {
+  const k1Jobs = jobsData.jobs.filter((j) => inferRobotType(j) === "k1");
   for (const preset of SPACE_PRESET_LIST) {
     if (jobsData.business_type !== preset.jobsData.business_type) continue;
-    if (jobsData.jobs.length !== preset.jobsData.jobs.length) continue;
+    if (k1Jobs.length !== preset.jobsData.jobs.length) continue;
     const sameJobIds = preset.jobsData.jobs.every(
-      (pj, idx) => jobsData.jobs[idx]?.id === pj.id,
+      (pj, idx) => k1Jobs[idx]?.id === pj.id,
     );
     if (!sameJobIds) continue;
     if (scene) {
@@ -841,6 +852,11 @@ function subscribeJobsStorage(callback: () => void): () => void {
 }
 
 function buildFallbackScenario(job: Job, scene: Scene): Scenario {
+  const robotType = inferRobotType(job);
+  if (isHelperRobot(robotType)) {
+    return buildHelperRobotScenario(robotType, job, scene);
+  }
+
   const zoneIds = scene.zones.map((z) => z.id);
   const label = shortLabel(job.title);
   const preset = PRESET_SCENARIOS[job.id];
@@ -887,7 +903,8 @@ function getDisplayPaybackMonths(job: Job): number | null {
   if (typeof job.payback_months === "number" && job.payback_months > 0) {
     return job.payback_months;
   }
-  return Math.max(1, Math.round(ROBOT_PRICE_EUR / job.savings_eur_month));
+  const priceEur = getRobotMeta(inferRobotType(job)).priceEur || ROBOT_PRICE_EUR;
+  return Math.max(1, Math.round(priceEur / job.savings_eur_month));
 }
 
 interface JobCardProps {
@@ -911,17 +928,36 @@ function JobCard({
   const isNotSuitable = job.fit === "no";
   const canHire = job.fit === "good" || job.fit === "partial";
   const paybackMonths = getDisplayPaybackMonths(job);
+  const robotType = inferRobotType(job);
+  const robotMeta = getRobotMeta(robotType);
 
   return (
     <article
       data-testid={`job-card-${job.id}`}
       data-fit={job.fit}
+      data-robot-type={robotType}
       className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
-        {/* Header: Rank, Title, In Plan Badge, Fit Badge, Score, and Hire Button */}
+        {/* Header: Robot Badge, Rank, Title, In Plan Badge, Fit Badge, Score, and Hire Button */}
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                data-testid={`robot-badge-${job.id}`}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${robotMeta.badgeClass}`}
+              >
+                {robotMeta.roleBadge}
+              </span>
+              {inPlan && !isHelperRobot(robotType) && (
+                <span
+                  data-testid={`in-plan-badge-${job.id}`}
+                  className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300"
+                >
+                  In K1 shift plan
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
                 #{rank}
@@ -935,14 +971,6 @@ function JobCard({
               >
                 {job.title}
               </h2>
-              {inPlan && (
-                <span
-                  data-testid={`in-plan-badge-${job.id}`}
-                  className="rounded-full border border-sky-500/50 bg-sky-500/15 px-2.5 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300"
-                >
-                  In plan
-                </span>
-              )}
             </div>
           </div>
 
@@ -1073,6 +1101,9 @@ export default function JobsPage() {
     null,
   );
   const [hiringJobId, setHiringJobId] = useState<string | null>(null);
+  const [selectedRobotFilter, setSelectedRobotFilter] = useState<
+    "all" | RobotType
+  >("all");
   const isHiringRef = useRef(false);
 
   useEffect(() => {
@@ -1097,6 +1128,7 @@ export default function JobsPage() {
 
   function handleSelectPreset(preset: SpacePreset) {
     if (hiringTargetTitle !== null) return;
+    setSelectedRobotFilter("all");
     try {
       // Preserve the user's real analysis before switching to a demo preset
       if (hasCustomUpload) {
@@ -1186,27 +1218,71 @@ export default function JobsPage() {
     }
   }
 
-  const sortedJobs = useMemo(
-    () => [...jobsData.jobs].sort((a, b) => b.score - a.score),
-    [jobsData.jobs],
+  const enrichedJobs = useMemo(
+    () =>
+      ensureHelperJobs(
+        jobsData.jobs,
+        scene,
+        jobsData.business_type,
+        DEFAULT_HOURLY_COST,
+      ),
+    [jobsData.jobs, scene, jobsData.business_type],
   );
+
+  const sortedJobs = useMemo(
+    () => [...enrichedJobs].sort((a, b) => b.score - a.score),
+    [enrichedJobs],
+  );
+
+  const primaryK1Jobs = useMemo(
+    () => sortedJobs.filter((j) => inferRobotType(j) === "k1"),
+    [sortedJobs],
+  );
+
+  const helperRobotJobs = useMemo(
+    () => sortedJobs.filter((j) => isHelperRobot(inferRobotType(j))),
+    [sortedJobs],
+  );
+
+  const filterCounts = useMemo(() => {
+    const counts: Record<"all" | RobotType, number> = {
+      all: sortedJobs.length,
+      k1: 0,
+      vacuum: 0,
+      window_cleaner: 0,
+      tray_delivery: 0,
+      uvc_disinfection: 0,
+      shelf_scanner: 0,
+      air_purifier: 0,
+      security_rover: 0,
+    };
+    for (const j of sortedJobs) {
+      counts[inferRobotType(j)] += 1;
+    }
+    return counts;
+  }, [sortedJobs]);
+
+  const filteredJobs = useMemo(() => {
+    if (selectedRobotFilter === "all") return sortedJobs;
+    return sortedJobs.filter((j) => inferRobotType(j) === selectedRobotFilter);
+  }, [sortedJobs, selectedRobotFilter]);
 
   const planIdSet = useMemo(() => new Set(plan.job_ids), [plan.job_ids]);
 
   const includedJobs = useMemo(
     () =>
       plan.job_ids
-        .map((id) => jobsData.jobs.find((j) => j.id === id))
+        .map((id) => primaryK1Jobs.find((j) => j.id === id))
         .filter((j): j is Job => j !== undefined),
-    [plan.job_ids, jobsData.jobs],
+    [plan.job_ids, primaryK1Jobs],
   );
 
   const primaryHireJob = useMemo(
     () =>
       includedJobs[0] ??
-      sortedJobs.find((j) => j.fit === "good" || j.fit === "partial") ??
+      primaryK1Jobs.find((j) => j.fit === "good" || j.fit === "partial") ??
       null,
-    [includedJobs, sortedJobs],
+    [includedJobs, primaryK1Jobs],
   );
 
   function persistHandoff(
@@ -1215,11 +1291,15 @@ export default function JobsPage() {
     targetJob: Job,
   ) {
     try {
+      const enrichedJobsResult: JobsResult = {
+        business_type: jobsData.business_type,
+        jobs: enrichedJobs,
+      };
       const sceneJson = JSON.stringify(targetScene);
       const scenarioJson = JSON.stringify(targetScenario);
       const jobJson = JSON.stringify(targetJob);
       const planJson = JSON.stringify(plan);
-      const jobsJson = JSON.stringify(jobsData);
+      const jobsJson = JSON.stringify(enrichedJobsResult);
 
       window.sessionStorage.setItem("robohire:scene", sceneJson);
       window.sessionStorage.setItem("robohire:scenario", scenarioJson);
@@ -1269,7 +1349,7 @@ export default function JobsPage() {
 
       persistHandoff(scene, scenario, job);
       router.push("/robot");
-    } catch {
+    } finally {
       isHiringRef.current = false;
       setHiringTargetTitle(null);
       setHiringJobId(null);
@@ -1334,7 +1414,7 @@ export default function JobsPage() {
 
       persistHandoff(scene, scenario, primaryHireJob);
       router.push("/robot");
-    } catch {
+    } finally {
       isHiringRef.current = false;
       setHiringTargetTitle(null);
       setHiringJobId(null);
@@ -1602,26 +1682,177 @@ export default function JobsPage() {
           >
             <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
             <span>
-              Preparing 3D workspace &amp; generating K1 scenario for{" "}
+              Preparing 3D workspace &amp; robot simulation for{" "}
               <strong className="font-bold">{hiringTargetTitle}</strong>…
             </span>
           </div>
         )}
 
-        {/* Sorted Job Cards List */}
-        <section className="space-y-4" aria-label="Matched Robot Jobs">
-          {sortedJobs.map((job, idx) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              rank={idx + 1}
-              inPlan={planIdSet.has(job.id)}
-              isHiring={hiringJobId === job.id}
-              isAnyHiring={hiringTargetTitle !== null}
-              onHire={handleHireJob}
-            />
-          ))}
+        {/* Robot Platform Filter Bar */}
+        <section
+          aria-label="Filter by Robot Type"
+          data-testid="robot-filter-bar"
+          className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
+        >
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Filter by Robot Platform
+            </span>
+            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+              {primaryK1Jobs.length} Primary K1 • {helperRobotJobs.length}{" "}
+              Optional Helper{helperRobotJobs.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ROBOT_FILTER_ORDER.map((filterId) => {
+              const isSelected = selectedRobotFilter === filterId;
+              const count = filterCounts[filterId];
+              const label =
+                filterId === "all"
+                  ? "All Robots"
+                  : ROBOT_CATALOG[filterId].filterLabel;
+              return (
+                <button
+                  key={filterId}
+                  type="button"
+                  data-testid={`robot-filter-${filterId}`}
+                  aria-pressed={isSelected}
+                  onClick={() => setSelectedRobotFilter(filterId)}
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition active:scale-[0.98] ${
+                    isSelected
+                      ? "border-sky-500 bg-sky-600 text-white shadow-2xs dark:border-sky-400 dark:bg-sky-500"
+                      : count === 0
+                        ? "border-slate-200/80 bg-slate-50/60 text-slate-400 hover:border-slate-300 hover:text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-500 dark:hover:text-slate-300"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span
+                    className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
+                      isSelected
+                        ? "bg-white/20 text-white"
+                        : "bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </section>
+
+        {/* Sorted Job Cards List */}
+        {selectedRobotFilter === "all" ? (
+          <div className="space-y-8">
+            {/* Primary Robot: Booster K1 */}
+            <section
+              className="space-y-4"
+              aria-label="Primary Robot: Booster K1 Jobs"
+              data-testid="primary-k1-section"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
+                <div>
+                  <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+                    Primary Robot: Booster K1
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Featured smart humanoid assistant for greeting, wayfinding,
+                    announcements, and guest guidance.
+                  </p>
+                </div>
+                <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2.5 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+                  {primaryK1Jobs.length} roles
+                </span>
+              </div>
+              {primaryK1Jobs.map((job, idx) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  rank={idx + 1}
+                  inPlan={planIdSet.has(job.id)}
+                  isHiring={hiringJobId === job.id}
+                  isAnyHiring={hiringTargetTitle !== null}
+                  onHire={handleHireJob}
+                />
+              ))}
+            </section>
+
+            {/* Optional Add-On Helper Robots */}
+            {helperRobotJobs.length > 0 && (
+              <section
+                className="space-y-4"
+                aria-label="Optional Add-On Helper Robots"
+                data-testid="optional-helpers-section"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
+                  <div>
+                    <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
+                      Optional Add-On Helper Robots
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Specialized single-purpose robots recommended alongside
+                      Booster K1 when matched to this space, with honest
+                      hardware limits.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-teal-500/40 bg-teal-500/10 px-2.5 py-0.5 font-mono text-xs font-semibold text-teal-700 dark:text-teal-300">
+                    {helperRobotJobs.length} recommended
+                  </span>
+                </div>
+                {helperRobotJobs.map((job, idx) => (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    rank={idx + 1}
+                    inPlan={false}
+                    isHiring={hiringJobId === job.id}
+                    isAnyHiring={hiringTargetTitle !== null}
+                    onHire={handleHireJob}
+                  />
+                ))}
+              </section>
+            )}
+          </div>
+        ) : (
+          <section className="space-y-4" aria-label="Filtered Robot Jobs">
+            {filteredJobs.length > 0 ? (
+              filteredJobs.map((job, idx) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  rank={idx + 1}
+                  inPlan={planIdSet.has(job.id)}
+                  isHiring={hiringJobId === job.id}
+                  isAnyHiring={hiringTargetTitle !== null}
+                  onHire={handleHireJob}
+                />
+              ))
+            ) : (
+              <div
+                data-testid="empty-filter-state"
+                className="rounded-2xl border border-dashed border-slate-300 bg-white/80 p-8 text-center dark:border-slate-700 dark:bg-slate-900/60"
+              >
+                <p className="text-base font-bold text-slate-800 dark:text-slate-200">
+                  {ROBOT_CATALOG[selectedRobotFilter].name} is not recommended
+                  for {jobsData.business_type}
+                </p>
+                <p className="mx-auto mt-1.5 max-w-md text-xs text-slate-500 dark:text-slate-400">
+                  Optional helper robots are only matched when relevant to the
+                  space layout and business type. Try switching space presets or
+                  viewing all matched robots.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRobotFilter("all")}
+                  className="mt-4 cursor-pointer rounded-xl border border-sky-500/50 bg-sky-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-sky-500"
+                >
+                  Show All Robots
+                </button>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </main>
   );

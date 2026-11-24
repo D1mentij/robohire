@@ -4,15 +4,17 @@ import { Suspense, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { Scene } from "@/types/contracts";
+import type { RobotType, Scene } from "@/types/contracts";
 import type {
   RobotAnimationName,
   RobotPose,
   Vec2XZ,
   WalkTargetInfo,
 } from "@/lib/executor";
+import { getRobotMeta, isHelperRobot } from "@/lib/robots/catalog";
 import { Room3D } from "./Room3D";
 import { RobotModel } from "./RobotModel";
+import { HelperRobotModel } from "./HelperRobotModel";
 
 const FLY_IN_DURATION_SECONDS = 1.65;
 
@@ -138,6 +140,7 @@ function FollowCameraController({
 export interface SimCanvasProps {
   scene: Scene;
   businessType?: string;
+  robotType?: RobotType;
   activeZoneId: string | null;
   startPosition: Vec2XZ;
   currentTargetInfo: WalkTargetInfo | null;
@@ -151,6 +154,7 @@ export interface SimCanvasProps {
 export function SimCanvas({
   scene,
   businessType,
+  robotType = "k1",
   activeZoneId,
   startPosition,
   currentTargetInfo,
@@ -163,6 +167,7 @@ export function SimCanvas({
   const cx = scene.room.width / 2;
   const cz = scene.room.depth / 2;
   const [canvasReady, setCanvasReady] = useState(false);
+  const robotMeta = getRobotMeta(robotType);
 
   return (
     <div className="relative h-full w-full bg-slate-950">
@@ -173,7 +178,7 @@ export function SimCanvas({
         >
           <div className="h-8 w-8 animate-spin rounded-full border-3 border-sky-500 border-t-transparent" />
           <p className="font-mono text-xs font-semibold tracking-wide text-sky-300">
-            Loading 3D workspace &amp; Booster K1 model…
+            Loading 3D workspace &amp; {robotMeta.name} model…
           </p>
         </div>
       )}
@@ -232,16 +237,26 @@ export function SimCanvas({
           currentTargetInfo={currentTargetInfo}
         />
 
-        {/* Animated Robot Model */}
-        <Suspense fallback={null}>
-          <RobotModel
+        {/* Animated Robot Model: Booster K1 (primary) or Stylized Optional Helper Robot */}
+        {isHelperRobot(robotType) ? (
+          <HelperRobotModel
+            robotType={robotType}
+            scene={scene}
             poseRef={poseRef}
             startPosition={startPosition}
-            animation={animation}
-            isPointing={isPointing}
             onTick={onTick}
           />
-        </Suspense>
+        ) : (
+          <Suspense fallback={null}>
+            <RobotModel
+              poseRef={poseRef}
+              startPosition={startPosition}
+              animation={animation}
+              isPointing={isPointing}
+              onTick={onTick}
+            />
+          </Suspense>
+        )}
 
         <FollowCameraController
           poseRef={poseRef}

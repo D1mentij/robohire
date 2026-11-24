@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { generateScenario } from "@/lib/ai/scenario";
 import { buildJobScenario } from "@/lib/ai/shiftFallback";
+import {
+  buildHelperRobotScenario,
+  inferRobotType,
+  isHelperRobot,
+} from "@/lib/robots/catalog";
 import { isJob, isScene } from "@/types/contracts";
 
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status });
@@ -21,6 +26,14 @@ export async function POST(req: Request) {
   if (!isJob(b.job)) return fail("Invalid job.", 400);
   if (!isScene(b.scene) || b.scene.zones.length === 0) return fail("Invalid scene.", 400);
   const businessType = typeof b.businessType === "string" ? b.businessType.slice(0, 100) : null;
+
+  const robotType = inferRobotType(b.job);
+  if (isHelperRobot(robotType)) {
+    return NextResponse.json({
+      scenario: buildHelperRobotScenario(robotType, b.job, b.scene),
+      source: "code",
+    });
+  }
 
   if (new URL(req.url).searchParams.get("ai") === "1") {
     const out = await generateScenario(b.job, b.scene, businessType);

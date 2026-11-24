@@ -52,7 +52,7 @@ export function buildZonesPrompt(businessType: string): string {
 - 4 to 7 zones that do not overlap and lie inside the room. type is one of: ${ZONE_TYPES.join(", ")}
   (entrance = door/reception area, counter = service/bar/cash desk, seating = tables/chairs/sofas, display = shelves with products/menu board,
   waiting = queue/lobby area, shelves = storage/racks, desk = work/info desk, corridor = passage).${zoneHintLine}
-- activities: 2 to 4 short phrases of what people/staff visibly do (e.g. "barista makes coffee", "guest talks to receptionist").
+- activities: 2 to 4 short phrases of what people/staff visibly do (e.g. "barista makes coffee", "guest talks to receptionist", "staff wipe glass/floors" — used to match primary Booster K1 and optional helper robots).
 - No robot, charging or docking zones.${auto ? `\n- business_guess: the business/space type you see, exactly one of: ${FAMILIES.join(", ")}.` : ""}`;
 }
 

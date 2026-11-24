@@ -112,8 +112,8 @@ ${businessLine}
 1. Estimate a top-down floor plan in METERS. Origin (0,0) is a room corner; X = width, Z = depth.
    Return scene.room {width, depth} and scene.zones.
    Zone x,z = zone CENTER; w = size along X; d = size along Z.
-2. List repetitive tasks that HUMAN STAFF do (or would do) in this specific business space today.
-3. Rate and rank how well a Booster K1 humanoid robot could take over each task, strictly respecting K1 physical limits (speech, greeting, wayfinding, gesturing, patrol — no heavy lifting, cleaning, or door opening).
+2. List repetitive tasks that HUMAN STAFF do (or would do) in this specific business space today, including both guest-facing communication tasks (for primary Booster K1) and physical facility tasks (open floor cleaning, storefront glass cleaning, tray delivery, after-hours UV-C disinfection, shelf scanning, air quality management, or night patrol — which may be matched to optional specialized helper robots).
+3. Rate and rank how well a Booster K1 humanoid robot (the primary robot) could take over each task, strictly respecting K1 physical limits (speech, greeting, wayfinding, gesturing, patrol — no heavy lifting, cleaning, or door opening).
 
 GROUNDING RULES (most important):
 - Zones must be based ONLY on what is actually visible in the frames (furniture, doors, counters, equipment).
