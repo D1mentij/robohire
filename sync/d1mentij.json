@@ -4,12 +4,12 @@
   "os": "macOS 27.2.0 (arm64)",
   "node": "22.23.4",
   "git": {
-    "head": "28611799",
-    "message": "sync:check — machines compare themselves via sync/<hostname>.json (script, tests, README, AGENTS rule)",
+    "head": "3f05962c",
+    "message": "sync:check: keep package-lock.json clean after npm install, no reinstall loop",
     "branch": "main",
     "ahead": 0,
     "behind": 0,
-    "dirty": true,
+    "dirty": false,
     "offline": false
   },
   "ollama": {
@@ -29,10 +29,14 @@
   ],
   "env_local_exists": true,
   "demo_check": {
-    "verdict": "READY",
-    "failed": [],
+    "verdict": "NOT READY",
+    "failed": [
+      "e2e (demo mode)",
+      "real analyze (valid, < 60 s after warm-up)",
+      "[WebServer] [shift] AI shift failed, using built-in routine: Start Ollama (it is not reachable at http://127.0.0.1:9): open the Ollama app or run \"ollama serve\". Or use demo mode."
+    ],
     "warnings": [],
-    "seconds": 113
+    "seconds": 665
   },
-  "timestamp": "2026-11-24T09:20:31.512Z"
+  "timestamp": "2026-11-24T09:32:04.671Z"
 }
