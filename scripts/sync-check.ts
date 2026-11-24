@@ -5,7 +5,7 @@
  * Only sync/<hostname>.json is ever committed. Secrets are never read into the report: .env.local KEY NAMES only (plus the non-secret AI_PROVIDER value).
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -122,9 +122,22 @@ function updateRepo(): boolean {
   const lock = path.join(root, "package-lock.json");
   const nm = path.join(root, "node_modules");
   const stamp = existsSync(path.join(nm, ".package-lock.json")) ? path.join(nm, ".package-lock.json") : nm;
-  if (!existsSync(nm) || (existsSync(lock) && statSync(stamp).mtimeMs < statSync(lock).mtimeMs)) {
-    console.log("node_modules missing or older than package-lock.json → npm install");
-    run("npm", ["install"], { inherit: true });
+  const missing = !existsSync(nm);
+  if (missing || (existsSync(lock) && statSync(stamp).mtimeMs < statSync(lock).mtimeMs)) {
+    console.log(`node_modules ${missing ? "missing" : "older than package-lock.json"} → ${missing ? "npm ci" : "npm install"}`);
+    const lockWasClean = git("diff", "--quiet", "--", "package-lock.json").ok;
+    // npm ci installs exactly the lockfile and never rewrites it; npm install may rewrite platform flags in the lockfile
+    run("npm", [missing && existsSync(lock) ? "ci" : "install", "--no-audit", "--no-fund"], { inherit: true });
+    if (lockWasClean && !git("diff", "--quiet", "--", "package-lock.json").ok) {
+      git("checkout", "--", "package-lock.json"); // npm only touched platform flags: keep the tree clean
+      console.log("(package-lock.json rewritten by npm for this platform — restored, nothing to commit)");
+    }
+    const now = new Date();
+    try {
+      utimesSync(existsSync(path.join(nm, ".package-lock.json")) ? path.join(nm, ".package-lock.json") : nm, now, now); // do not reinstall on every run
+    } catch {
+      /* ignore */
+    }
   }
   return offline;
 }
