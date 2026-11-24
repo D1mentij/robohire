@@ -23,6 +23,7 @@ Next.js 16 has API changes — check node_modules/next/dist/docs/ before using N
 
 ## Rules
 - Before work: git pull and read PROGRESS.md.
+- Before demo prep and at the start of each day, run `npm run sync:check` and fix what it reports.
 - After each working step: update PROGRESS.md, then commit + push.
 - Never change contracts silently: if needed, write it in PROGRESS.md under "CONTRACT CHANGE".
 - Keep a "demo mode" that loads mocks/ so the app works even if AI fails.

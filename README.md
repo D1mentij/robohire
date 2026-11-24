@@ -73,6 +73,10 @@ Goal: a second laptop that can run the demo on stage if the main one fails. Abou
 
 No GPU? It still works (slower); if the real AI is too slow or Ollama fails, **Try demo** and **Try real example** need no AI at all.
 
+## Sync check
+
+`npm run sync:check` makes the laptops compare themselves through the repo: it fetches (and fast-forwards if you are behind with a clean tree), runs `npm install` when `node_modules` is missing or older than `package-lock.json`, then writes `sync/<hostname>.json` (short hostname, OS, Node, git commit/ahead/behind/dirty, Ollama version and installed models, the *names* of the keys set in `.env.local` — never values — the `AI_PROVIDER`, the `demo:check` verdict and a timestamp), commits **only that file** (`sync: <hostname> status`) and pushes it. It then compares all `sync/*.json` files and prints a table plus plain-English problems ("win is on an older commit → they must git pull", "qwen3-vl:4b-instruct missing on win", "AI_PROVIDER differs", "report older than 24 h", "demo:check NOT READY: …") and ends with `ALL MACHINES IN SYNC & READY` or `NOT IN SYNC: <n> issues`. Use `npm run sync:check -- --skip-demo` to skip the 2–3 minute `demo:check`. Run it on every laptop before demo prep and at the start of each day.
+
 ## Architecture
 
 - **Upload** (`/upload`): 4 frames (512 px) are extracted from the video in the browser (max 60 s) and kept in `sessionStorage`.
