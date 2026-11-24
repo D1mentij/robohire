@@ -31,7 +31,7 @@ export type Report = {
 };
 
 function run(cmd: string, args: string[], opts: { inherit?: boolean } = {}): { ok: boolean; out: string } {
-  const r = spawnSync(cmd, args, { cwd: root, encoding: "utf8", shell: win && cmd !== "git", stdio: opts.inherit ? "inherit" : ["ignore", "pipe", "pipe"] });
+  const r = spawnSync(cmd, args, { cwd: root, encoding: "utf8", shell: win && cmd !== "git", stdio: opts.inherit ? "inherit" : ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024, timeout: 20 * 60 * 1000 }); // demo:check output is long: the default 1 MB buffer would kill it
   return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 const git = (...args: string[]) => run("git", args);
@@ -88,9 +88,9 @@ function demoCheck(): DemoCheck {
   console.log("Running demo:check (doctor → e2e → real analyze), about 2–3 minutes…");
   const t0 = Date.now();
   const r = run("node", ["scripts/demo-check.mjs"]);
-  const summary = r.out.split("Summary")[1] ?? r.out.slice(-600);
-  const failed = [...summary.matchAll(/✘\s+(.+)/g)].map((m) => m[1].trim()).filter((s) => !/^NOT READY/.test(s));
-  const warnings = [...summary.matchAll(/!\s+(.+)/g)].map((m) => m[1].trim());
+  const summary = r.out.split(/\n\s*Summary\s*\n/).pop() ?? r.out.slice(-600); // the LAST "Summary" block of demo:check
+  const failed = [...summary.matchAll(/^\s{2}✘\s+(.+)$/gm)].map((m) => m[1].trim());
+  const warnings = [...summary.matchAll(/^\s{2}!\s+(.+)$/gm)].map((m) => m[1].trim());
   if (!r.ok && failed.length === 0) failed.push("demo:check crashed: " + r.out.split("\n").slice(-2).join(" ").slice(0, 160));
   return { verdict: r.ok ? "READY" : "NOT READY", failed, warnings, seconds: Math.round((Date.now() - t0) / 1000) };
 }
