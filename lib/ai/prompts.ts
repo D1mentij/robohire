@@ -1,4 +1,5 @@
 import { k1Profile } from "./k1Profile";
+import { expectedZonesHint, isAutoDetect } from "./businessPresets";
 
 export const ANALYSIS_SCHEMA = {
   type: "object",
@@ -78,35 +79,46 @@ No money, prices, hours or savings in any text. K1 is a small humanoid WITHOUT h
  * compact = shorter prompt for small local models (Ollama).
  */
 export function buildAnalysisPrompt(businessType: string, compact = false): string {
+  const auto = isAutoDetect(businessType);
+  const hint = expectedZonesHint(businessType);
   if (compact) {
-    return `Look at the frames of a "${businessType}" (the type only helps naming; describe what is VISIBLE).
+    const header = auto
+      ? "Look at the frames and infer the business/space type automatically (describe only what is VISIBLE)."
+      : `Look at the frames of a "${businessType}" (tailor naming and tasks to this industry; describe what is VISIBLE).`;
+    return `${header}
 Return JSON only:
 {"scene":{"room":{"width":m,"depth":m},"zones":[{"id","label","x","z","w","d"}]},
  "tasks":[{"id","title","zone_id","description","frequency_per_day","minutes_each"}],
  "ratings":[{"id","fit","score","why","limits"}]}
 Floor plan in METERS, top-down, origin = room corner, X = width, Z = depth. Zone x,z = CENTER, w along X, d along Z.
 - 3-6 zones from visible things only; ids snake_case (e.g. "entrance"); inside the room; no overlaps; no robot/charging zones.
-- 4-6 tasks that HUMAN staff do there; zone_id must be a zone id; at least 2 are customer-facing talking tasks (greeting, guiding, explaining menu/offers, queue info, announcements) when visitors come.
+- 4-6 tasks that HUMAN staff do there; zone_id must be a zone id; tailor tasks to this business type; at least 2 are customer-facing talking/wayfinding tasks when visitors come.
 - frequency_per_day and minutes_each: realistic numbers.
 ${k1Brief()}
 ${RATING_RULES}`;
   }
+  const businessLine = auto
+    ? "The owner selected Auto-detect: infer the business/space type automatically from visual cues in the frames."
+    : `The owner says the business type is: "${businessType}".`;
+  const industryZoneLine = hint
+    ? `\n- Typical spatial zones for this industry include: ${hint}. Use these names when matching features are visible, but NEVER invent zones you cannot see.`
+    : "";
   return `You are analysing frames from a short walk-through video of a real space.
-The owner says the business type is: "${businessType}".
+${businessLine}
 
 1. Estimate a top-down floor plan in METERS. Origin (0,0) is a room corner; X = width, Z = depth.
    Return scene.room {width, depth} and scene.zones.
    Zone x,z = zone CENTER; w = size along X; d = size along Z.
-2. List repetitive tasks that HUMAN STAFF do (or would do) in this space today.
-3. Rate how well a Booster K1 humanoid robot could take over each task.
+2. List repetitive tasks that HUMAN STAFF do (or would do) in this specific business space today.
+3. Rate and rank how well a Booster K1 humanoid robot could take over each task, strictly respecting K1 physical limits (speech, greeting, wayfinding, gesturing, patrol — no heavy lifting, cleaning, or door opening).
 
 GROUNDING RULES (most important):
 - Zones must be based ONLY on what is actually visible in the frames (furniture, doors, counters, equipment).
   NEVER invent zones for things you cannot see (e.g. do not add an order counter or lounge unless one is visible).
-- The business type is used ONLY to name and interpret what is visible (e.g. a visible table may be "Customer table" in a cafe).
+- The business type is used ONLY to name and interpret what is visible (e.g. fitting rooms & checkout in retail, reception desk & elevators in a hotel, waiting area in a clinic).${industryZoneLine}
 - If the space clearly does not match the business type (e.g. a bedroom described as a cafe), still describe
   exactly what is visible, using neutral labels.
-- Tasks must be tied to visible zones and to what that space plausibly needs.
+- Tasks must be tied to visible zones and tailored specifically to what this business type plausibly needs.
 - NO robot-related content: no docking, charging, parking or maintenance zones, and no tasks about robots,
   charging or docking. Tasks are work that human staff do today.
 
@@ -116,8 +128,8 @@ Task rules: 4 to 7 tasks; id = short snake_case; zone_id MUST be one of the zone
 description = one sentence; frequency_per_day = realistic repetitions; minutes_each = realistic minutes.
 Include BOTH kinds of work:
  (a) physical work staff really do in the visible space (cleaning, carrying, restocking, tidying...);
- (b) customer-facing COMMUNICATION work that fits the visible space: greeting at the entrance, wayfinding / guiding
-     visitors to zones, explaining the menu / offers / products, queue or waiting-area information,
+ (b) customer-facing COMMUNICATION work that fits the visible space and industry: greeting at the entrance, wayfinding / guiding
+     visitors to zones, explaining menus / offers / schedules / products, queue or waiting-area information,
      closing-time or safety announcements.
 When the space has visitors or customers, at least 2 of the tasks MUST be communication tasks (b), each tied to a visible zone.
 

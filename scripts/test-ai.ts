@@ -16,7 +16,9 @@ import { readShowcasesFromDisk } from "../lib/ai/showcaseDisk";
 import { ANALYSIS_SCHEMA, buildAnalysisPrompt } from "../lib/ai/prompts";
 import { detectBusiness, inferFromHints } from "../lib/ai/businessTemplates";
 import { fixLayout, gridLayout, hasOverlap, isBareLabel, isCollinear, relabelZones } from "../lib/ai/layout";
-import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis } from "../lib/ai/zoneTasks";
+import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis, buildZonesPrompt } from "../lib/ai/zoneTasks";
+import { BUSINESS_PRESETS, AUTO_DETECT_ID } from "../lib/ai/businessPresets";
+import { buildDemoData } from "../lib/ai/demo";
 import { filterValidSteps, isJobsResult, isRobotPlan, type Scene } from "../types/contracts";
 
 const zoneIds = mockScene.zones.map((z) => z.id);
@@ -326,6 +328,36 @@ delete process.env.AI_PROVIDER;
   assert.ok(r.scene.zones.some((q) => q.label === "Car display"));
   assert.ok(r.tasks.some((t) => /test-drive|offers/i.test(t.title)));
   assert.ok(!r.tasks.some((t) => /menu|barista|wipe tables/i.test(t.title)));
+}
+// ---- multi-industry presets, auto-detect, and industry-tailored demo fallback
+{
+  assert.equal(BUSINESS_PRESETS.length, 16);
+  assert.equal(detectBusiness(AUTO_DETECT_ID), "generic");
+  assert.equal(detectBusiness("Auto-detect from video"), "generic");
+  assert.equal(detectBusiness("Auto-detect from video", ["guest at reception", "luggage cart"]), "hotel");
+  assert.equal(detectBusiness("Electronics / Showroom"), "retail");
+  assert.equal(detectBusiness("Gym / Fitness Club"), "gym");
+  assert.equal(detectBusiness("Conference / Expo Venue"), "event");
+  assert.equal(detectBusiness("Museum / Gallery"), "museum");
+  assert.equal(detectBusiness("Airport / Train Terminal"), "terminal");
+  assert.match(buildZonesPrompt(AUTO_DETECT_ID), /Infer the business\/space type/i);
+  assert.match(buildZonesPrompt("Retail Clothing / Concept Store"), /fitting rooms/i);
+  assert.match(buildAnalysisPrompt("Hotel Lobby / Reception", false), /reception desk/i);
+  for (const preset of BUSINESS_PRESETS) {
+    assert.equal(hasOverlap(preset.demoScene.zones), false, `${preset.id} demoScene overlap`);
+    const d = buildDemoData({ businessType: preset.label, hoursPerWeek: preset.defaultHoursPerWeek, hourlyCost: preset.defaultHourlyCost });
+    assert.equal(d.jobs.business_type, preset.label);
+    assert.ok(d.jobs.jobs.length >= 4 && isJobsResult(d.jobs) && isRobotPlan(d.plan), `${preset.id} demo jobs/plan`);
+  }
+  const gymDemo = buildDemoData({ businessType: "Gym / Fitness Club", hoursPerWeek: 98, hourlyCost: 9 });
+  assert.ok(gymDemo.jobs.jobs.some((j) => /member|class schedule|studio|check-in/i.test(j.title)));
+  assert.ok(!gymDemo.jobs.jobs.some((j) => /coffee|barista|menu/i.test(j.title)));
+  const customDemo = buildDemoData({ businessType: "Artisanal Bookstore", hoursPerWeek: 45, hourlyCost: 10 });
+  assert.equal(customDemo.jobs.business_type, "Artisanal Bookstore");
+  assert.ok(customDemo.jobs.jobs.length >= 4 && customDemo.analysis.hourlyCost === 10 && customDemo.analysis.hoursPerWeek === 45);
+  const autoDemo = buildDemoData({ businessType: AUTO_DETECT_ID, hoursPerWeek: 60, hourlyCost: 8.5 });
+  assert.match(autoDemo.jobs.business_type, /Auto-detected/i);
+  assert.ok(autoDemo.jobs.jobs.length >= 4);
 }
 console.log("test:ai OK");
 }

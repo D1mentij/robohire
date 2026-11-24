@@ -15,6 +15,10 @@ const LABELS: Record<BusinessKind, Record<ZoneType, string>> = {
   retail: { entrance: "Entrance", counter: "Checkout", seating: "Rest area", display: "Promo display", waiting: "Queue area", shelves: "Product shelves", desk: "Customer service", corridor: "Aisle", other: "Shop floor" },
   office: { entrance: "Entrance", counter: "Reception desk", seating: "Visitor seating", display: "Info screen", waiting: "Waiting area", shelves: "Storage", desk: "Front desk", corridor: "Corridor", other: "Office area" },
   university: { entrance: "Entrance", counter: "Info desk", seating: "Student seating", display: "Event board", waiting: "Waiting area", shelves: "Notice shelves", desk: "Information desk", corridor: "Main corridor", other: "Lobby" },
+  gym: { entrance: "Club entrance", counter: "Check-in desk", seating: "Recovery lounge", display: "Class schedule board", waiting: "Waiting area", shelves: "Towel & drink rack", desk: "Membership desk", corridor: "Studio corridor", other: "Gym floor" },
+  event: { entrance: "Venue entrance", counter: "Registration counter", seating: "Networking lounge", display: "Agenda board", waiting: "Queue area", shelves: "Swag rack", desk: "Registration desk", corridor: "Auditorium entrance", other: "Expo hall" },
+  museum: { entrance: "Gallery entrance", counter: "Ticket desk", seating: "Atrium benches", display: "Exhibition highlights", waiting: "Tour waiting area", shelves: "Catalogue rack", desk: "Information desk", corridor: "Gallery wing", other: "Exhibition hall" },
+  terminal: { entrance: "Terminal entrance", counter: "Check-in counter", seating: "Passenger seating", display: "Departures board", waiting: "Waiting seats", shelves: "Transit maps rack", desk: "Passenger info desk", corridor: "Gate corridor", other: "Concourse" },
   generic: { entrance: "Entrance", counter: "Service counter", seating: "Seating area", display: "Display area", waiting: "Waiting area", shelves: "Shelves", desk: "Info desk", corridor: "Corridor", other: "Common area" },
 };
 
@@ -57,7 +61,8 @@ export function relabelZones(scene: Scene, kind: BusinessKind): Scene {
 
 /** Minimum room size per business (m): the K1 needs space to walk; small models often guess 3–5 m. */
 const MIN_ROOM: Record<BusinessKind, [number, number]> = {
-  showroom: [12, 9], hotel: [10, 8], cafe: [8, 6], library: [10, 8], retail: [8, 6], office: [6, 5], university: [12, 8], generic: [6, 5],
+  showroom: [12, 9], hotel: [10, 8], cafe: [8, 6], library: [10, 8], retail: [8, 6], office: [6, 5], university: [12, 8],
+  gym: [10, 8], event: [12, 9], museum: [10, 8], terminal: [14, 9], generic: [6, 5],
 };
 
 /** Zone types a business plausibly has, in the order we add missing ones. */
@@ -69,6 +74,10 @@ const PLAUSIBLE: Record<BusinessKind, ZoneType[]> = {
   retail: ["entrance", "display", "shelves", "counter"],
   office: ["entrance", "desk", "waiting", "corridor"],
   university: ["entrance", "corridor", "desk", "display"],
+  gym: ["entrance", "counter", "display", "corridor", "seating"],
+  event: ["entrance", "desk", "corridor", "display", "seating"],
+  museum: ["entrance", "counter", "display", "corridor", "seating"],
+  terminal: ["entrance", "desk", "display", "corridor", "waiting"],
   generic: ["entrance", "display", "seating", "counter"],
 };
 

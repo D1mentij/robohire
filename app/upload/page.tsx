@@ -4,6 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  AUTO_DETECT_DEFAULTS,
+  AUTO_DETECT_ID,
+  BUSINESS_PRESETS,
+  CUSTOM_DEFAULTS,
+  type BusinessPreset,
+} from "@/lib/ai/businessPresets";
+import { BusinessTypeSelector, type BusinessSelection } from "./BusinessTypeSelector";
 import { applyShowcase, downloadCurrentAsShowcase, fetchShowcases, type Showcase } from "@/lib/ai/showcase";
 import { getCached, hashInputs, putCached } from "@/lib/ai/uploadCache";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
@@ -46,11 +54,53 @@ export default function UploadPage() {
       alive = false;
     };
   }, []);
+  const defaultPreset = BUSINESS_PRESETS[0];
   const [file, setFile] = useState<File | null>(null);
-  const [businessType, setBusinessType] = useState("");
-  const [hoursPerWeek, setHoursPerWeek] = useState("");
-  const [hourlyCost, setHourlyCost] = useState("8.5");
+  const [selection, setSelection] = useState<BusinessSelection>({ mode: "preset", preset: defaultPreset });
+  const [hoursPerWeek, setHoursPerWeek] = useState(String(defaultPreset.defaultHoursPerWeek));
+  const [hourlyCost, setHourlyCost] = useState(String(defaultPreset.defaultHourlyCost));
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const effectiveBusinessType =
+    selection.mode === "preset"
+      ? selection.preset.label
+      : selection.mode === "auto"
+        ? AUTO_DETECT_ID
+        : selection.customText.trim();
+
+  const costHelperText =
+    selection.mode === "preset"
+      ? selection.preset.costHelper
+      : selection.mode === "auto"
+        ? AUTO_DETECT_DEFAULTS.costHelper
+        : CUSTOM_DEFAULTS.costHelper;
+
+  function handleSelectPreset(preset: BusinessPreset) {
+    setSelection({ mode: "preset", preset });
+    setHoursPerWeek(String(preset.defaultHoursPerWeek));
+    setHourlyCost(String(preset.defaultHourlyCost));
+    setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
+  }
+
+  function handleSelectAuto() {
+    setSelection({ mode: "auto" });
+    setHoursPerWeek(String(AUTO_DETECT_DEFAULTS.defaultHoursPerWeek));
+    setHourlyCost(String(AUTO_DETECT_DEFAULTS.defaultHourlyCost));
+    setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
+  }
+
+  function handleSelectCustom() {
+    setSelection((prev) => ({
+      mode: "custom",
+      customText: prev.mode === "custom" ? prev.customText : "",
+    }));
+    setErrors((e) => ({ ...e, businessType: "" }));
+  }
+
+  function handleCustomTextChange(text: string) {
+    setSelection({ mode: "custom", customText: text });
+    if (text.trim()) setErrors((e) => ({ ...e, businessType: "" }));
+  }
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [frames, setFrames] = useState<string[]>([]);
 
@@ -128,7 +178,7 @@ export default function UploadPage() {
     const errs: Record<string, string> = {};
     // Keep the real video error (duration/format) if there is one.
     if (!file) errs.video = errors.video || "Please choose a video (max 60 s).";
-    if (!businessType.trim()) errs.businessType = "Enter a business type.";
+    if (!effectiveBusinessType) errs.businessType = "Select a business type or enter a custom one.";
     const hours = Number(hoursPerWeek);
     if (!(hours > 0 && hours <= 168)) errs.hoursPerWeek = "Enter hours per week (1–168).";
     const cost = Number(hourlyCost);
@@ -152,7 +202,7 @@ export default function UploadPage() {
         onProgress: (done, total) => setProgress({ done, total }),
       });
       setFrames(out);
-      const data: UploadData = { businessType: businessType.trim(), hoursPerWeek: hours, hourlyCost: cost, frames: out };
+      const data: UploadData = { businessType: effectiveBusinessType, hoursPerWeek: hours, hourlyCost: cost, frames: out };
       sessionStorage.setItem(UPLOAD_STORAGE_KEY, JSON.stringify(data));
     } catch (err) {
       setErrors({ video: `Frame extraction failed: ${err instanceof Error ? err.message : "unknown error"}` });
@@ -163,11 +213,15 @@ export default function UploadPage() {
 
   async function onAnalyze(force = false) {
     if (!frames.length || analyzing || jobsLoading) return;
+    if (!effectiveBusinessType) {
+      setErrors((e) => ({ ...e, businessType: "Select a business type or enter a custom one." }));
+      return;
+    }
     setAnalyzeError("");
     setJobsError("");
     setCached(false);
     const data: UploadData = {
-      businessType: businessType.trim(),
+      businessType: effectiveBusinessType,
       hoursPerWeek: Number(hoursPerWeek),
       hourlyCost: Number(hourlyCost),
       frames,
@@ -260,7 +314,13 @@ export default function UploadPage() {
   }
 
   function runDemo() {
-    startDemo();
+    const hours = Number(hoursPerWeek);
+    const cost = Number(hourlyCost);
+    startDemo({
+      businessType: effectiveBusinessType || undefined,
+      hoursPerWeek: hours > 0 && hours <= 168 ? hours : undefined,
+      hourlyCost: cost > 0 ? cost : undefined,
+    });
     router.push("/jobs");
   }
 
@@ -313,11 +373,13 @@ export default function UploadPage() {
 
           <div>
             <label className={label}>Business type</label>
-            <input
-              value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-              placeholder="café"
-              className={input}
+            <BusinessTypeSelector
+              selection={selection}
+              onSelectPreset={handleSelectPreset}
+              onSelectAuto={handleSelectAuto}
+              onSelectCustom={handleSelectCustom}
+              onCustomTextChange={handleCustomTextChange}
+              disabled={busy || analyzing || jobsLoading}
             />
             {err("businessType")}
           </div>
@@ -327,12 +389,18 @@ export default function UploadPage() {
               <label className={label}>Opening hours per week</label>
               <input
                 type="number"
+                data-testid="hours-per-week-input"
                 min={1}
                 max={168}
                 value={hoursPerWeek}
                 onChange={(e) => setHoursPerWeek(e.target.value)}
                 className={input}
               />
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {selection.mode === "preset"
+                  ? `Suggested for ${selection.preset.label} — override freely`
+                  : "Weekly operating hours used for ROI & capacity"}
+              </p>
               {err("hoursPerWeek")}
             </div>
 
@@ -340,14 +408,15 @@ export default function UploadPage() {
               <label className={label}>Staff hourly cost (€)</label>
               <input
                 type="number"
+                data-testid="hourly-cost-input"
                 min={0}
                 step="0.5"
                 value={hourlyCost}
                 onChange={(e) => setHourlyCost(e.target.value)}
                 className={input}
               />
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Typical Latvian hospitality cost ≈ €8.5/h incl. employer tax
+              <p data-testid="hourly-cost-helper" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {costHelperText}
               </p>
               {err("hourlyCost")}
             </div>
@@ -399,7 +468,7 @@ export default function UploadPage() {
                 type="button"
                 data-testid="save-showcase-btn"
                 onClick={() => {
-                  const name = window.prompt("Showcase name", analysis ? businessType.trim() || "My space" : "My space");
+                  const name = window.prompt("Showcase name", analysis ? effectiveBusinessType || "My space" : "My space");
                   if (name && !downloadCurrentAsShowcase(name)) window.alert("No complete run to save yet.");
                 }}
                 className="cursor-pointer rounded-xl border border-dashed border-slate-400 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"

@@ -3,6 +3,7 @@ import type { AnalysisResult, Rating, Task } from "./types";
 import { ZONE_TYPES, inferZoneType, zoneTypeOfId, type ZoneType } from "./zoneTypes";
 import { heuristicRating, makeRating } from "./ratings";
 import { fixLayout, relabelZones } from "./layout";
+import { expectedZonesHint, isAutoDetect } from "./businessPresets";
 import { detectBusiness, genericBasics, templatesFor, type BusinessKind, type Template } from "./businessTemplates";
 
 /**
@@ -34,12 +35,20 @@ export const ZONES_SCHEMA = {
 };
 
 export function buildZonesPrompt(businessType: string): string {
-  return `These frames show a "${businessType}". Describe only what is VISIBLE. Return JSON:
+  const auto = isAutoDetect(businessType);
+  const hint = expectedZonesHint(businessType);
+  const intro = auto
+    ? "Infer the business/space type automatically from what is visible in these frames. Describe only what is VISIBLE."
+    : `These frames show a "${businessType}". Describe only what is VISIBLE.`;
+  const zoneHintLine = hint
+    ? `\n- Expected zones for this industry (ONLY include ones actually visible): ${hint}.`
+    : "";
+  return `${intro} Return JSON:
 {"room":{"width":m,"depth":m},"zones":[{"label","type","x","z","w","d"}],"activities":["..."]}
 - Top-down floor plan in METERS, origin = room corner, X = width, Z = depth. x,z = zone CENTER; w along X, d along Z.
 - 4 to 7 zones that do not overlap and lie inside the room. type is one of: ${ZONE_TYPES.join(", ")}
   (entrance = door/reception area, counter = service/bar/cash desk, seating = tables/chairs/sofas, display = shelves with products/menu board,
-  waiting = queue/lobby area, shelves = storage/racks, desk = work/info desk, corridor = passage).
+  waiting = queue/lobby area, shelves = storage/racks, desk = work/info desk, corridor = passage).${zoneHintLine}
 - activities: 2 to 4 short phrases of what people/staff visibly do (e.g. "barista makes coffee", "guest talks to receptionist").
 - No robot, charging or docking zones.`;
 }
