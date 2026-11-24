@@ -110,12 +110,13 @@ function updateRepo(): boolean {
   const fetched = git("fetch", "--quiet");
   const offline = !fetched.ok;
   if (offline) console.log("! git fetch failed (offline?) — reporting local state only");
-  const { behind } = aheadBehind();
+  const { ahead, behind } = aheadBehind();
   if (!offline && behind && behind > 0) {
     if (dirty()) console.log(`! ${behind} commit(s) behind, but you have uncommitted changes — not pulling. Commit/stash, then run: git pull`);
     else {
-      const p = git("pull", "--ff-only");
-      console.log(p.ok ? `✔ pulled ${behind} new commit(s)` : `! git pull --ff-only failed: ${p.out.split("\n")[0]}`);
+      // unpushed local commits (e.g. the previous sync commit) → rebase them on top; otherwise a plain fast-forward
+      const p = ahead && ahead > 0 ? git("pull", "--rebase") : git("pull", "--ff-only");
+      console.log(p.ok ? `✔ pulled ${behind} new commit(s)` : `! git pull failed: ${p.out.split("\n")[0]}`);
     }
   }
   // npm install when node_modules is missing or older than the lockfile
