@@ -70,12 +70,12 @@ async function main() {
     const shift = jobs.ok && !process.env.BENCH_SKIP_SHIFT ? await generateShift(jobs.plan, jobs.jobs.jobs, scene, businessType) : null;
     const tS = ((Date.now() - t1) / 1000).toFixed(1);
     if (!jobs.ok) failed++;
-    console.log(`${i} | ${tA}s | ${jobs.ok ? "ok" : "FAIL"} | ${scene.zones.length} | ${tasks.length} | ${ratings.length}/${tasks.length} | ${tS}s | ${shift?.source ?? "-"} (${shift?.scenario.steps.length ?? 0} steps)`);
+    console.log(`${i} | ${tA}s | ${jobs.ok ? "ok" : "FAIL"} | ${scene.zones.length} | ${tasks.length} | ${ratings.length}/${tasks.length} | ${tS}s | ${shift?.source ?? "-"} (${shift?.scenario.steps.length ?? 0} steps) | family=${a.result.family}`);
     if (process.env.BENCH_SAVE && i === runs) {
       const { writeFileSync } = await import("node:fs");
       writeFileSync(process.env.BENCH_SAVE, JSON.stringify({ name: process.env.BENCH_NAME ?? "Real room test", analysis: { ...a.result, businessType, hoursPerWeek: 60, hourlyCost: 8.5 }, jobs: jobs.ok ? jobs.jobs : null, plan: jobs.ok ? jobs.plan : null }, null, 2));
     }
-    if (i === runs) console.log("\nzones:", scene.zones.map((z) => `${z.label} ${z.w}x${z.d}`).join(", "), "\ntasks:", tasks.map((t) => t.title).join(" | "));
+    if (i === runs) console.log("\nfamily:", a.result.family, a.result.familyDetected ? "(auto-detected)" : "", "\nzones:", scene.zones.map((z) => `${z.label} ${z.w}x${z.d}`).join(", "), "\ntasks:", tasks.map((t) => t.title).join(" | "));
   }
   process.exit(failed ? 1 : 0);
 }

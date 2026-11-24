@@ -15,10 +15,12 @@ import { parseShowcase } from "../lib/ai/showcase";
 import { readShowcasesFromDisk } from "../lib/ai/showcaseDisk";
 import { ANALYSIS_SCHEMA, buildAnalysisPrompt } from "../lib/ai/prompts";
 import { detectBusiness, inferFromHints } from "../lib/ai/businessTemplates";
-import { fixLayout, gridLayout, hasOverlap, isBareLabel, isCollinear, relabelZones } from "../lib/ai/layout";
-import { parseZonesAnswer, tasksFromZones, validateZonesAnalysis, buildZonesPrompt } from "../lib/ai/zoneTasks";
-import { BUSINESS_PRESETS, AUTO_DETECT_ID } from "../lib/ai/businessPresets";
+import { BUSINESS_PRESETS, AUTO_DETECT_ID, findPreset } from "../lib/ai/businessPresets";
+import { BUSINESS_DEFAULTS, costCaption } from "../lib/roi/businessDefaults";
+import { FAMILY_OPTIONS, FAMILIES, parseFamily, zonesHintFor } from "../lib/ai/families";
 import { buildDemoData } from "../lib/ai/demo";
+import { fixLayout, gridLayout, hasOverlap, isBareLabel, isCollinear, relabelZones } from "../lib/ai/layout";
+import { parseZonesAnswer, rebuildForFamily, tasksFromZones, validateZonesAnalysis, buildZonesPrompt, ZONES_SCHEMA } from "../lib/ai/zoneTasks";
 import { filterValidSteps, isJobsResult, isRobotPlan, type Scene } from "../types/contracts";
 
 const zoneIds = mockScene.zones.map((z) => z.id);
@@ -231,9 +233,18 @@ delete process.env.AI_PROVIDER;
     [["Hotel lobby", "Boutique hotel", "viesnīca", "Viesnīca Rīgā", "отель", "Гостиница"], "hotel"],
     [["Car showroom", "Auto salons", "Mazda dealership", "автосалон", "autosalons"], "showroom"],
     [["Public library", "bibliotēka", "библиотека"], "library"],
-    [["Small café", "Coffee shop", "restaurant", "kafejnīca", "кафе", "ресторан"], "cafe"],
+    [["Small café", "Coffee shop", "kafejnīca", "кафе"], "cafe"],
+    [["Restaurant", "Bistro", "restorāns", "ресторан"], "restaurant"],
+    [["Cocktail bar", "Bar / Lounge", "Pub"], "bar"],
+    [["Supermarket", "Grocery store", "супермаркет"], "supermarket"],
+    [["Shopping mall", "Mall atrium", "tirdzniecības centrs"], "mall"],
+    [["Dental clinic", "Clinic", "klīnika", "клиника"], "clinic"],
+    [["Gym", "Fitness club", "фитнес"], "gym"],
+    [["Museum", "Art gallery", "музей"], "museum"],
+    [["Airport", "Train terminal", "вокзал"], "terminal"],
+    [["Conference venue", "Expo hall"], "event"],
     [["Retail shop", "Clothing store", "veikals", "магазин"], "retail"],
-    [["Office reception", "Dental clinic", "birojs", "офис"], "office"],
+    [["Office reception", "Coworking", "birojs", "офис"], "office"],
     [["University lobby", "Riga Technical University", "universitāte", "университет"], "university"],
     [["", "Something else", "Other"], "generic"],
   ];
@@ -358,6 +369,98 @@ delete process.env.AI_PROVIDER;
   const autoDemo = buildDemoData({ businessType: AUTO_DETECT_ID, hoursPerWeek: 60, hourlyCost: 8.5 });
   assert.match(autoDemo.jobs.business_type, /Auto-detected/i);
   assert.ok(autoDemo.jobs.jobs.length >= 4);
+}
+// ---- selector presets: family, one defaults table (all assumptions), caption
+{
+  assert.equal(BUSINESS_PRESETS.length, 16);
+  assert.equal(BUSINESS_PRESETS.filter((p) => p.quickPick).length, 6);
+  for (const p of BUSINESS_PRESETS) {
+    const d = BUSINESS_DEFAULTS[p.id];
+    assert.ok(d && d.assumption === true && d.basis, `${p.id} defaults`);
+    assert.equal(p.defaultHoursPerWeek, d.hoursPerWeek);
+    assert.equal(p.defaultHourlyCost, d.hourlyCost);
+    assert.ok(d.hoursPerWeek >= 1 && d.hoursPerWeek <= 168 && d.hourlyCost > 0);
+    assert.equal(p.costHelper, costCaption(p.label, d.hourlyCost));
+    assert.match(p.costHelper, /Typical estimate for .+ in Latvia ≈ €\d+\.\d\/h incl\. employer tax \(assumption\)/);
+    assert.equal(detectBusiness(p.label), p.family, `${p.label} → ${detectBusiness(p.label)}`);
+    assert.ok(FAMILIES.includes(p.family));
+  }
+  assert.equal(findPreset("Hotel lobby / Reception")?.family, "hotel");
+  assert.equal(findPreset("Hotel lobby / Reception")?.defaultHourlyCost, 9.5);
+  assert.equal(BUSINESS_DEFAULTS.cafe.hourlyCost, 8.5);
+  for (const k of Object.values(BUSINESS_DEFAULTS)) assert.equal(k.assumption, true);
+}
+
+// ---- Auto-detect: business_guess → family; hints in prompts for Ollama (zones prompt) and Gemini (full prompt)
+{
+  assert.equal(parseFamily("hotel"), "hotel");
+  assert.equal(parseFamily("Hotel lobby / Reception"), "hotel");
+  assert.equal(parseFamily("car dealership"), "showroom");
+  assert.equal(parseFamily("generic"), null);
+  assert.equal(parseFamily("???"), null);
+  assert.equal(parseFamily(42), null);
+  const raw = (guess?: string) => ({
+    room: { width: 10, depth: 8 },
+    zones: [
+      { label: "Reception desk", type: "counter", x: 5, z: 2, w: 3, d: 1.5 },
+      { label: "Lobby lounge", type: "seating", x: 3, z: 6, w: 3, d: 2 },
+      { label: "Main door", type: "entrance", x: 1, z: 4, w: 1.5, d: 2 },
+      { label: "Elevators", type: "corridor", x: 9, z: 4, w: 1.5, d: 3 },
+    ],
+    activities: ["people walk"],
+    ...(guess ? { business_guess: guess } : {}),
+  });
+  const a = validateZonesAnalysis(raw("hotel"), 60, cleanScene, "auto-detect");
+  assert.equal(a.family, "hotel");
+  assert.equal(a.familyDetected, true);
+  assert.ok(a.tasks.some((t) => /luggage|elevators|reception|check-in/i.test(t.title)));
+  assert.equal(validateZonesAnalysis(raw("showroom"), 60, cleanScene, "Auto-detect from video").family, "showroom");
+  // junk guess → inferred from what was seen; no hints → generic; owner's own type is never "detected"
+  assert.equal(validateZonesAnalysis(raw("banana"), 60, cleanScene, "auto-detect").family, "hotel"); // "Reception desk"/"Elevators" labels
+  const own = validateZonesAnalysis(raw("showroom"), 60, cleanScene, "Gym / Fitness club");
+  assert.equal(own.family, "gym");
+  assert.equal(own.familyDetected, false);
+  // prompts: hint for a family, business_guess only for auto
+  assert.match(buildZonesPrompt("Hotel lobby / Reception"), /Expected zones for this industry[^\n]*elevator corridor/);
+  assert.match(buildZonesPrompt("viesnīca"), /Expected zones for this industry/); // custom text goes through keyword detection
+  assert.doesNotMatch(buildZonesPrompt("Hotel lobby / Reception"), /business_guess/);
+  assert.match(buildZonesPrompt("auto-detect"), /business_guess: .*hotel.*showroom/);
+  assert.doesNotMatch(buildZonesPrompt("auto-detect"), /Expected zones for this industry/);
+  assert.match(buildAnalysisPrompt("Gym / Fitness club"), /Typical spatial zones for this industry include/);
+  assert.match(buildAnalysisPrompt("auto-detect"), /business_guess/);
+  assert.ok((ZONES_SCHEMA.properties.business_guess as { enum: string[] }).enum.includes("showroom"));
+  assert.equal(zonesHintFor("???"), null);
+  // correcting the detected family rebuilds labels + tasks for the new family
+  const fixed = rebuildForFamily(a, "gym", 60);
+  assert.equal(fixed.family, "gym");
+  assert.ok(fixed.tasks.every((t) => !/luggage/i.test(t.title)) && fixed.tasks.some((t) => /gym|member|class|studio/i.test(t.title)));
+  assert.ok(fixed.scene.zones.some((z) => /Check-in desk|Club entrance/.test(z.label)));
+}
+
+// ---- every family yields ≥ 2 K1-doable tasks, even from a poor floor plan, and the demo uses the selected family
+{
+  const poor: Scene = { room: { width: 8, depth: 6 }, zones: [{ id: "other", label: "Hall", x: 4, z: 3, w: 3, d: 3 }] };
+  for (const { family } of FAMILY_OPTIONS) {
+    const t = tasksFromZones(poor, [], 60, "", family);
+    assert.ok(t.ratings.filter((r) => r.fit !== "no").length >= 2, `${family}: ${t.tasks.map((x) => x.title).join(" | ")}`);
+    const lay = fixLayout(poor, family);
+    const full = tasksFromZones(lay, [], 60, "", family);
+    assert.ok(full.tasks.length >= 4 && full.ratings.filter((r) => r.fit !== "no").length >= 2, `${family} on fixed layout`);
+  }
+  for (const p of BUSINESS_PRESETS) {
+    const d = buildDemoData({ businessType: p.label });
+    assert.equal(d.analysis.family, p.family);
+    assert.equal(d.analysis.businessType, p.label);
+    assert.ok(d.jobs.jobs.filter((j) => j.fit !== "no").length >= 2, `${p.label} demo jobs`);
+    assert.equal(d.analysis.hoursPerWeek, p.defaultHoursPerWeek);
+  }
+  const names = (t: string) => buildDemoData({ businessType: t }).jobs.jobs.map((j) => j.title).join(" | ");
+  assert.doesNotMatch(names("Gym / Fitness club"), /menu|barista|wipe tables/i);
+  assert.match(names("Hotel lobby / Reception"), /luggage|elevator|reception/i);
+  assert.doesNotMatch(names("Clothing / Concept store"), /menu|luggage/i);
+  assert.notEqual(names("Gym / Fitness club"), names("Café / Coffee shop"));
+  assert.equal(buildDemoData({ businessType: "viesnīca", hoursPerWeek: 50, hourlyCost: 9 }).analysis.family, "hotel"); // custom text → keyword detection
+  assert.equal(buildDemoData({ businessType: "auto-detect" }).analysis.family, "generic");
 }
 console.log("test:ai OK");
 }

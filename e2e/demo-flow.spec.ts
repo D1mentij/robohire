@@ -17,10 +17,12 @@ async function hireAndPlay(page: import("@playwright/test").Page) {
   });
   expect(labels.length, `task labels: ${labels.join(", ")}`).toBeGreaterThanOrEqual(2);
   for (const l of labels) expect(l.split(/\s+/).length).toBeLessThanOrEqual(4);
-  const items = page.locator("ol > li");
-  const total = await items.count();
-  expect(total).toBeGreaterThanOrEqual(6);
-  for (const l of labels) await expect(page.locator("ol").getByText(l, { exact: true }).first()).toBeVisible();
+  // checklist panel (Person 2): one row per task, pending → ▶ → ✓
+  const rows = page.getByTestId("shift-task-row");
+  const total = await rows.count();
+  expect(total, "task rows on /robot").toBeGreaterThanOrEqual(2);
+  await expect(page.locator('[data-testid="shift-task-row"][data-status="pending"]')).toHaveCount(total);
+  for (const l of labels) await expect(page.getByTestId("shift-tasks-panel").getByText(l, { exact: true }).first()).toBeVisible();
 
   await start.click();
   const done = page.getByTestId("job-completed-card");
@@ -28,9 +30,8 @@ async function hireAndPlay(page: import("@playwright/test").Page) {
   await expect(done).toContainText(/completed/i);
   await expect(done).toContainText(/€\s?[\d,.]+\s*\/\s*month/i); // net €/month
 
-  // every step is ✓ (and therefore every task group)
-  await expect(page.locator("ol > li").getByText("✓ done")).toHaveCount(total);
-  await expect(page.locator("ol > li").getByText("queued")).toHaveCount(0);
+  // every task is ✓
+  await expect(page.locator('[data-testid="shift-task-row"][data-status="done"]')).toHaveCount(total);
 
   // Export .py from /robot
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("export-k1-btn").click()]);
@@ -90,6 +91,30 @@ test("Try real example: Real hotel lobby → hotel tasks only → Hire this K1 p
 
   await hireAndPlay(page);
   expect(errors, `page errors: ${errors.join(" | ")}`).toEqual([]);
+});
+
+/** Business-type selector: presets fill defaults, user edits stay, demo follows the selected family (no AI). */
+test("upload selector: preset defaults, user edits kept, demo uses the chosen family", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  await page.goto("/upload");
+  const hours = page.locator('input[type="number"]').nth(0);
+  const cost = page.locator('input[type="number"]').nth(1);
+  await page.getByRole("button", { name: "Hotel lobby / Reception" }).first().click();
+  await expect(hours).toHaveValue("112");
+  await expect(cost).toHaveValue("9.5");
+  await expect(page.getByText(/Typical estimate for Hotel lobby \/ Reception in Latvia ≈ €9\.5\/h incl\. employer tax \(assumption\)/)).toBeVisible();
+  await hours.fill("40"); // user edit
+  await page.getByRole("button", { name: "Gym / Fitness club" }).first().click();
+  await expect(hours).toHaveValue("40"); // never overwritten
+  await expect(cost).toHaveValue("9"); // untouched field follows the preset
+  await page.getByRole("button", { name: /^Try demo/ }).click();
+  await expect(page).toHaveURL(/\/jobs/);
+  const text = (await page.locator('[data-testid^="job-card-"]').allInnerTexts()).join("\n");
+  expect(text).toMatch(/gym|member|class|studio/i);
+  expect(text).not.toMatch(/menu|barista|luggage/i);
+  expect(errors, errors.join(" | ")).toEqual([]);
 });
 
 /** Server API contract in demo mode (no AI reachable). */

@@ -23,7 +23,11 @@ export type Task = {
 export type Rating = { id: string; fit: "good" | "partial" | "no"; score: number; why: string; limits: string };
 
 /** `ratings` is optional on the wire: if absent or incomplete, /api/jobs fills the gaps with code heuristics. */
-export type AnalysisResult = { scene: Scene; tasks: Task[]; ratings?: Rating[] };
+/**
+ * `family` = business template family used for labels/tasks (lib/ai/businessTemplates.ts BusinessKind); `familyDetected` = it came from
+ * Auto-detect (model guess), so /upload shows "Detected: …" with a dropdown to correct it. Both optional (older stored analyses lack them).
+ */
+export type AnalysisResult = { scene: Scene; tasks: Task[]; ratings?: Rating[]; family?: string; familyDetected?: boolean };
 
 export type AnalyzeResponse =
   | { ok: true; result: AnalysisResult }

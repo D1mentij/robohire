@@ -2,9 +2,10 @@ import { isScene, type Scene } from "@/types/contracts";
 import type { AnalysisResult, Rating, Task } from "./types";
 import { ZONE_TYPES, inferZoneType, zoneTypeOfId, type ZoneType } from "./zoneTypes";
 import { heuristicRating, makeRating } from "./ratings";
-import { fixLayout, relabelZones } from "./layout";
-import { expectedZonesHint, isAutoDetect } from "./businessPresets";
-import { detectBusiness, genericBasics, templatesFor, type BusinessKind, type Template } from "./businessTemplates";
+import { fixLayout, relabelZones, switchFamilyLabels } from "./layout";
+import { isAutoDetect } from "./businessPresets";
+import { FAMILIES, parseFamily, zonesHintFor } from "./families";
+import { detectBusiness, genericBasics, inferFromHints, templatesFor, type BusinessKind, type Template } from "./businessTemplates";
 
 /**
  * Local (Ollama) analysis split: the small model only describes the SPACE (zones with a fixed type + a few visible
@@ -30,13 +31,15 @@ export const ZONES_SCHEMA = {
       },
     },
     activities: { type: "array", items: { type: "string" } },
+    // only asked for with Auto-detect; code maps it to a template family
+    business_guess: { type: "string", enum: FAMILIES },
   },
   required: ["room", "zones", "activities"],
 };
 
 export function buildZonesPrompt(businessType: string): string {
   const auto = isAutoDetect(businessType);
-  const hint = expectedZonesHint(businessType);
+  const hint = zonesHintFor(businessType);
   const intro = auto
     ? "Infer the business/space type automatically from what is visible in these frames. Describe only what is VISIBLE."
     : `These frames show a "${businessType}". Describe only what is VISIBLE.`;
@@ -50,13 +53,13 @@ export function buildZonesPrompt(businessType: string): string {
   (entrance = door/reception area, counter = service/bar/cash desk, seating = tables/chairs/sofas, display = shelves with products/menu board,
   waiting = queue/lobby area, shelves = storage/racks, desk = work/info desk, corridor = passage).${zoneHintLine}
 - activities: 2 to 4 short phrases of what people/staff visibly do (e.g. "barista makes coffee", "guest talks to receptionist").
-- No robot, charging or docking zones.`;
+- No robot, charging or docking zones.${auto ? `\n- business_guess: the business/space type you see, exactly one of: ${FAMILIES.join(", ")}.` : ""}`;
 }
 
 /** Validates the model's zones answer; returns a raw scene (not yet cleaned) with type-based ids + the activities. */
 const MIN_ZONE_SIDE = 1;
 
-export function parseZonesAnswer(raw: unknown): { scene: Scene; activities: string[] } {
+export function parseZonesAnswer(raw: unknown): { scene: Scene; activities: string[]; businessGuess: string | null } {
   if (typeof raw !== "object" || raw === null) throw new Error("AI returned non-object JSON");
   const o = raw as Record<string, unknown>;
   const zonesRaw = Array.isArray(o.zones) ? o.zones : [];
@@ -74,7 +77,7 @@ export function parseZonesAnswer(raw: unknown): { scene: Scene; activities: stri
   const scene = { room: o.room, zones };
   if (!isScene(scene)) throw new Error("AI zones failed validation");
   const activities = (Array.isArray(o.activities) ? o.activities : []).filter((a): a is string => typeof a === "string" && a.trim().length > 2).map((a) => a.trim());
-  return { scene, activities };
+  return { scene, activities, businessGuess: typeof o.business_guess === "string" ? o.business_guess : null };
 }
 
 export { ZONE_TYPES, inferZoneType, zoneTypeOfId, type ZoneType };
@@ -128,13 +131,26 @@ export function tasksFromZones(scene: Scene, activities: string[], hoursPerWeek:
 }
 
 export function validateZonesAnalysis(raw: unknown, hoursPerWeek: number, cleanScene: (s: Scene) => Scene | null, businessType = ""): AnalysisResult {
-  const { scene: rawScene, activities } = parseZonesAnswer(raw);
+  const { scene: rawScene, activities, businessGuess } = parseZonesAnswer(raw);
   const cleaned = cleanScene(rawScene);
   if (!cleaned) throw new Error("No usable zones after cleanup");
-  // unknown business type → infer from what the model saw (model labels + activities)
-  const kind = detectBusiness(businessType, [...activities, ...rawScene.zones.map((z) => z.label)]);
+  const hints = [...activities, ...rawScene.zones.map((z) => z.label)];
+  // Auto-detect: the model's business_guess → family (else what it saw); otherwise the owner's text (preset / keywords EN/LV/RU)
+  const auto = isAutoDetect(businessType);
+  const kind: BusinessKind = auto ? (parseFamily(businessGuess) ?? inferFromHints(hints)) : detectBusiness(businessType, hints);
   const scene = fixLayout(relabelZones(cleaned, kind), kind);
   const { tasks, ratings } = tasksFromZones(scene, activities, hoursPerWeek, businessType, kind);
   if (!tasks.length) throw new Error("No tasks could be derived");
-  return { scene, tasks, ratings };
+  return { scene, tasks, ratings, family: kind, familyDetected: auto };
+}
+
+/**
+ * Owner corrected the detected family: same zones (labels of the old family are swapped for the new family's), tasks + ratings rebuilt
+ * from the new family's templates. Pure, runs in the browser (no AI call).
+ */
+export function rebuildForFamily(a: AnalysisResult, to: BusinessKind, hoursPerWeek: number): AnalysisResult {
+  const from = (a.family as BusinessKind | undefined) ?? "generic";
+  const scene = switchFamilyLabels(a.scene, from, to);
+  const { tasks, ratings } = tasksFromZones(scene, [], hoursPerWeek, "", to);
+  return { ...a, scene, tasks, ratings, family: to };
 }

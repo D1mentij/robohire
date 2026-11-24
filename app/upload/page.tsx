@@ -12,6 +12,8 @@ import {
   type BusinessPreset,
 } from "@/lib/ai/businessPresets";
 import { BusinessTypeSelector, type BusinessSelection } from "./BusinessTypeSelector";
+import { FAMILY_OPTIONS, familyLabel, isFamily } from "@/lib/ai/families";
+import { rebuildForFamily } from "@/lib/ai/zoneTasks";
 import { applyShowcase, downloadCurrentAsShowcase, fetchShowcases, type Showcase } from "@/lib/ai/showcase";
 import { getCached, hashInputs, putCached } from "@/lib/ai/uploadCache";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
@@ -60,6 +62,13 @@ export default function UploadPage() {
   const [hoursPerWeek, setHoursPerWeek] = useState(String(defaultPreset.defaultHoursPerWeek));
   const [hourlyCost, setHourlyCost] = useState(String(defaultPreset.defaultHourlyCost));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // smart defaults never overwrite what the user typed
+  const hoursTouched = useRef(false);
+  const costTouched = useRef(false);
+  function fillDefaults(hours: number, cost: number) {
+    if (!hoursTouched.current) setHoursPerWeek(String(hours));
+    if (!costTouched.current) setHourlyCost(String(cost));
+  }
 
   const effectiveBusinessType =
     selection.mode === "preset"
@@ -77,15 +86,13 @@ export default function UploadPage() {
 
   function handleSelectPreset(preset: BusinessPreset) {
     setSelection({ mode: "preset", preset });
-    setHoursPerWeek(String(preset.defaultHoursPerWeek));
-    setHourlyCost(String(preset.defaultHourlyCost));
+    fillDefaults(preset.defaultHoursPerWeek, preset.defaultHourlyCost);
     setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
   }
 
   function handleSelectAuto() {
     setSelection({ mode: "auto" });
-    setHoursPerWeek(String(AUTO_DETECT_DEFAULTS.defaultHoursPerWeek));
-    setHourlyCost(String(AUTO_DETECT_DEFAULTS.defaultHourlyCost));
+    fillDefaults(AUTO_DETECT_DEFAULTS.defaultHoursPerWeek, AUTO_DETECT_DEFAULTS.defaultHourlyCost);
     setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
   }
 
@@ -231,7 +238,7 @@ export default function UploadPage() {
     const hit = hash && !force ? getCached(hash) : null;
     if (hit) {
       clearRunStorage({ keepUpload: true });
-      setAnalysis({ scene: hit.analysis.scene, tasks: hit.analysis.tasks });
+      setAnalysis(hit.analysis);
       setJobs(hit.jobs);
       setPlan(hit.plan);
       setCached(true);
@@ -263,9 +270,11 @@ export default function UploadPage() {
       if (!json) throw new Error(`Server error (${res.status})`);
       if (!json.ok) throw new Error(json.error);
       setAnalysis(json.result);
+      // Auto-detect: the jobs/report use the detected family's name instead of "auto-detect"
+      const detected = json.result.familyDetected && isFamily(json.result.family) ? familyLabel(json.result.family) : null;
       const stored: StoredAnalysis = {
         ...json.result,
-        businessType: data.businessType,
+        businessType: detected ?? data.businessType,
         hoursPerWeek: data.hoursPerWeek,
         hourlyCost: data.hourlyCost,
       };
@@ -311,6 +320,18 @@ export default function UploadPage() {
     } finally {
       setJobsLoading(false);
     }
+  }
+
+  /** Auto-detect correction: same zones, tasks rebuilt from the chosen family's templates, jobs/plan recomputed (no AI call). */
+  async function onCorrectFamily(value: string) {
+    if (!analysis || !isFamily(value) || analyzing || jobsLoading) return;
+    const hours = Number(hoursPerWeek);
+    const next = { ...rebuildForFamily(analysis, value, hours > 0 ? hours : 60), familyDetected: true };
+    setAnalysis(next);
+    hashRef.current = null; // do not cache the corrected result under the original inputs
+    const stored: StoredAnalysis = { ...next, businessType: familyLabel(value), hoursPerWeek: hours, hourlyCost: Number(hourlyCost) };
+    sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(stored));
+    await loadJobs(stored);
   }
 
   function runDemo() {
@@ -393,7 +414,10 @@ export default function UploadPage() {
                 min={1}
                 max={168}
                 value={hoursPerWeek}
-                onChange={(e) => setHoursPerWeek(e.target.value)}
+                onChange={(e) => {
+                  hoursTouched.current = true;
+                  setHoursPerWeek(e.target.value);
+                }}
                 className={input}
               />
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -412,7 +436,10 @@ export default function UploadPage() {
                 min={0}
                 step="0.5"
                 value={hourlyCost}
-                onChange={(e) => setHourlyCost(e.target.value)}
+                onChange={(e) => {
+                  costTouched.current = true;
+                  setHourlyCost(e.target.value);
+                }}
                 className={input}
               />
               <p data-testid="hourly-cost-helper" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -552,6 +579,33 @@ export default function UploadPage() {
               Continue with demo
             </button>
           </p>
+        )}
+
+        {analysis?.familyDetected && isFamily(analysis.family) && (
+          <section
+            data-testid="detected-family"
+            className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-5 py-3 text-sm text-slate-800 dark:text-slate-100"
+          >
+            <span>
+              Detected: <strong data-testid="detected-family-label">{familyLabel(analysis.family)}</strong>
+            </span>
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+              Not right?
+              <select
+                data-testid="family-select"
+                value={analysis.family}
+                disabled={analyzing || jobsLoading}
+                onChange={(e) => void onCorrectFamily(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                {FAMILY_OPTIONS.map((f) => (
+                  <option key={f.family} value={f.family}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
         )}
 
         {jobsLoading && (

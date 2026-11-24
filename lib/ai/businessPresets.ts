@@ -1,25 +1,24 @@
 import type { Scene } from "@/types/contracts";
+import { BUSINESS_DEFAULTS, costCaption, defaultsFor } from "@/lib/roi/businessDefaults";
+import type { BusinessKind } from "./businessTemplates";
 
 export const AUTO_DETECT_ID = "auto-detect";
 export const AUTO_DETECT_LABEL = "Auto-detect from video";
 export const CUSTOM_PRESET_ID = "custom";
 export const CUSTOM_PRESET_LABEL = "Custom business type...";
 
-export type BusinessCategory =
-  | "Hospitality & Food"
-  | "Retail & Commerce"
-  | "Events, Education & Public Spaces"
-  | "Health, Fitness & Services";
+export type BusinessCategory = "Hospitality & Food" | "Retail" | "Public & Education" | "Services & Transport";
 
 export type BusinessPreset = {
   id: string;
   label: string;
   category: BusinessCategory;
-  /** Suggested default opening hours per week (1–168). */
+  /** Template family (lib/ai/businessTemplates.ts) this preset uses for tasks, labels and layout. */
+  family: BusinessKind;
+  /** Defaults come from lib/roi/businessDefaults.ts (all assumptions). */
   defaultHoursPerWeek: number;
-  /** Suggested default staff hourly cost in EUR (incl. employer tax). */
   defaultHourlyCost: number;
-  /** Subtle helper caption displayed under Staff hourly cost (€). */
+  /** Caption under Staff hourly cost (€). */
   costHelper: string;
   /** Concise industry-specific spatial zones hint for the Vision AI prompt. */
   expectedZones: string;
@@ -29,22 +28,17 @@ export type BusinessPreset = {
   demoScene: Scene;
 };
 
-export const BUSINESS_CATEGORIES: BusinessCategory[] = [
-  "Hospitality & Food",
-  "Retail & Commerce",
-  "Events, Education & Public Spaces",
-  "Health, Fitness & Services",
-];
+export const BUSINESS_CATEGORIES: BusinessCategory[] = ["Hospitality & Food", "Retail", "Public & Education", "Services & Transport"];
 
-export const BUSINESS_PRESETS: BusinessPreset[] = [
+type RawPreset = Omit<BusinessPreset, "defaultHoursPerWeek" | "defaultHourlyCost" | "costHelper">;
+
+const RAW_PRESETS: RawPreset[] = [
   // ---- Hospitality & Food ----
   {
     id: "cafe",
-    label: "Café / Coffee Shop",
+    label: "Café / Coffee shop",
     category: "Hospitality & Food",
-    defaultHoursPerWeek: 60,
-    defaultHourlyCost: 8.5,
-    costHelper: "Typical Latvian hospitality cost ≈ €8.5/h incl. employer tax",
+    family: "cafe",
     expectedZones: "entrance, service counter, seating tables, menu board, queue/waiting area",
     quickPick: true,
     demoScene: {
@@ -62,10 +56,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
     id: "restaurant",
     label: "Restaurant / Bistro",
     category: "Hospitality & Food",
-    defaultHoursPerWeek: 72,
-    defaultHourlyCost: 9.0,
-    costHelper: "Typical Latvian restaurant staff cost ≈ €9.0/h incl. employer tax",
+    family: "restaurant",
     expectedZones: "entrance, host desk, dining tables, bar/service counter, waiting lounge",
+    quickPick: true,
     demoScene: {
       room: { width: 10, depth: 8 },
       zones: [
@@ -79,11 +72,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "hotel",
-    label: "Hotel Lobby / Reception",
+    label: "Hotel lobby / Reception",
     category: "Hospitality & Food",
-    defaultHoursPerWeek: 112,
-    defaultHourlyCost: 9.5,
-    costHelper: "Typical Latvian hotel reception cost ≈ €9.5/h incl. employer tax",
+    family: "hotel",
     expectedZones: "entrance, reception desk, lobby lounge, elevator corridor, amenities info board",
     quickPick: true,
     demoScene: {
@@ -101,9 +92,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
     id: "bar",
     label: "Bar / Lounge",
     category: "Hospitality & Food",
-    defaultHoursPerWeek: 56,
-    defaultHourlyCost: 9.0,
-    costHelper: "Typical Latvian bar & lounge cost ≈ €9.0/h incl. employer tax",
+    family: "bar",
     expectedZones: "entrance, bar counter, lounge seating, drinks menu display, waiting area",
     demoScene: {
       room: { width: 9, depth: 7 },
@@ -120,11 +109,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   // ---- Retail & Commerce ----
   {
     id: "retail_clothing",
-    label: "Retail Clothing / Concept Store",
-    category: "Retail & Commerce",
-    defaultHoursPerWeek: 66,
-    defaultHourlyCost: 8.0,
-    costHelper: "Typical Latvian retail cost ≈ €8.0/h incl. employer tax",
+    label: "Clothing / Concept store",
+    category: "Retail",
+    family: "retail",
     expectedZones: "entrance, fitting rooms, promo display, product shelves/racks, checkout counter",
     quickPick: true,
     demoScene: {
@@ -141,10 +128,8 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   {
     id: "supermarket",
     label: "Supermarket / Grocery",
-    category: "Retail & Commerce",
-    defaultHoursPerWeek: 91,
-    defaultHourlyCost: 8.0,
-    costHelper: "Typical Latvian grocery retail cost ≈ €8.0/h incl. employer tax",
+    category: "Retail",
+    family: "supermarket",
     expectedZones: "entrance, promo display, grocery aisles/shelves, checkout counters, queue area",
     demoScene: {
       room: { width: 14, depth: 10 },
@@ -159,11 +144,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "electronics",
-    label: "Electronics / Showroom",
-    category: "Retail & Commerce",
-    defaultHoursPerWeek: 66,
-    defaultHourlyCost: 9.5,
-    costHelper: "Typical Latvian electronics retail cost ≈ €9.5/h incl. employer tax",
+    label: "Electronics showroom",
+    category: "Retail",
+    family: "retail",
     expectedZones: "entrance, demo product displays, consultation desk, product shelves, checkout counter",
     demoScene: {
       room: { width: 12, depth: 9 },
@@ -178,11 +161,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "mall",
-    label: "Shopping Mall Atrium",
-    category: "Retail & Commerce",
-    defaultHoursPerWeek: 77,
-    defaultHourlyCost: 8.5,
-    costHelper: "Typical Latvian mall guest-services cost ≈ €8.5/h incl. employer tax",
+    label: "Shopping mall atrium",
+    category: "Retail",
+    family: "mall",
     expectedZones: "main entrance, information desk, store directory display, central corridor, rest seating",
     demoScene: {
       room: { width: 14, depth: 10 },
@@ -199,11 +180,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   // ---- Events, Education & Public Spaces ----
   {
     id: "university",
-    label: "University / Campus Hall",
-    category: "Events, Education & Public Spaces",
-    defaultHoursPerWeek: 55,
-    defaultHourlyCost: 10.0,
-    costHelper: "Typical Latvian campus admin cost ≈ €10.0/h incl. employer tax",
+    label: "University / Campus hall",
+    category: "Public & Education",
+    family: "university",
     expectedZones: "entrance, student info desk, lecture hall corridor, event schedule board, student seating",
     demoScene: {
       room: { width: 12, depth: 8 },
@@ -218,11 +197,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "conference",
-    label: "Conference / Expo Venue",
-    category: "Events, Education & Public Spaces",
-    defaultHoursPerWeek: 50,
-    defaultHourlyCost: 11.0,
-    costHelper: "Typical Latvian event & expo staff cost ≈ €11.0/h incl. employer tax",
+    label: "Conference / Expo venue",
+    category: "Public & Education",
+    family: "event",
     expectedZones: "entrance, registration desk, auditorium entrance/corridor, schedule display, networking lounge",
     demoScene: {
       room: { width: 14, depth: 9 },
@@ -238,10 +215,8 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   {
     id: "museum",
     label: "Museum / Gallery",
-    category: "Events, Education & Public Spaces",
-    defaultHoursPerWeek: 48,
-    defaultHourlyCost: 9.0,
-    costHelper: "Typical Latvian museum & gallery cost ≈ €9.0/h incl. employer tax",
+    category: "Public & Education",
+    family: "museum",
     expectedZones: "entrance, ticket desk, exhibition highlights display, gallery corridor, rest seating",
     demoScene: {
       room: { width: 12, depth: 9 },
@@ -256,11 +231,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "coworking",
-    label: "Coworking / Office Reception",
-    category: "Events, Education & Public Spaces",
-    defaultHoursPerWeek: 50,
-    defaultHourlyCost: 10.5,
-    costHelper: "Typical Latvian office reception cost ≈ €10.5/h incl. employer tax",
+    label: "Coworking / Office reception",
+    category: "Public & Education",
+    family: "office",
     expectedZones: "entrance, reception desk, visitor waiting area, meeting room corridor, info screen",
     demoScene: {
       room: { width: 10, depth: 7 },
@@ -277,11 +250,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   // ---- Health, Fitness & Services ----
   {
     id: "gym",
-    label: "Gym / Fitness Club",
-    category: "Health, Fitness & Services",
-    defaultHoursPerWeek: 98,
-    defaultHourlyCost: 9.0,
-    costHelper: "Typical Latvian fitness club reception cost ≈ €9.0/h incl. employer tax",
+    label: "Gym / Fitness club",
+    category: "Services & Transport",
+    family: "gym",
     expectedZones: "entrance, check-in desk, class schedule display, workout floor corridor, recovery lounge",
     quickPick: true,
     demoScene: {
@@ -297,11 +268,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "clinic",
-    label: "Clinic / Dental Reception",
-    category: "Health, Fitness & Services",
-    defaultHoursPerWeek: 50,
-    defaultHourlyCost: 11.5,
-    costHelper: "Typical Latvian clinic reception cost ≈ €11.5/h incl. employer tax",
+    label: "Clinic / Dental reception",
+    category: "Services & Transport",
+    family: "clinic",
     expectedZones: "entrance, reception desk, patient waiting area, consultation corridor, patient info display",
     demoScene: {
       room: { width: 10, depth: 7 },
@@ -316,11 +285,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "car_dealership",
-    label: "Car Dealership",
-    category: "Health, Fitness & Services",
-    defaultHoursPerWeek: 56,
-    defaultHourlyCost: 11.5,
-    costHelper: "Typical Latvian dealership advisor cost ≈ €11.5/h incl. employer tax",
+    label: "Car dealership",
+    category: "Services & Transport",
+    family: "showroom",
     expectedZones: "entrance, car display, customer lounge, sales desk, test-drive waiting area",
     quickPick: true,
     demoScene: {
@@ -336,11 +303,9 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
   {
     id: "terminal",
-    label: "Airport / Train Terminal",
-    category: "Health, Fitness & Services",
-    defaultHoursPerWeek: 126,
-    defaultHourlyCost: 10.5,
-    costHelper: "Typical Latvian transport hub staff cost ≈ €10.5/h incl. employer tax",
+    label: "Airport / Train terminal",
+    category: "Services & Transport",
+    family: "terminal",
     expectedZones: "entrance, information desk, departure board display, gate/platform corridor, waiting seats",
     demoScene: {
       room: { width: 14, depth: 10 },
@@ -355,16 +320,22 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
   },
 ];
 
+/** Presets with defaults from the one table in lib/roi/businessDefaults.ts. */
+export const BUSINESS_PRESETS: BusinessPreset[] = RAW_PRESETS.map((p) => {
+  const d = defaultsFor(p.id);
+  return { ...p, defaultHoursPerWeek: d.hoursPerWeek, defaultHourlyCost: d.hourlyCost, costHelper: costCaption(p.label, d.hourlyCost) };
+});
+
 export const AUTO_DETECT_DEFAULTS = {
-  defaultHoursPerWeek: 60,
-  defaultHourlyCost: 8.5,
-  costHelper: "Vision AI will infer the space type; typical Latvian service cost ≈ €8.5/h incl. employer tax",
+  defaultHoursPerWeek: BUSINESS_DEFAULTS["auto-detect"].hoursPerWeek,
+  defaultHourlyCost: BUSINESS_DEFAULTS["auto-detect"].hourlyCost,
+  costHelper: "Typical estimate for services in Latvia ≈ €8.5/h incl. employer tax (assumption) — adjust once the space type is detected",
 };
 
 export const CUSTOM_DEFAULTS = {
-  defaultHoursPerWeek: 60,
-  defaultHourlyCost: 8.5,
-  costHelper: "Adjust opening hours & staff hourly cost to match your business",
+  defaultHoursPerWeek: BUSINESS_DEFAULTS.custom.hoursPerWeek,
+  defaultHourlyCost: BUSINESS_DEFAULTS.custom.hourlyCost,
+  costHelper: "Typical estimate ≈ €8.5/h incl. employer tax (assumption) — adjust opening hours and staff cost to your business",
 };
 
 export function isAutoDetect(businessType: string | null | undefined): boolean {

@@ -1,5 +1,5 @@
 import type { ZoneType } from "./zoneTasks";
-import { isAutoDetect } from "./businessPresets";
+import { findPreset, isAutoDetect } from "./businessPresets";
 
 /**
  * Task templates per business kind (local analysis only; the model just reports zones). `{zone}` in a title/desc is replaced by the
@@ -20,11 +20,17 @@ export type BusinessKind =
   | "event"
   | "museum"
   | "terminal"
+  | "restaurant"
+  | "bar"
+  | "supermarket"
+  | "mall"
+  | "clinic"
   | "generic";
 
 /** Order matters: the first match wins (electronics/mall before car showroom, hotel before university "lobby" etc.). EN / LV / RU keywords. */
 const DETECT: [BusinessKind, RegExp][] = [
-  ["retail", /electronics|appliance|tech\s*store|shopping\s*mall|\bmall\b|atrium/i],
+  ["retail", /electronics|appliance|tech\s*store|elektronik|электроник/i],
+  ["mall", /shopping\s*(mall|centre|center)|\bmall\b|atrium|tirdzniec[iī]bas\s*centr|торгов\w*\s*центр/i],
   ["showroom", /showroom|dealer|dealership|d[iī]ler|car\s*(sales|shop|salon|centre|center)|auto\s*(salon|centre|center|sales|house)|\bauto\b|autosal|automobil|\bcars?\b|motor|vehicle|автосалон|автодилер|автомобил|машин|дилер|салон\s*авто/i],
   ["hotel", /hotel|hostel|motel|resort|guest\s*house|viesn[iī]c|naktsm[iī]t|otel|отел|гостиниц|хостел/i],
   ["gym", /\bgym\b|fitness|crossfit|workout|health\s*club|sporta\s*klub|фитнес|тренажер/i],
@@ -33,15 +39,21 @@ const DETECT: [BusinessKind, RegExp][] = [
   ["terminal", /airport|train\s*terminal|railway|bus\s*terminal|\bterminal\b|station|lidost|stacij|аэропорт|вокзал/i],
   ["library", /librar|bibliot[eē]k|библиотек/i],
   ["university", /universit|college|school|campus|augstskol|skol[aā]|universit[aā]t|универс|институт|школ|колледж|вуз/i],
-  ["cafe", /caf[eé]|coffee|restaurant|bistro|\bbar\b|pub\b|bakery|canteen|kafejn[iī]c|restor[aā]n|k[aā]фе|кафе|ресторан|кофе|пекарн|столов/i],
-  ["retail", /retail|shop|store|boutique|supermarket|grocery|market|pharmacy|veikal|aptiek|магазин|аптек|бутик|супермаркет/i],
-  ["office", /office|reception|clinic|dental|bank|coworking|birojs|rec[eē]pcij|ofis|офис|ресепш|приём|приемн|клиник|банк/i],
+  ["clinic", /clinic|dental|dentist|medical|doctor|hospital|k[lļ][iī]nik|zobārst|poliklīn|клиник|стоматолог|больниц|поликлиник/i],
+  ["restaurant", /restaurant|bistro|eatery|diner|restor[aā]n|ресторан|бистро|трактир/i],
+  ["bar", /\bbar\b|lounge|\bpub\b|nightclub|cocktail|b[aā]rs\b|\bбар\b|паб/i],
+  ["cafe", /caf[eé]|coffee|bakery|canteen|kafejn[iī]c|k[aā]фе|кафе|кофе|пекарн|столов/i],
+  ["supermarket", /supermarket|grocery|hypermarket|food\s*store|veikals\s*maxima|rimi|супермаркет|продукт/i],
+  ["retail", /retail|shop|store|boutique|market|pharmacy|veikal|aptiek|магазин|аптек|бутик/i],
+  ["office", /office|reception|bank|coworking|birojs|rec[eē]pcij|ofis|офис|ресепш|приём|приемн|банк/i],
 ];
 
 /** Contains-matching on the owner's text (EN/LV/RU synonyms, e.g. "Autodealer", "car salon", "viesnīca", "автодилер"). */
 export function detectBusiness(businessType: string | null | undefined, hints: string[] = []): BusinessKind {
   const t = (businessType ?? "").trim();
   if (!t || isAutoDetect(t)) return inferFromHints(hints);
+  const preset = findPreset(t); // a selector preset knows its family exactly
+  if (preset) return preset.family;
   const direct = DETECT.find(([, re]) => re.test(t))?.[0];
   if (direct) return direct;
   return inferFromHints(hints);
@@ -55,10 +67,15 @@ const HINTS: [BusinessKind, RegExp][] = [
   ["event", /\b(auditorium|registration|conference|expo|stage|badges?|keynote)\b/i],
   ["museum", /\b(paintings?|sculptures?|gallery|museum|exhibit\w*|artwork)\b/i],
   ["terminal", /\b(departures?|boarding|gates?|platforms?|airport|terminal|trains?)\b/i],
-  ["cafe", /\b(barista|coffee|espresso|latte|menu|caf[eé]|drinks?|pastr\w+)\b/i],
+  ["clinic", /\b(patients?|dental|dentist|doctors?|nurses?|clinic|treatment rooms?)\b/i],
+  ["supermarket", /\b(groceries|grocery|supermarket|aisles?|shopping carts?|trolleys?)\b/i],
+  ["mall", /\b(mall|atrium|storefronts?|escalators?)\b/i],
+  ["bar", /\b(bartenders?|cocktails?|beer|pub|nightclub)\b/i],
+  ["cafe", /\b(barista|coffee|espresso|latte|caf[eé]|pastr\w+)\b/i],
+  ["restaurant", /\b(waiters?|waitress|diners?|dining|chefs?|kitchen|menu)\b/i],
   ["hotel", /\b(hotel|luggage|elevators?|check-?in|concierge|guests?)\b/i],
-  ["retail", /\b(shoppers?|cashier|checkout|store|boutique|clothes|groceries|fitting\s*rooms?)\b/i],
-  ["office", /\b(office|meeting rooms?|employees?|visitor badges?|clinic|patients?)\b/i],
+  ["retail", /\b(shoppers?|cashier|checkout|store|boutique|clothes|fitting\s*rooms?)\b/i],
+  ["office", /\b(office|meeting rooms?|employees?|visitor badges?)\b/i],
 ];
 export function inferFromHints(hints: string[]): BusinessKind {
   const text = hints.join(" \n ");
@@ -254,6 +271,83 @@ const SETS: Record<Exclude<BusinessKind, "generic">, Set> = {
       T("tidy", "Clear trays and litter in {zone}", "Collect left-behind cups and tidy seating in {zone}.", 20, 5, "no"),
     ],
     shelves: [T("restock", "Restock transit maps at {zone}", "Refill printed timetables and maps at {zone}.", 5, 10, "no")],
+  },
+  restaurant: {
+    entrance: [T("greet", "Greet diners at {zone}", "Welcome arriving diners at {zone}.", 90, 0.5, "good")],
+    desk: [T("host", "Explain table wait and reservations at {zone}", "Tell arriving diners about reservations and the wait at {zone}.", 50, 1, "good")],
+    counter: [
+      T("menu", "Answer menu and allergen questions at {zone}", "Answer repeated questions about dishes, drinks and allergens at {zone}.", 40, 1.5, "good"),
+      T("carry", "Carry dishes from {zone} to tables", "Bring plates and drinks from {zone} to the tables.", 60, 2, "no"),
+    ],
+    seating: [
+      T("seat", "Guide diners to a free table in {zone}", "Show diners to a free table in {zone}.", 50, 1, "good"),
+      T("reset", "Clear and reset tables in {zone}", "Clear plates and set the tables in {zone}.", 60, 3, "no"),
+    ],
+    display: [T("specials", "Present daily specials at {zone}", "Explain today's specials shown at {zone}.", 30, 1, "good")],
+    waiting: [T("queue", "Give table wait information at {zone}", "Tell guests in {zone} how long until a table is free.", 40, 1, "good")],
+    corridor: [T("way", "Guide diners to restrooms via {zone}", "Show diners the way to restrooms and exits through {zone}.", 20, 1, "good")],
+    shelves: [T("restock", "Restock cutlery and napkins at {zone}", "Refill cutlery, napkins and condiments at {zone}.", 6, 8, "no")],
+  },
+  bar: {
+    entrance: [T("greet", "Greet guests at {zone}", "Welcome arriving guests at {zone}.", 70, 0.5, "good")],
+    counter: [
+      T("menu", "Explain drinks menu and offers at {zone}", "Answer repeated questions about drinks, happy hour and offers at {zone}.", 45, 1.5, "good"),
+      T("pour", "Pour and serve drinks from {zone}", "Prepare and hand over drinks at {zone}.", 90, 2, "no"),
+    ],
+    seating: [
+      T("seat", "Guide guests to a free booth in {zone}", "Show guests to a free place in {zone}.", 30, 1, "good"),
+      T("glasses", "Collect glasses in {zone}", "Collect empty glasses and wipe tables in {zone}.", 60, 3, "no"),
+    ],
+    display: [T("events", "Present event nights and specials at {zone}", "Announce events and drink specials shown at {zone}.", 25, 1, "good")],
+    waiting: [T("queue", "Give queue information at {zone}", "Tell guests in {zone} how long the wait is.", 25, 1, "good")],
+    desk: [T("book", "Answer reservation questions at {zone}", "Answer repeated booking questions at {zone}.", 20, 1.5, "partial", "K1 can answer, but cannot take bookings or payments.")],
+    corridor: [T("way", "Guide guests to restrooms via {zone}", "Show guests the way through {zone}.", 20, 1, "good")],
+  },
+  supermarket: {
+    entrance: [T("greet", "Greet shoppers at {zone}", "Welcome shoppers at {zone}.", 200, 0.5, "good")],
+    display: [T("offers", "Announce weekly offers at {zone}", "Point out weekly offers and promotions shown at {zone}.", 50, 1, "good")],
+    shelves: [
+      T("where", "Answer 'where is it' questions at {zone}", "Point shoppers to products and aisles at {zone}.", 70, 1, "good"),
+      T("restock", "Restock shelves at {zone}", "Carry and arrange goods at {zone}.", 10, 20, "no"),
+    ],
+    counter: [
+      T("selfcheck", "Explain self-checkout steps at {zone}", "Explain how self-checkout and loyalty cards work at {zone}.", 60, 1, "good"),
+      T("scan", "Scan and bag items at {zone}", "Scan, pack and hand over purchases at {zone}.", 120, 1, "no"),
+    ],
+    waiting: [T("queue", "Give queue information at {zone}", "Tell shoppers at {zone} which checkout is free.", 50, 0.5, "good")],
+    corridor: [T("way", "Guide shoppers to departments via {zone}", "Show shoppers the way to departments through {zone}.", 40, 1, "good")],
+    desk: [T("service", "Answer customer-service questions at {zone}", "Answer repeated questions about returns and opening hours at {zone}.", 30, 1.5, "partial", "K1 can answer, but cannot handle receipts, cash or cards.")],
+  },
+  mall: {
+    entrance: [T("greet", "Greet visitors at {zone}", "Welcome visitors at {zone} and orient them.", 200, 0.5, "good")],
+    desk: [
+      T("directory", "Answer mall directory questions at {zone}", "Tell visitors where shops, toilets and parking are at {zone}.", 90, 1, "good"),
+      T("maps", "Hand out maps and vouchers at {zone}", "Hand printed maps and vouchers to visitors at {zone}.", 40, 0.5, "no"),
+    ],
+    display: [T("stores", "Present store directory and promotions at {zone}", "Point out the store directory and promotions shown at {zone}.", 50, 1, "good")],
+    corridor: [T("way", "Guide visitors to shops via {zone}", "Show visitors the way to shops and exits through {zone}.", 100, 1, "good")],
+    seating: [
+      T("events", "Announce events and opening hours in {zone}", "Announce events and opening hours to people in {zone}.", 20, 0.5, "good"),
+      T("litter", "Clear litter in {zone}", "Collect litter and tidy {zone}.", 20, 5, "no"),
+    ],
+    counter: [T("info", "Answer visitor questions at {zone}", "Answer repeated visitor questions at {zone}.", 60, 1, "good")],
+    waiting: [T("queue", "Give queue information at {zone}", "Tell people in {zone} where to queue.", 25, 1, "good")],
+  },
+  clinic: {
+    entrance: [T("greet", "Greet patients at {zone}", "Welcome arriving patients at {zone}.", 60, 0.5, "good")],
+    desk: [
+      T("checkin", "Explain check-in steps at {zone}", "Explain how to check in and what to prepare at {zone}.", 50, 1.5, "good"),
+      T("insurance", "Take insurance cards and payments at {zone}", "Scan insurance cards and take payments at {zone}.", 40, 2, "no"),
+    ],
+    counter: [T("checkin", "Explain check-in steps at {zone}", "Explain how to check in at {zone}.", 50, 1.5, "good")],
+    waiting: [T("queue", "Give wait-time information at {zone}", "Tell patients in {zone} how long until their appointment.", 50, 1, "good")],
+    corridor: [T("way", "Guide patients to treatment rooms via {zone}", "Show patients the way to treatment rooms through {zone}.", 40, 1, "good")],
+    display: [T("services", "Present clinic services and hours at {zone}", "Explain services and opening hours shown at {zone}.", 15, 1, "good")],
+    seating: [
+      T("guidance", "Share waiting-room guidance in {zone}", "Remind patients in {zone} about forms and hygiene rules.", 20, 0.5, "good"),
+      T("disinfect", "Disinfect chairs in {zone}", "Wipe and disinfect chairs in {zone}.", 15, 5, "no"),
+    ],
+    shelves: [T("leaflets", "Restock leaflets at {zone}", "Refill patient leaflets at {zone}.", 3, 8, "no")],
   },
 };
 

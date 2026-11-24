@@ -19,6 +19,11 @@ const LABELS: Record<BusinessKind, Record<ZoneType, string>> = {
   event: { entrance: "Venue entrance", counter: "Registration counter", seating: "Networking lounge", display: "Agenda board", waiting: "Queue area", shelves: "Swag rack", desk: "Registration desk", corridor: "Auditorium entrance", other: "Expo hall" },
   museum: { entrance: "Gallery entrance", counter: "Ticket desk", seating: "Atrium benches", display: "Exhibition highlights", waiting: "Tour waiting area", shelves: "Catalogue rack", desk: "Information desk", corridor: "Gallery wing", other: "Exhibition hall" },
   terminal: { entrance: "Terminal entrance", counter: "Check-in counter", seating: "Passenger seating", display: "Departures board", waiting: "Waiting seats", shelves: "Transit maps rack", desk: "Passenger info desk", corridor: "Gate corridor", other: "Concourse" },
+  restaurant: { entrance: "Main entrance", counter: "Service bar", seating: "Dining tables", display: "Specials board", waiting: "Waiting lounge", shelves: "Cutlery station", desk: "Host desk", corridor: "Restroom corridor", other: "Dining hall" },
+  bar: { entrance: "Lounge entrance", counter: "Bar counter", seating: "Lounge booths", display: "Drinks menu board", waiting: "Waiting nook", shelves: "Bottle shelves", desk: "Reservations desk", corridor: "Restroom corridor", other: "Lounge" },
+  supermarket: { entrance: "Store entrance", counter: "Checkout lanes", seating: "Rest area", display: "Weekly offers display", waiting: "Checkout queue", shelves: "Grocery aisles", desk: "Customer service desk", corridor: "Main aisle", other: "Sales floor" },
+  mall: { entrance: "Atrium entrance", counter: "Guest services", seating: "Atrium seating", display: "Store directory board", waiting: "Queue area", shelves: "Pop-up stands", desk: "Mall info desk", corridor: "Central promenade", other: "Atrium" },
+  clinic: { entrance: "Clinic entrance", counter: "Reception counter", seating: "Waiting seats", display: "Patient info screen", waiting: "Patient waiting area", shelves: "Leaflet rack", desk: "Reception desk", corridor: "Treatment room hallway", other: "Clinic hall" },
   generic: { entrance: "Entrance", counter: "Service counter", seating: "Seating area", display: "Display area", waiting: "Waiting area", shelves: "Shelves", desk: "Info desk", corridor: "Corridor", other: "Common area" },
 };
 
@@ -59,10 +64,23 @@ export function relabelZones(scene: Scene, kind: BusinessKind): Scene {
   return { ...scene, zones };
 }
 
+/** Family corrected after Auto-detect: zone labels that were the old family's defaults become the new family's ("Car display 2" → "Promo display 2"). */
+export function switchFamilyLabels(scene: Scene, from: BusinessKind, to: BusinessKind): Scene {
+  const zones = scene.zones.map((z) => {
+    const type = zoneTypeOfId(z.id);
+    const old = LABELS[from][type];
+    if (z.label === old) return { ...z, label: LABELS[to][type] };
+    if (z.label.startsWith(`${old} `) && /^\d+$/.test(z.label.slice(old.length + 1))) return { ...z, label: `${LABELS[to][type]} ${z.label.slice(old.length + 1)}` };
+    return z;
+  });
+  return relabelZones({ ...scene, zones }, to);
+}
+
 /** Minimum room size per business (m): the K1 needs space to walk; small models often guess 3–5 m. */
 const MIN_ROOM: Record<BusinessKind, [number, number]> = {
   showroom: [12, 9], hotel: [10, 8], cafe: [8, 6], library: [10, 8], retail: [8, 6], office: [6, 5], university: [12, 8],
-  gym: [10, 8], event: [12, 9], museum: [10, 8], terminal: [14, 9], generic: [6, 5],
+  gym: [10, 8], event: [12, 9], museum: [10, 8], terminal: [14, 9],
+  restaurant: [10, 8], bar: [9, 7], supermarket: [14, 10], mall: [14, 10], clinic: [8, 6], generic: [6, 5],
 };
 
 /** Zone types a business plausibly has, in the order we add missing ones. */
@@ -78,6 +96,11 @@ const PLAUSIBLE: Record<BusinessKind, ZoneType[]> = {
   event: ["entrance", "desk", "corridor", "display", "seating"],
   museum: ["entrance", "counter", "display", "corridor", "seating"],
   terminal: ["entrance", "desk", "display", "corridor", "waiting"],
+  restaurant: ["entrance", "seating", "desk", "counter", "display"],
+  bar: ["entrance", "counter", "seating", "display"],
+  supermarket: ["entrance", "display", "shelves", "counter", "waiting"],
+  mall: ["entrance", "desk", "display", "corridor", "seating"],
+  clinic: ["entrance", "desk", "waiting", "corridor"],
   generic: ["entrance", "display", "seating", "counter"],
 };
 

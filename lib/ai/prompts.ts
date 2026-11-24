@@ -1,5 +1,6 @@
 import { k1Profile } from "./k1Profile";
-import { expectedZonesHint, isAutoDetect } from "./businessPresets";
+import { isAutoDetect } from "./businessPresets";
+import { FAMILIES, zonesHintFor } from "./families";
 
 export const ANALYSIS_SCHEMA = {
   type: "object",
@@ -45,6 +46,8 @@ export const ANALYSIS_SCHEMA = {
         required: ["id", "title", "zone_id", "description", "frequency_per_day", "minutes_each"],
       },
     },
+    // only asked for with Auto-detect
+    business_guess: { type: "string", enum: FAMILIES },
     ratings: {
       type: "array",
       items: {
@@ -80,7 +83,7 @@ No money, prices, hours or savings in any text. K1 is a small humanoid WITHOUT h
  */
 export function buildAnalysisPrompt(businessType: string, compact = false): string {
   const auto = isAutoDetect(businessType);
-  const hint = expectedZonesHint(businessType);
+  const hint = zonesHintFor(businessType);
   if (compact) {
     const header = auto
       ? "Look at the frames and infer the business/space type automatically (describe only what is VISIBLE)."
@@ -139,7 +142,7 @@ ${RATING_RULES}
 Return STRICT JSON only, exactly this shape:
 { "scene": { "room": {"width": number, "depth": number}, "zones": [{"id","label","x","z","w","d"}] },
   "tasks": [{"id","title","zone_id","description","frequency_per_day","minutes_each"}],
-  "ratings": [{"id","fit","score","why","limits"}] }`;
+  "ratings": [{"id","fit","score","why","limits"}]${auto ? ',\n  "business_guess": one of ' + FAMILIES.join(" | ") : ""} }`;
 }
 
 export const SCENARIO_SCHEMA = {

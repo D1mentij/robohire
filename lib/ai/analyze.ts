@@ -3,6 +3,9 @@ import type { AnalysisResult, Task, UploadData } from "./types";
 import { parseRatings } from "./ratings";
 import { buildAnalysisPrompt, ANALYSIS_SCHEMA } from "./prompts";
 import { ZONES_SCHEMA, buildZonesPrompt, validateZonesAnalysis } from "./zoneTasks";
+import { isAutoDetect } from "./businessPresets";
+import { detectBusiness, inferFromHints } from "./businessTemplates";
+import { parseFamily } from "./families";
 import { ProviderUnavailableError, provider, providerName } from "./provider";
 
 /** Safety net: the model sometimes invents robot infrastructure. */
@@ -110,7 +113,7 @@ function cleanTasks(raw: unknown, zoneIds: Set<string>, idMap: Map<string, strin
   return out;
 }
 
-export function validateAnalysis(raw: unknown): AnalysisResult {
+export function validateAnalysis(raw: unknown, businessType = ""): AnalysisResult {
   if (typeof raw !== "object" || raw === null) throw new Error("AI returned non-object JSON");
   const o = raw as Record<string, unknown>;
   if (!isScene(o.scene)) throw new Error("AI scene failed validation");
@@ -123,7 +126,11 @@ export function validateAnalysis(raw: unknown): AnalysisResult {
   if (tasks.length === 0) throw new Error("No valid tasks after cleanup");
   // ratings are best-effort: missing/garbled ones are filled by heuristics in /api/jobs (lib/ai/ratings.ts)
   const ratings = parseRatings(o.ratings, new Set(tasks.map((t) => t.id)), taskIdMap);
-  return { scene, tasks, ratings };
+  // template family (labels/tasks of a later correction): the owner's text, or the model's business_guess with Auto-detect
+  const hints = [...scene.zones.map((z) => z.label), ...tasks.map((t) => t.title)];
+  const auto = isAutoDetect(businessType);
+  const family = auto ? (parseFamily(o.business_guess) ?? inferFromHints(hints)) : detectBusiness(businessType, hints);
+  return { scene, tasks, ratings, family, familyDetected: auto };
 }
 
 export type AnalyzeOutcome = { ok: true; result: AnalysisResult } | { ok: false; error: string };
@@ -147,7 +154,7 @@ export async function analyze(data: UploadData): Promise<AnalyzeOutcome> {
     if (left !== undefined && left < 20_000) break;
     try {
       const raw = await provider.generateJson(prompt, data.frames, schema, left === undefined ? undefined : { timeoutMs: Math.min(left, ATTEMPT_CAP_MS) });
-      return { ok: true, result: local ? validateZonesAnalysis(raw, data.hoursPerWeek, cleanScene, data.businessType) : validateAnalysis(raw) };
+      return { ok: true, result: local ? validateZonesAnalysis(raw, data.hoursPerWeek, cleanScene, data.businessType) : validateAnalysis(raw, data.businessType) };
     } catch (e) {
       if (e instanceof ProviderUnavailableError) return { ok: false, error: e.message };
       lastError = e instanceof Error ? e.message : String(e);

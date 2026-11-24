@@ -3,7 +3,7 @@ import { ANALYSIS_STORAGE_KEY, JOBS_STORAGE_KEY, PLAN_STORAGE_KEY, clearRunStora
 import { buildPlan } from "@/lib/roi/roi";
 import { demoMeta, demoTasks } from "./demoData";
 import { findPreset, isAutoDetect } from "./businessPresets";
-import { detectBusiness } from "./businessTemplates";
+import { detectBusiness, type BusinessKind } from "./businessTemplates";
 import { fixLayout } from "./layout";
 import { tasksFromZones } from "./zoneTasks";
 import { buildJobs } from "./jobs";
@@ -81,7 +81,9 @@ export function buildDemoData(options?: DemoOptions): {
       ? preset.demoScene
       : buildCustomDemoScene(label);
 
-  const { tasks, ratings } = tasksFromZones(scene, [], hoursPerWeek, auto ? "" : label);
+  // the selected family's templates (preset → its family, custom text → keyword detection EN/LV/RU, auto → generic), not always café
+  const family: BusinessKind = preset?.family ?? (auto ? "generic" : detectBusiness(label));
+  const { tasks, ratings } = tasksFromZones(scene, [], hoursPerWeek, auto ? "" : label, family);
   const built = buildJobs({
     tasks,
     scene,
@@ -104,6 +106,7 @@ export function buildDemoData(options?: DemoOptions): {
     scene,
     tasks,
     ratings,
+    family,
     businessType: label,
     hoursPerWeek,
     hourlyCost,
