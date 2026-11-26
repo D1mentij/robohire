@@ -23,7 +23,7 @@ export type StepPhase =
   | "walking"
   | "waving"
   | "pointing"
-  | "speaking"
+  | "caption"
   | "waiting";
 
 export interface RobotPose {

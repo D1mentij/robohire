@@ -172,7 +172,7 @@ Return JSON { "steps": [...] } with 6 to 10 steps. Allowed actions ONLY:
 Rules:
 - target MUST be one of the zone ids above, spelled exactly. Never invent zones.
 - Start with walk_to the primary pickup/entry/lane zone, then visit 1-2 destination zones.
-- Include at least 2 concise English "say" status/voice lines (MAX 8 words each) and 1 wait or gesture step.
+- Include at least 2 concise English "say" on-screen status lines (MAX 8 words each) and 1 wait or gesture step.
 - Do not mention prices or money.`;
 }
 

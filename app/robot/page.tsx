@@ -103,7 +103,11 @@ function formatCurrentActionLine(
     case "wave":
       return zoneLabel ? `Greeting at ${zoneLabel}` : "Greeting visitors";
     case "say":
-      return step.text ? `"${step.text}"` : "Announcing status";
+      return step.text
+        ? `Status: ${step.text}`
+        : zoneLabel
+          ? `Operating at ${zoneLabel}`
+          : "Updating status display";
     case "wait":
       return zoneLabel ? `Operating at ${zoneLabel}` : "Holding position";
   }
@@ -112,15 +116,9 @@ function formatCurrentActionLine(
 export default function RobotSimulationPage() {
   const simData = useSimulationData();
   const [followCamera, setFollowCamera] = useState<boolean>(true);
-  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [presentMode, setPresentMode] = useState<boolean>(false);
 
-  const executor = useScenarioExecutor(
-    simData.scene,
-    simData.steps,
-    true,
-    voiceEnabled,
-  );
+  const executor = useScenarioExecutor(simData.scene, simData.steps, true);
 
   const enterPresentMode = useCallback(() => {
     setPresentMode(true);
@@ -347,19 +345,6 @@ export default function RobotSimulationPage() {
 
             <button
               type="button"
-              data-testid="voice-tts-btn"
-              onClick={() => setVoiceEnabled((v) => !v)}
-              className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-                voiceEnabled
-                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
-                  : "border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              }`}
-            >
-              Voice: {voiceEnabled ? "ON" : "OFF"}
-            </button>
-
-            <button
-              type="button"
               data-testid="present-mode-btn"
               title="Fullscreen presentation mode (Press P)"
               onClick={enterPresentMode}
@@ -406,14 +391,14 @@ export default function RobotSimulationPage() {
             onTick={executor.tick}
           />
 
-          {/* Live Speech Banner during `say` action */}
-          {executor.activeSpeech && executor.status === "running" && (
+          {/* Silent On-Screen Status Caption during `say` step */}
+          {executor.activeCaption && executor.status === "running" && (
             <div
-              data-testid="active-speech-banner"
+              data-testid="active-status-caption"
               className="pointer-events-none absolute bottom-6 left-1/2 z-20 max-w-md -translate-x-1/2 rounded-2xl border border-sky-400/50 bg-slate-900/90 px-4 py-2.5 text-center text-sm font-semibold text-sky-100 shadow-xl backdrop-blur-md"
             >
               <span className="mr-1.5 text-sky-400">{robotSpec.shortName}:</span>
-              &ldquo;{executor.activeSpeech}&rdquo;
+              {executor.activeCaption}
             </div>
           )}
 
