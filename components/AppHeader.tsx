@@ -9,8 +9,8 @@ const THEME_STORAGE_KEY = "robohire:theme";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/upload", label: "Upload" },
-  { href: "/jobs", label: "Jobs" },
-  { href: "/robot", label: "3D Robot" },
+  { href: "/jobs", label: "15 Robots & ROI" },
+  { href: "/robot", label: "3D Simulation" },
 ] as const;
 
 export function AppHeader() {
@@ -51,7 +51,6 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/90 bg-white/90 backdrop-blur-md transition-colors dark:border-slate-800/90 dark:bg-slate-900/90">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        {/* Brand Logo */}
         <Link
           href="/"
           className="flex items-center gap-2.5 text-slate-900 transition hover:opacity-90 dark:text-white"
@@ -63,11 +62,10 @@ export function AppHeader() {
             RoboHire
           </span>
           <span className="hidden rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-700 dark:text-sky-300 sm:inline-block">
-            Booster K1
+            B2B RaaS Broker • 15 Models
           </span>
         </Link>
 
-        {/* Navigation Links + Theme Toggle */}
         <div className="flex items-center gap-2 sm:gap-3">
           <nav
             aria-label="Main Navigation"

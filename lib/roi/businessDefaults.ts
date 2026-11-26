@@ -1,37 +1,60 @@
+import type { LaborRole } from "@/types/contracts";
+import {
+  LATVIA_2026_LABOR_BENCHMARKS,
+  shiftsFromHours,
+} from "@/src/data/robots";
+
 /**
- * ONE table of smart defaults for the /upload business-type selector (opening hours per week, staff €/h incl. employer tax).
- * EVERY value is an ASSUMPTION, not measured data: hospitality ≈ €8.5/h is the figure this project uses for Latvian hospitality
- * (see lib/roi/config.ts); all other rows are rough sector estimates for Latvia that the owner should adjust.
- * Selecting a preset fills the form fields, but never overwrites a value the user already edited.
+ * Verified Latvia 2026 defaults per business preset on /upload
+ * (Gross salary + 23.59% employer VSAOI social tax = full employer labor cost,
+ * sourced from CSB Latvia Q2 2026, CV.lv, Algas.lv, and VisiDarbi.lv).
  */
-export type BusinessDefault = { hoursPerWeek: number; hourlyCost: number; assumption: true; basis: string };
-
-const HOSP = "Latvian hospitality ≈ €8.5/h incl. employer tax is the project-wide assumption; other values are estimates scaled from it";
-const EST = "Rough sector estimate for Latvia (no measured source) — adjust to your payroll";
-
-export const BUSINESS_DEFAULTS: Record<string, BusinessDefault> = {
-  cafe: { hoursPerWeek: 60, hourlyCost: 8.5, assumption: true, basis: HOSP },
-  restaurant: { hoursPerWeek: 72, hourlyCost: 9.0, assumption: true, basis: HOSP },
-  hotel: { hoursPerWeek: 112, hourlyCost: 9.5, assumption: true, basis: HOSP },
-  bar: { hoursPerWeek: 56, hourlyCost: 9.0, assumption: true, basis: HOSP },
-  retail_clothing: { hoursPerWeek: 66, hourlyCost: 8.0, assumption: true, basis: EST },
-  supermarket: { hoursPerWeek: 91, hourlyCost: 8.0, assumption: true, basis: EST },
-  electronics: { hoursPerWeek: 66, hourlyCost: 9.5, assumption: true, basis: EST },
-  mall: { hoursPerWeek: 77, hourlyCost: 8.5, assumption: true, basis: EST },
-  university: { hoursPerWeek: 55, hourlyCost: 10.0, assumption: true, basis: EST },
-  conference: { hoursPerWeek: 50, hourlyCost: 11.0, assumption: true, basis: EST },
-  museum: { hoursPerWeek: 48, hourlyCost: 9.0, assumption: true, basis: EST },
-  coworking: { hoursPerWeek: 50, hourlyCost: 10.5, assumption: true, basis: EST },
-  gym: { hoursPerWeek: 98, hourlyCost: 9.0, assumption: true, basis: EST },
-  clinic: { hoursPerWeek: 50, hourlyCost: 11.5, assumption: true, basis: EST },
-  car_dealership: { hoursPerWeek: 56, hourlyCost: 11.5, assumption: true, basis: EST },
-  terminal: { hoursPerWeek: 126, hourlyCost: 10.5, assumption: true, basis: EST },
-  "auto-detect": { hoursPerWeek: 60, hourlyCost: 8.5, assumption: true, basis: HOSP },
-  custom: { hoursPerWeek: 60, hourlyCost: 8.5, assumption: true, basis: HOSP },
+export type BusinessDefault = {
+  hoursPerWeek: number;
+  hourlyCost: number;
+  defaultShifts: 1 | 2 | 3;
+  primaryRole: LaborRole;
+  basis: string;
 };
 
-export const defaultsFor = (id: string): BusinessDefault => BUSINESS_DEFAULTS[id] ?? BUSINESS_DEFAULTS.custom;
+function makeDefault(
+  hoursPerWeek: number,
+  role: LaborRole,
+  sectorLabel: string,
+): BusinessDefault {
+  const b = LATVIA_2026_LABOR_BENCHMARKS[role];
+  const shifts = shiftsFromHours(hoursPerWeek);
+  return {
+    hoursPerWeek,
+    hourlyCost: b.hourlyEmployerEur,
+    defaultShifts: shifts,
+    primaryRole: role,
+    basis: `Latvia 2026 ${sectorLabel} employer cost: €${b.hourlyEmployerEur.toFixed(2)}/h (€${b.grossMonthlyEur.toLocaleString("en-US")} gross + 23.59% VSAOI = €${b.employerMonthlyEur.toLocaleString("en-US")}/mo per shift)`,
+  };
+}
 
-/** Caption under the staff-cost field. */
-export const costCaption = (typeLabel: string, hourlyCost: number): string =>
-  `Typical estimate for ${typeLabel} in Latvia ≈ €${hourlyCost.toFixed(1)}/h incl. employer tax (assumption)`;
+export const BUSINESS_DEFAULTS: Record<string, BusinessDefault> = {
+  narrow_cafe: makeDefault(56, "waiter", "HoReCa"),
+  restaurant: makeDefault(84, "waiter", "HoReCa"),
+  hotel: makeDefault(168, "hotel_courier", "Hotel Porter & Reception"),
+  office: makeDefault(60, "reception", "Office / Clinic Reception"),
+  retail: makeDefault(70, "reception", "Retail & Showroom"),
+  mall_airport: makeDefault(168, "scrubber_op", "Mall / Industrial Scrubber"),
+  warehouse: makeDefault(112, "warehouse", "Warehouse & Logistics"),
+  factory: makeDefault(120, "warehouse", "Manufacturing & AMR"),
+  gym: makeDefault(98, "cleaner", "Commercial Cleaning"),
+  "auto-detect": makeDefault(60, "waiter", "HoReCa / Service"),
+  custom: makeDefault(60, "reception", "General Service"),
+};
+
+export const defaultsFor = (id: string): BusinessDefault =>
+  BUSINESS_DEFAULTS[id] ?? BUSINESS_DEFAULTS.custom;
+
+/** Exact Latvia 2026 VSAOI caption under the Staff hourly cost (€) field. */
+export const costCaption = (idOrLabel: string, hourlyCost: number): string => {
+  const known = BUSINESS_DEFAULTS[idOrLabel];
+  if (known && Math.abs(known.hourlyCost - hourlyCost) < 0.02) {
+    return known.basis;
+  }
+  return `Latvia 2026 employer cost: €${hourlyCost.toFixed(2)}/h (incl. 23.59% employer VSAOI social tax)`;
+};

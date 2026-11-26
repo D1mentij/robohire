@@ -21,18 +21,61 @@ export interface Scene {
 
 export type Fit = "good" | "partial" | "no";
 
+/**
+ * 15 real-world commercial robots in the RoboHire B2B RaaS catalog.
+ */
 export const ROBOT_TYPES = [
-  "k1",
-  "vacuum",
-  "window_cleaner",
-  "tray_delivery",
-  "uvc_disinfection",
-  "shelf_scanner",
-  "air_purifier",
-  "security_rover",
+  "pudu_bellabot",
+  "keenon_t8",
+  "keenon_t10",
+  "bear_servi",
+  "pudu_kettybot_pro",
+  "pudu_flashbot",
+  "keenon_w3",
+  "lionsbot_r3_vac",
+  "pudu_cc1",
+  "pudu_cc1_pro",
+  "avidbots_neo_2",
+  "gausium_scrubber_75p",
+  "pudu_t300",
+  "mir250",
+  "temi",
 ] as const;
 
 export type RobotType = (typeof ROBOT_TYPES)[number];
+
+export const ROBOT_CATEGORIES = [
+  "HoReCa Delivery",
+  "Greeting & Retail",
+  "Hotel & Office Delivery",
+  "Commercial Cleaning",
+  "Industrial Cleaning",
+  "Warehouse & Factory AMR",
+  "General Service & Reception",
+] as const;
+
+export type RobotCategory = (typeof ROBOT_CATEGORIES)[number];
+
+export const LABOR_ROLES = [
+  "waiter",
+  "reception",
+  "hotel_courier",
+  "cleaner",
+  "scrubber_op",
+  "warehouse",
+] as const;
+
+export type LaborRole = (typeof LABOR_ROLES)[number];
+
+export const ROBOT_ARCHETYPES = [
+  "tray_waiter",
+  "greeter_screen",
+  "enclosed_cabinet",
+  "floor_scrubber",
+  "warehouse_amr",
+] as const;
+
+export type RobotArchetype = (typeof ROBOT_ARCHETYPES)[number];
 
 export interface Job {
   id: string;
@@ -44,8 +87,19 @@ export interface Job {
   hours_per_week: number;
   savings_eur_month: number;
   payback_months: number | null;
-  /** Optional robot platform identifier; omitted defaults to primary "k1" (Booster K1). */
+  /** Commercial robot identifier from the 15-robot catalog. */
   robot_type?: RobotType;
+  robot_name?: string;
+  category?: RobotCategory;
+  role?: LaborRole;
+  purchase_price_eur?: number;
+  base_raas_eur?: number;
+  client_raas_eur?: number;
+  monthly_commission_eur?: number;
+  sale_commission_eur?: number;
+  human_monthly_cost_eur?: number;
+  savings_pct?: number;
+  shifts_count?: number;
 }
 
 export interface JobsResult {
@@ -53,10 +107,10 @@ export interface JobsResult {
   jobs: Job[];
 }
 
-/** One K1 robot doing several jobs per shift. Payback only makes sense for the whole plan. */
+/** Recommended robot deployment summary (top commercial robot or task bundle). */
 export interface RobotPlan {
   job_ids: string[];
-  hours_per_week: number; // robot-hours used
+  hours_per_week: number;
   capacity_hours_per_week: number;
   gross_savings_eur_month: number;
   running_cost_eur_month: number;
@@ -82,7 +136,7 @@ export interface ScenarioStep {
   target?: string; // zone id
   text?: string;
   seconds?: number;
-  /** Optional, display only: which job / phase this step belongs to (e.g. in a whole-shift scenario). */
+  /** Optional, display only: which job / phase this step belongs to. */
   label?: string;
 }
 

@@ -44,7 +44,10 @@ export function BusinessTypeSelector({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -81,7 +84,8 @@ export function BusinessTypeSelector({
           (!q ||
             p.label.toLowerCase().includes(q) ||
             p.category.toLowerCase().includes(q) ||
-            p.expectedZones.toLowerCase().includes(q)),
+            p.expectedZones.toLowerCase().includes(q) ||
+            p.spatialNotes.toLowerCase().includes(q)),
       ),
     })).filter((g) => g.items.length > 0);
   }, [query]);
@@ -110,7 +114,7 @@ export function BusinessTypeSelector({
       ? selection.preset.category
       : selection.mode === "auto"
         ? "Vision AI"
-        : "Custom";
+        : "Other";
 
   const chipBase =
     "cursor-pointer rounded-full border px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50";
@@ -121,7 +125,7 @@ export function BusinessTypeSelector({
 
   return (
     <div ref={containerRef} className="space-y-2.5">
-      {/* Categorized searchable combobox trigger */}
+      {/* Categorized SMB, Mid-Market & Enterprise combobox */}
       <div className="relative">
         <button
           type="button"
@@ -168,19 +172,21 @@ export function BusinessTypeSelector({
                 data-testid="business-type-search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search industry (e.g. retail, gym, clinic, hotel)..."
+                placeholder="Search venue (café 55 cm, hotel, airport, warehouse, factory)..."
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
             </div>
 
-            <div className="max-h-72 overflow-y-auto p-1.5">
+            <div className="max-h-80 overflow-y-auto p-1.5">
               {filteredByCategory.map(({ category, items }) => (
                 <div key={category} className="mb-1.5 last:mb-0">
                   <div className="px-2.5 py-1 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:text-slate-400">
                     {category}
                   </div>
                   {items.map((preset) => {
-                    const active = selection.mode === "preset" && selection.preset.id === preset.id;
+                    const active =
+                      selection.mode === "preset" &&
+                      selection.preset.id === preset.id;
                     return (
                       <button
                         key={preset.id}
@@ -200,7 +206,8 @@ export function BusinessTypeSelector({
                       >
                         <span className="truncate">{preset.label}</span>
                         <span className="shrink-0 font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                          {preset.defaultHoursPerWeek}h/wk · €{preset.defaultHourlyCost.toFixed(1)}/h
+                          {preset.defaultShifts}sh · {preset.defaultHoursPerWeek}h/wk · €
+                          {preset.defaultHourlyCost.toFixed(2)}/h
                         </span>
                       </button>
                     );
@@ -211,7 +218,7 @@ export function BusinessTypeSelector({
               {(showAutoInList || showCustomInList) && (
                 <div className="mt-1 border-t border-slate-200 pt-1.5 dark:border-slate-800">
                   <div className="px-2.5 py-1 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-                    Auto / Custom
+                    Other
                   </div>
                   {showAutoInList && (
                     <button
@@ -231,7 +238,7 @@ export function BusinessTypeSelector({
                     >
                       <span>{AUTO_DETECT_LABEL}</span>
                       <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">
-                        Vision AI infers type
+                        Vision AI infers venue
                       </span>
                     </button>
                   )}
@@ -253,38 +260,41 @@ export function BusinessTypeSelector({
                     >
                       <span>{CUSTOM_PRESET_LABEL}</span>
                       <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">
-                        Type any space
+                        Enter any facility
                       </span>
                     </button>
                   )}
                 </div>
               )}
 
-              {filteredByCategory.length === 0 && !showAutoInList && !showCustomInList && (
-                <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
-                  No preset matches &ldquo;{query}&rdquo;.{" "}
-                  <button
-                    type="button"
-                    className="cursor-pointer font-semibold text-sky-600 underline dark:text-sky-400"
-                    onClick={() => {
-                      onSelectCustom();
-                      onCustomTextChange(query.trim());
-                      setOpen(false);
-                    }}
-                  >
-                    Use as custom business type
-                  </button>
-                </div>
-              )}
+              {filteredByCategory.length === 0 &&
+                !showAutoInList &&
+                !showCustomInList && (
+                  <div className="px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                    No preset matches &ldquo;{query}&rdquo;.{" "}
+                    <button
+                      type="button"
+                      className="cursor-pointer font-semibold text-sky-600 underline dark:text-sky-400"
+                      onClick={() => {
+                        onSelectCustom();
+                        onCustomTextChange(query.trim());
+                        setOpen(false);
+                      }}
+                    >
+                      Use as custom business type
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Quick-pick chips */}
+      {/* Quick-pick chips across SMB, Mid-Market & Enterprise */}
       <div className="flex flex-wrap gap-1.5" aria-label="Quick business presets">
         {QUICK_PICKS.map((preset) => {
-          const active = selection.mode === "preset" && selection.preset.id === preset.id;
+          const active =
+            selection.mode === "preset" && selection.preset.id === preset.id;
           return (
             <button
               key={preset.id}
@@ -294,7 +304,7 @@ export function BusinessTypeSelector({
               onClick={() => onSelectPreset(preset)}
               className={`${chipBase} ${active ? chipActive : chipIdle}`}
             >
-              {preset.label}
+              {preset.shortLabel}
             </button>
           );
         })}
@@ -314,7 +324,7 @@ export function BusinessTypeSelector({
           onClick={onSelectCustom}
           className={`${chipBase} ${selection.mode === "custom" ? chipActive : chipIdle}`}
         >
-          Other / Custom
+          Custom business type...
         </button>
       </div>
 
@@ -329,7 +339,7 @@ export function BusinessTypeSelector({
             maxLength={100}
             value={selection.customText}
             onChange={(e) => onCustomTextChange(e.target.value)}
-            placeholder="Type any business type (e.g. Yoga Studio, Pet Clinic, Bookstore)..."
+            placeholder="Type any venue (e.g. Hypermarket, Hospital Wing, 3PL Logistics Hub)..."
             className="w-full rounded-xl border border-sky-500/60 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-2xs transition focus:border-sky-500 focus:outline-none dark:border-sky-500/50 dark:bg-slate-950 dark:text-slate-100"
           />
         </div>

@@ -1,627 +1,757 @@
 import {
   filterValidSteps,
+  isRobotType,
   type Fit,
   type Job,
+  type RobotCategory,
   type RobotType,
   type Scenario,
   type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
+import {
+  computeRobotRoiMetrics,
+  ROBOTS_BY_ID,
+  ROBOTS_CATALOG_LIST,
+  type CommercialRobotSpec,
+} from "@/src/data/robots";
 import { detectBusiness, type BusinessKind } from "@/lib/ai/businessTemplates";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
-import { COVERAGE, WEEKS_PER_MONTH } from "@/lib/roi/config";
 
-export type HelperRobotType = Exclude<RobotType, "k1">;
+export * from "@/src/data/robots";
 
-export interface RobotMeta {
-  type: RobotType;
-  isPrimary: boolean;
-  name: string;
-  shortName: string;
-  filterLabel: string;
-  roleBadge: string;
-  priceEur: number;
-  accentHex: string;
-  badgeClass: string;
-  tagline: string;
+export type CategoryFilterId = "all" | RobotCategory;
+
+export interface CategoryFilterOption {
+  id: CategoryFilterId;
+  label: string;
 }
 
-export const ROBOT_CATALOG: Record<RobotType, RobotMeta> = {
-  k1: {
-    type: "k1",
-    isPrimary: true,
-    name: "Booster K1",
-    shortName: "Booster K1",
-    filterLabel: "Booster K1 (Primary)",
-    roleBadge: "Primary Robot • Booster K1",
-    priceEur: 8000,
-    accentHex: "#38bdf8",
-    badgeClass:
-      "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300",
-    tagline: "Smart humanoid assistant for greeting, wayfinding, and guest guidance",
-  },
-  vacuum: {
-    type: "vacuum",
-    isPrimary: false,
-    name: "Robot Vacuum & Mop",
-    shortName: "Vacuum & Mop",
-    filterLabel: "Vacuum",
-    roleBadge: "Optional Helper • Vacuum & Mop",
-    priceEur: 1400,
-    accentHex: "#14b8a6",
-    badgeClass:
-      "border-teal-500/50 bg-teal-500/15 text-teal-700 dark:text-teal-300",
-    tagline: "Scheduled sweeping & mopping of open floor areas with auto-empty dock",
-  },
-  window_cleaner: {
-    type: "window_cleaner",
-    isPrimary: false,
-    name: "Window Cleaning Robot",
-    shortName: "Window Cleaner",
-    filterLabel: "Window Cleaner",
-    roleBadge: "Optional Helper • Window Cleaner",
-    priceEur: 550,
-    accentHex: "#06b6d4",
-    badgeClass:
-      "border-cyan-500/50 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
-    tagline: "Storefront & panoramic glass cleaning with power cord & safety tether",
-  },
-  tray_delivery: {
-    type: "tray_delivery",
-    isPrimary: false,
-    name: "Tray Delivery & Busser Bot",
-    shortName: "Tray Delivery",
-    filterLabel: "Tray Delivery",
-    roleBadge: "Optional Helper • Tray Delivery",
-    priceEur: 6500,
-    accentHex: "#f97316",
-    badgeClass:
-      "border-orange-500/50 bg-orange-500/15 text-orange-700 dark:text-orange-300",
-    tagline: "Multi-tier autonomous transport between counters, tables, and rooms",
-  },
-  uvc_disinfection: {
-    type: "uvc_disinfection",
-    isPrimary: false,
-    name: "UV-C Disinfection Bot",
-    shortName: "UV-C Disinfection",
-    filterLabel: "UV-C Disinfection",
-    roleBadge: "Optional Helper • UV-C Bot",
-    priceEur: 9500,
-    accentHex: "#a855f7",
-    badgeClass:
-      "border-purple-500/50 bg-purple-500/15 text-purple-700 dark:text-purple-300",
-    tagline: "After-hours UV-C sterilization for clinics, gyms, hotels, and shared halls",
-  },
-  shelf_scanner: {
-    type: "shelf_scanner",
-    isPrimary: false,
-    name: "Shelf-Scanning Inventory Bot",
-    shortName: "Shelf Scanner",
-    filterLabel: "Shelf Scanner",
-    roleBadge: "Optional Helper • Shelf Scanner",
-    priceEur: 7500,
-    accentHex: "#6366f1",
-    badgeClass:
-      "border-indigo-500/50 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
-    tagline: "Autonomous aisle scanning for out-of-stock gaps and price-tag checks",
-  },
-  air_purifier: {
-    type: "air_purifier",
-    isPrimary: false,
-    name: "Mobile Air Purifier Bot",
-    shortName: "Air Purifier",
-    filterLabel: "Air Purifier",
-    roleBadge: "Optional Helper • Air Purifier",
-    priceEur: 2200,
-    accentHex: "#10b981",
-    badgeClass:
-      "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    tagline: "Autonomous air quality, odor, and CO2 management across busy zones",
-  },
-  security_rover: {
-    type: "security_rover",
-    isPrimary: false,
-    name: "Indoor Security & Patrol Rover",
-    shortName: "Security Rover",
-    filterLabel: "Security Rover",
-    roleBadge: "Optional Helper • Security Rover",
-    priceEur: 4200,
-    accentHex: "#f43f5e",
-    badgeClass:
-      "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300",
-    tagline: "Night-time perimeter patrol, door/window checks, and anomaly alerts",
-  },
-};
-
-export const ROBOT_FILTER_ORDER: readonly ("all" | RobotType)[] = [
-  "all",
-  "k1",
-  "vacuum",
-  "window_cleaner",
-  "tray_delivery",
-  "uvc_disinfection",
-  "shelf_scanner",
-  "air_purifier",
-  "security_rover",
+export const ROBOT_CATEGORY_FILTERS: readonly CategoryFilterOption[] = [
+  { id: "all", label: "All (15)" },
+  { id: "HoReCa Delivery", label: "HoReCa Delivery" },
+  { id: "Greeting & Retail", label: "Greeting & Retail" },
+  { id: "Hotel & Office Delivery", label: "Hotel & Office" },
+  { id: "Commercial Cleaning", label: "Commercial Cleaning" },
+  { id: "Industrial Cleaning", label: "Industrial Cleaning" },
+  { id: "Warehouse & Factory AMR", label: "Warehouse & Factory" },
+  { id: "General Service & Reception", label: "General Service" },
 ] as const;
 
-export function getRobotMeta(type: RobotType): RobotMeta {
-  return ROBOT_CATALOG[type] ?? ROBOT_CATALOG.k1;
+export function getRobotSpec(type?: string | null): CommercialRobotSpec {
+  if (type && isRobotType(type)) {
+    return ROBOTS_BY_ID[type];
+  }
+  return ROBOTS_BY_ID.keenon_t8;
 }
 
-export function isHelperRobot(type: RobotType): type is HelperRobotType {
-  return type !== "k1";
-}
-
-export function inferRobotType(job: Pick<Job, "id" | "robot_type">): RobotType {
-  if (job.robot_type && job.robot_type in ROBOT_CATALOG) {
+export function inferRobotType(
+  job: Pick<Job, "id" | "robot_type" | "title">,
+): RobotType {
+  if (job.robot_type && isRobotType(job.robot_type)) {
     return job.robot_type;
   }
-  const id = job.id.toLowerCase();
-  if (id.startsWith("helper_vacuum")) return "vacuum";
-  if (id.startsWith("helper_window")) return "window_cleaner";
-  if (id.startsWith("helper_tray")) return "tray_delivery";
-  if (id.startsWith("helper_uvc")) return "uvc_disinfection";
-  if (id.startsWith("helper_shelf")) return "shelf_scanner";
-  if (id.startsWith("helper_air")) return "air_purifier";
-  if (id.startsWith("helper_security")) return "security_rover";
-  return "k1";
+  const text = `${job.id} ${job.title}`.toLowerCase();
+  for (const r of ROBOTS_CATALOG_LIST) {
+    if (
+      text.includes(r.id) ||
+      text.includes(r.shortName.toLowerCase().replace(/\s+/g, "_")) ||
+      text.includes(r.name.toLowerCase())
+    ) {
+      return r.id;
+    }
+  }
+  if (/warehouse|pallet|amr|dock/i.test(text)) return "pudu_t300";
+  if (/hotel|elevator|room|courier/i.test(text)) return "pudu_flashbot";
+  if (/scrub|concourse|mall/i.test(text)) return "pudu_cc1_pro";
+  if (/clean|vacuum|mop|sweep/i.test(text)) return "lionsbot_r3_vac";
+  if (/greet|welcom|menu|wayfind|reception|guide/i.test(text)) {
+    return "pudu_kettybot_pro";
+  }
+  return "keenon_t8";
 }
 
-function estimateMonthlySavings(
-  hoursPerWeek: number,
-  fit: Fit,
-  hourlyCost: number,
-): number {
-  if (fit === "no") return 0;
-  return Math.max(
-    0,
-    Math.round(hoursPerWeek * COVERAGE[fit] * WEEKS_PER_MONTH * hourlyCost),
-  );
+export interface SpatialProfile {
+  areaSqm: number;
+  estimatedAisleCm: number;
+  hasNarrowAislesUnder65Cm: boolean;
+  hasElevatorOrMultiFloor: boolean;
+  hasWarehouseCorridors: boolean;
+  isLargeVenue: boolean;
 }
 
-function estimatePayback(
-  savingsPerMonth: number,
-  robotType: RobotType,
-  fit: Fit,
-): number | null {
-  if (fit === "no" || savingsPerMonth <= 0) return null;
-  const price = ROBOT_CATALOG[robotType].priceEur;
-  return Math.max(1, Math.round(price / savingsPerMonth));
-}
-
-function measureSpace(scene: Scene) {
-  const area = Math.max(1, scene.room.width * scene.room.depth);
+/**
+ * Estimates spatial clearances, corridor widths, and multi-floor/elevator traits
+ * from the 3D Scene geometry and business type description.
+ */
+export function analyzeSpaceProfile(
+  scene: Scene,
+  businessType: string,
+): SpatialProfile {
+  const bt = businessType.toLowerCase();
+  const zoneText = scene.zones.map((z) => `${z.id} ${z.label}`).join(" ").toLowerCase();
+  const areaSqm = Math.max(12, Math.round(scene.room.width * scene.room.depth));
   const occupied = scene.zones.reduce((sum, z) => sum + z.w * z.d, 0);
-  const freeRatio = Math.max(0, 1 - occupied / area);
-  const minDim = Math.min(scene.room.width, scene.room.depth);
-  const hasNarrowAisles = minDim < 6.5 || freeRatio < 0.34;
-  const hasShelves = scene.zones.some((z) =>
-    /shelf|shelves|aisle|rack|display|product|merch/i.test(`${z.id} ${z.label}`),
-  );
-  const hasSeating = scene.zones.some((z) =>
-    /table|seat|lounge|sofa|dining|waiting/i.test(`${z.id} ${z.label}`),
-  );
-  const hasCounter = scene.zones.some((z) =>
-    /counter|bar|desk|reception|checkout/i.test(`${z.id} ${z.label}`),
-  );
-  return { area, freeRatio, hasNarrowAisles, hasShelves, hasSeating, hasCounter };
+  const freeRatio = Math.max(0.1, 1 - occupied / areaSqm);
+
+  const explicitNarrow =
+    /narrow|tight|55\s*cm|small\s*caf[eé]|bistro/i.test(bt) ||
+    /narrow/i.test(zoneText);
+  const explicitWarehouse =
+    /warehouse|distribution|logistics|factory|manufactur|plant|pallet/i.test(bt) ||
+    /pallet|loading|dock|rack|assembly|inbound|outbound/i.test(zoneText);
+  const explicitLarge =
+    /mall|airport|terminal|hypermarket|24\/7|distribution|logistics|factory|supermarket|expo/i.test(
+      bt,
+    ) || areaSqm >= 180;
+  const explicitMultiFloor =
+    /multi-floor|hotel|resort|tower|hospital|clinic|office/i.test(bt) ||
+    /elevator|lift/i.test(zoneText);
+
+  let estimatedAisleCm = 90;
+  if (explicitNarrow) {
+    estimatedAisleCm = 58;
+  } else if (explicitWarehouse) {
+    estimatedAisleCm = areaSqm >= 140 ? 165 : 125;
+  } else if (explicitLarge) {
+    estimatedAisleCm = 180;
+  } else if (areaSqm <= 56 || freeRatio < 0.36) {
+    estimatedAisleCm = 62;
+  } else if (areaSqm <= 90) {
+    estimatedAisleCm = 78;
+  } else {
+    estimatedAisleCm = 105;
+  }
+
+  return {
+    areaSqm,
+    estimatedAisleCm,
+    hasNarrowAislesUnder65Cm: estimatedAisleCm < 65,
+    hasElevatorOrMultiFloor: explicitMultiFloor,
+    hasWarehouseCorridors: explicitWarehouse,
+    isLargeVenue: explicitLarge,
+  };
 }
 
-function makeHelperJob(opts: {
-  id: string;
-  robotType: HelperRobotType;
+interface FitEvaluation {
   title: string;
   fit: Fit;
   score: number;
   why: string;
   limits: string;
-  hoursPerWeek: number;
-  hourlyCost: number;
-}): Job {
-  const savings = estimateMonthlySavings(
-    opts.hoursPerWeek,
-    opts.fit,
-    opts.hourlyCost,
-  );
-  return {
-    id: opts.id,
-    title: opts.title,
-    fit: opts.fit,
-    score: opts.score,
-    why: opts.why,
-    limits: opts.limits,
-    hours_per_week: opts.hoursPerWeek,
-    savings_eur_month: savings,
-    payback_months: estimatePayback(savings, opts.robotType, opts.fit),
-    robot_type: opts.robotType,
-  };
 }
 
-/**
- * Generates tailored Optional Helper Robot job recommendations for a given space
- * and business type, enforcing honest hardware limitations (e.g. narrow aisles,
- * after-hours UV-C restrictions, safety tether for glass, thresholds for vacuums).
- */
-export function generateHelperRobotJobs(
-  scene: Scene,
+function evaluateSpatialFit(
+  robot: CommercialRobotSpec,
+  family: BusinessKind,
+  space: SpatialProfile,
   businessType: string,
-  hourlyCost = 8.5,
-  hoursPerWeek = 60,
-): Job[] {
-  const family: BusinessKind = detectBusiness(
-    businessType,
-    scene.zones.map((z) => z.label),
-  );
-  const space = measureSpace(scene);
-  const scale = Math.min(1.6, Math.max(0.6, hoursPerWeek / 60));
-  const scaledHours = (base: number) => Math.max(2, Math.round(base * scale * 2) / 2);
-
-  const jobs: Job[] = [];
-
-  // 1. Hospitality & Food: Café, Restaurant, Bar
-  if (family === "cafe" || family === "restaurant" || family === "bar") {
-    jobs.push(
-      makeHelperJob({
-        id: "helper_vacuum_floor",
-        robotType: "vacuum",
-        title: "Scheduled Floor Sweeping & Mopping",
-        fit: "good",
-        score: 86,
-        why: "Open dining and entry floors accumulate crumbs and footprints daily. A docked robot vacuum and mop handles scheduled sweeping and light mopping before opening and after closing.",
-        limits:
-          "Limited by floor thresholds over 2 cm, tightly packed chair legs, and wet spills. Auto-empty dock requires a dedicated wall outlet and clear floor clearance.",
-        hoursPerWeek: scaledHours(7),
-        hourlyCost,
-      }),
-    );
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_window_storefront",
-        robotType: "window_cleaner",
-        title: "Storefront & Glass Partition Cleaning",
-        fit: "good",
-        score: 79,
-        why: "Front glass panes gather fingerprints and street dust. A suction-mounted window cleaning robot automates vertical glass passes while staff focus on guests.",
-        limits:
-          "Requires flat vertical glass panes, continuous power cord connection, and an anchored safety tether. Cannot cross raised mullions or clean curved glass automatically.",
-        hoursPerWeek: scaledHours(4),
-        hourlyCost,
-      }),
-    );
-
-    const tightForTray = space.hasNarrowAisles;
-    jobs.push(
-      makeHelperJob({
-        id: "helper_tray_delivery",
-        robotType: "tray_delivery",
-        title: "Autonomous Tray Delivery & Bussing",
-        fit: tightForTray ? "no" : "partial",
-        score: tightForTray ? 22 : 64,
-        why: tightForTray
-          ? "Moving trays between the service counter and seating area is repetitive, but this floor plan has tight clearances between tables."
-          : "A multi-tier tray delivery bot can shuttle orders and cleared dishes between the counter and seating zones during peak hours.",
-        limits: tightForTray
-          ? "Marked Not Suitable: aisles and seating clearances are too narrow (needs ≥ 1.0 m unobstructed pathways) for safe wheeled tray navigation."
-          : "Requires wide, flat aisles without steps or loose bags. Staff or guests must still load and unload trays manually.",
-        hoursPerWeek: scaledHours(9),
-        hourlyCost,
-      }),
-    );
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_air_purifier",
-        robotType: "air_purifier",
-        title: "Autonomous Air & Odor Management",
-        fit: "partial",
-        score: 62,
-        why: "Patrols busy seating and counter areas to filter cooking odors, steam, and elevated CO2 levels automatically during peak service.",
-        limits:
-          "Supplements rather than replaces building HVAC ventilation; requires periodic HEPA/carbon filter replacements and clear floor routes.",
-        hoursPerWeek: scaledHours(5),
-        hourlyCost,
-      }),
-    );
-    return jobs;
-  }
-
-  // 2. Health, Wellness & Hospitality Stays: Clinic, Gym, Hotel
-  if (family === "clinic" || family === "gym" || family === "hotel") {
-    const spaceNoun =
-      family === "clinic"
-        ? "treatment and waiting areas"
-        : family === "gym"
-          ? "workout zones and studio floors"
-          : "lobby and shared guest spaces";
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_uvc_sterilization",
-        robotType: "uvc_disinfection",
-        title: "After-Hours UV-C Space Disinfection",
-        fit: "good",
-        score: 88,
-        why: `High-touch ${spaceNoun} benefit from consistent overnight UV-C surface sterilization without chemical residue.`,
-        limits:
-          "Strictly restricted to after-hours completely empty rooms (UV-C light is unsafe for people and pets). Shadowed areas behind furniture still require manual wiping.",
-        hoursPerWeek: scaledHours(8),
-        hourlyCost,
-      }),
-    );
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_air_purifier",
-        robotType: "air_purifier",
-        title: "Autonomous Air Quality & CO2 Purifier",
-        fit: "good",
-        score: 84,
-        why: `Moves autonomously between busy ${spaceNoun} to reduce airborne particulates, odors, and CO2 buildup throughout the day.`,
-        limits:
-          "Cannot replace central HVAC exchange; requires clear floor paths and scheduled HEPA filter maintenance.",
-        hoursPerWeek: scaledHours(6),
-        hourlyCost,
-      }),
-    );
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_vacuum_floor",
-        robotType: "vacuum",
-        title: "Scheduled Floor Sweeping & Mopping",
-        fit: "good",
-        score: 81,
-        why: `Keeps open ${spaceNoun} clean between peak hours with automated sweeping, light mopping, and auto-empty docking.`,
-        limits:
-          "Limited by floor thresholds over 2 cm, loose equipment or cords, and heavy debris. Requires a dedicated docking outlet.",
-        hoursPerWeek: scaledHours(7),
-        hourlyCost,
-      }),
-    );
-
-    if (family === "hotel") {
-      jobs.push(
-        makeHelperJob({
-          id: "helper_security_patrol",
-          robotType: "security_rover",
-          title: "Night-Time Lobby & Corridor Patrol",
-          fit: "partial",
-          score: 66,
-          why: "Runs scheduled overnight rounds across lobby entrances and corridors to check doors and flag unexpected motion alerts to night staff.",
-          limits:
-            "Single-floor monitoring and alerts only; cannot operate elevators, lock doors, or physically intervene.",
-          hoursPerWeek: scaledHours(8),
-          hourlyCost,
-        }),
-      );
-      jobs.push(
-        makeHelperJob({
-          id: "helper_window_lobby",
-          robotType: "window_cleaner",
-          title: "Lobby Glass & Partition Cleaning",
-          fit: "partial",
-          score: 61,
-          why: "Maintains streak-free entrance glass panels and interior lobby partitions on a set weekly schedule.",
-          limits:
-            "Needs flat glass panels, continuous power cord, and anchored safety tether; staff must relocate it between separate framed panes.",
-          hoursPerWeek: scaledHours(3.5),
-          hourlyCost,
-        }),
-      );
-    } else if (family === "clinic") {
-      jobs.push(
-        makeHelperJob({
-          id: "helper_tray_clinic",
-          robotType: "tray_delivery",
-          title: "Supply & Document Shuttle Delivery",
-          fit: space.hasNarrowAisles ? "no" : "partial",
-          score: space.hasNarrowAisles ? 20 : 60,
-          why: space.hasNarrowAisles
-            ? "Transporting sealed supplies between reception and rooms is repetitive, but narrow corridor clearances restrict wheeled bots."
-            : "Transports sealed clinic supplies and lab folders between reception and waiting zones on enclosed trays.",
-          limits: space.hasNarrowAisles
-            ? "Marked Not Suitable: corridors are too narrow (needs ≥ 1.0 m clear aisles) and automatic door openers are required."
-            : "Cannot open closed doors, climb thresholds, or handle sterile unsealed items; staff must load and unload.",
-          hoursPerWeek: scaledHours(6),
-          hourlyCost,
-        }),
-      );
-    }
-    return jobs;
-  }
-
-  // 3. Retail, Supermarket, Mall, Showroom
-  if (
-    family === "retail" ||
-    family === "supermarket" ||
+): FitEvaluation {
+  const isHoReCa =
+    family === "cafe" || family === "restaurant" || family === "bar";
+  const isHotel = family === "hotel";
+  const isOfficeOrClinic = family === "office" || family === "clinic";
+  const isRetailOrShowroom =
+    family === "retail" || family === "showroom" || family === "supermarket";
+  const isMallOrTerminal =
     family === "mall" ||
-    family === "showroom"
-  ) {
-    if (family !== "showroom" || space.hasShelves) {
-      jobs.push(
-        makeHelperJob({
-          id: "helper_shelf_scanner",
-          robotType: "shelf_scanner",
-          title: "Automated Shelf & Price-Tag Scanning",
+    family === "terminal" ||
+    family === "event" ||
+    family === "university" ||
+    family === "museum";
+  const isWarehouseOrFactory =
+    family === "warehouse" ||
+    family === "factory" ||
+    space.hasWarehouseCorridors;
+  const isGym = family === "gym";
+
+  switch (robot.id) {
+    case "keenon_t8": {
+      if (isHoReCa && space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "Narrow-Aisle Table Delivery & Bussing (55 cm)",
+          fit: "good",
+          score: 96,
+          why: `Key narrow-aisle benchmark: compact ~34 kg chassis clears 55 cm passages (your space est. ~${space.estimatedAisleCm} cm), shuttling 3 trays (20 kg) between counter and tight café tables.`,
+          limits:
+            "20 kg max total payload across 3 open trays; staff or guests still place and lift cups/plates manually, and floor steps >15 mm block travel.",
+        };
+      }
+      if (isHoReCa) {
+        return {
+          title: "Agile Drink & Pastry Runner",
+          fit: "good",
+          score: 86,
+          why: "Ultra-agile 55 cm width weaves effortlessly around busy dining chairs and servers while carrying 3 trays up to 20 kg.",
+          limits:
+            "Smaller 20 kg payload and tray area than BellaBot or Keenon T10 for heavy multi-course banquet platters.",
+        };
+      }
+      if (isHotel || isOfficeOrClinic) {
+        return {
+          title: "Compact Lounge Refreshment Runner",
+          fit: "partial",
+          score: 58,
+          why: "Can shuttle coffee and light refreshments across single-floor lounge or waiting areas with tight 55 cm clearances.",
+          limits:
+            "Open trays lack privacy locks and autonomous elevator calling for multi-floor room or office parcel delivery.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 18,
+        why: `Built specifically for HoReCa table food/drink running rather than ${businessType} operations.`,
+        limits:
+          "Open 20 kg hospitality trays are not designed for retail aisles, industrial scrubbing, or pallet logistics.",
+      };
+    }
+
+    case "bear_servi": {
+      if (isHoReCa && space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "Main-Lane Order Runner & Dish Busser",
+          fit: "partial",
+          score: 60,
+          why: "44.5 × 43 cm footprint with 2 trays + dedicated dirty-dish bussing tub handles counter-to-pass runs up to 30 kg.",
+          limits: `Downgraded to Partial: requires ~65 cm minimum aisle clearance, restricting access between tightly spaced ~${space.estimatedAisleCm} cm café tables (Keenon T8 clears 55 cm).`,
+        };
+      }
+      if (isHoReCa || isHotel) {
+        return {
+          title: "Food Runner & Dirty-Dish Bussing Return",
+          fit: "good",
+          score: isHoReCa ? 92 : 76,
+          why: "Purpose-built 2 trays + deep bussing tub (30 kg payload) automates both outbound food delivery and inbound dish clearing.",
+          limits:
+            "Requires ≥65 cm clear aisle width and flat indoor flooring; staff load and unload dishes at the table and dish-pit.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 16,
+        why: `Hospitality tray-and-bussing robot does not match core workflows in ${businessType}.`,
+        limits:
+          "Open restaurant trays and 30 kg capacity cannot perform cleaning, reception telepresence, or heavy logistics.",
+      };
+    }
+
+    case "pudu_bellabot": {
+      if (isHoReCa && space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "4-Tray Restaurant Delivery Runner",
+          fit: "no",
+          score: 24,
+          why: "High-capacity 4-tray (40 kg) waiter bot is an industry leader for spacious dining rooms, but its chassis is too wide here.",
+          limits: `Marked Not Suitable: requires ~70 cm minimum aisle width, exceeding this café's narrow ~${space.estimatedAisleCm} cm table clearances (use Keenon T8 at 55 cm).`,
+        };
+      }
+      if (isHoReCa) {
+        return {
+          title: "4-Tray High-Capacity Table Delivery",
+          fit: "good",
+          score: 95,
+          why: "4 ergonomic trays with up to 40 kg payload serve multiple tables per trip in ≥70 cm aisles, cutting waiter walking by 60–75%.",
+          limits:
+            "Needs ≥70 cm unobstructed dining aisles and flat thresholds; human servers still greet tables and plate dishes.",
+        };
+      }
+      if (isHotel || isRetailOrShowroom) {
+        return {
+          title: "Hospitality Dining & Promo Tray Runner",
+          fit: "partial",
+          score: 64,
+          why: "Supports hotel breakfast dining or showroom hospitality sampling with 40 kg capacity and optional elevator integration.",
+          limits:
+            "Open trays are unsealed (unlike FlashBot/Keenon W3 for guest rooms); requires ≥70 cm clear pathways.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 17,
+        why: `Open 4-tray restaurant runner is mismatched for ${businessType}.`,
+        limits:
+          "Requires ≥70 cm smooth indoor hospitality aisles; unsuitable for floor scrubbing or heavy warehouse pallets.",
+      };
+    }
+
+    case "keenon_t10": {
+      if (isHoReCa && space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "Large-Format Multi-Tray Delivery",
+          fit: "no",
+          score: 18,
+          why: "Built for large banquet halls and wide food courts, not compact narrow-aisle bistros.",
+          limits: `Marked Not Suitable: requires ~75 cm minimum aisle clearance vs ~${space.estimatedAisleCm} cm available between tables.`,
+        };
+      }
+      if (isHoReCa) {
+        return {
+          title: "High-Capacity Food Hall & Banquet Runner",
+          fit: space.estimatedAisleCm >= 75 ? "good" : "partial",
+          score: space.estimatedAisleCm >= 75 ? 89 : 63,
+          why: "High-capacity multi-tray chassis moves heavy banquet orders and bussing loads across mid-to-large dining floors.",
+          limits:
+            "Requires ≥75 cm wide main aisles and generous turning radius around dining booths.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 15,
+        why: `Large restaurant tray bot is not needed in ${businessType}.`,
+        limits:
+          "Requires ≥75 cm dining aisles and serves open food trays only.",
+      };
+    }
+
+    case "pudu_kettybot_pro": {
+      if (isWarehouseOrFactory) {
+        return {
+          title: "Visitor Reception & Ad-Screen Greeter",
+          fit: "no",
+          score: 20,
+          why: "Front-of-house retail/hospitality greeter is not engineered for industrial forklift and pallet zones.",
+          limits:
+            "Not rated for industrial warehouse traffic, dock plates, or heavy dust environments.",
+        };
+      }
+      const topVenue =
+        isHoReCa || isRetailOrShowroom || isHotel || isMallOrTerminal;
+      return {
+        title: "Entrance Greeter, Ad-Screen & Guest Escort",
+        fit: topVenue ? "good" : "partial",
+        score: isRetailOrShowroom
+          ? 93
+          : isHoReCa
+            ? 88
+            : isHotel || isMallOrTerminal
+              ? 87
+              : 70,
+        why: "Welcomes visitors at the entrance, displays live promotions on its front ad screen, and escorts guests through 55 cm aisles.",
+        limits:
+          "Compact 55 cm frame handles greeting, escorting, and light sampling only — cannot process payments, open doors, or lift luggage.",
+      };
+    }
+
+    case "temi": {
+      if (isWarehouseOrFactory) {
+        return {
+          title: "Remote Supervisor Telepresence Unit",
+          fit: "partial",
+          score: 52,
+          why: "Enables remote engineers or managers to inspect clean office/QA corridors via live video-call telepresence.",
+          limits:
+            "Light indoor wheels (55 cm width) cannot cross >10 mm dock thresholds or operate in active pallet-jack lanes.",
+        };
+      }
+      return {
+        title: "Guest Reception, Wayfinding & Video Telepresence",
+        fit:
+          isOfficeOrClinic || isHotel || isRetailOrShowroom || isMallOrTerminal
+            ? "good"
+            : "partial",
+        score: isOfficeOrClinic
+          ? 93
+          : isHotel || isRetailOrShowroom
+            ? 88
+            : isMallOrTerminal || isGym
+              ? 83
+              : 74,
+        why: "Most affordable unit in catalog (€132/mo RaaS): greets visitors, answers FAQs on its tilt tablet, guides guests, and connects live remote receptionists.",
+        limits:
+          "Zero physical payload capacity — strictly communication, wayfinding, and telepresence in ≥55 cm smooth indoor corridors.",
+      };
+    }
+
+    case "pudu_flashbot": {
+      if (isHotel || isOfficeOrClinic) {
+        const hasLiftCue = space.hasElevatorOrMultiFloor;
+        return {
+          title: "Autonomous Multi-Floor Room & Parcel Delivery",
+          fit: hasLiftCue ? "good" : "partial",
+          score: hasLiftCue ? 94 : 68,
+          why: "Hygienic enclosed compartments deliver room-service amenities, confidential documents, or clinic samples across floors autonomously.",
+          limits:
+            "Requires elevator IoT controller integration, ≥75–80 cm automatic/accessible corridor doors, and flat floor thresholds (≤15 mm).",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 19,
+        why: `Enclosed multi-floor elevator courier is engineered for hotels, hospitals, and office towers rather than ${businessType}.`,
+        limits:
+          "Requires multi-floor elevator integration, badge/door automation, and ≥70 cm corridors.",
+      };
+    }
+
+    case "keenon_w3": {
+      if (isHotel || isOfficeOrClinic) {
+        return {
+          title: "4-Compartment Multi-Floor Butler Courier",
+          fit: isHotel ? "good" : "partial",
+          score: isHotel ? 90 : 66,
+          why: "4 ventilated enclosed compartments batch multiple guest-room orders or inter-floor office deliveries in a single elevator trip.",
+          limits:
+            "Requires elevator integration module, ≥80 cm door widths (75 cm min corridor), and low floor thresholds (≤15 mm).",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 16,
+        why: `High-capacity multi-floor hotel ButlerBot exceeds single-floor needs in ${businessType}.`,
+        limits:
+          "Requires elevator integration, automatic fire/corridor doors, and low thresholds.",
+      };
+    }
+
+    case "lionsbot_r3_vac": {
+      if (space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "After-Hours Compact Floor Vacuuming",
+          fit: "partial",
+          score: 65,
+          why: "Compact 60 cm commercial vacuum automates dry floor sweeping along the main counter and entrance lanes after closing.",
+          limits: `Tightly packed ~${space.estimatedAisleCm} cm café chairs must be stacked or pulled out so the 60 cm chassis can reach under tables; max 15 mm thresholds.`,
+        };
+      }
+      return {
+        title: "Scheduled Commercial Floor Vacuuming",
+        fit: space.isLargeVenue ? "partial" : "good",
+        score:
+          isGym || isHotel || isRetailOrShowroom || isOfficeOrClinic
+            ? 87
+            : isHoReCa
+              ? 83
+              : isWarehouseOrFactory
+                ? 74
+                : 68,
+        why: "Accessible commercial dry vacuum keeps lobbies, carpets, gym floors, dining halls, and packing zones dust-free automatically.",
+        limits:
+          "Dry vacuuming only (no wet scrubbing for greasy spills); limited by >15 mm floor thresholds, loose cords, and massive >5,000 m² concourses.",
+      };
+    }
+
+    case "pudu_cc1": {
+      if (space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "4-in-1 Commercial Floor Scrubber",
+          fit: "no",
+          score: 23,
+          why: "4-in-1 wet scrubber & vacuum (~743 m²/hr) is oversized for cramped ~55 cm bistro seating layouts.",
+          limits: `Marked Not Suitable: needs ≥70 cm clear lanes and open turning space; narrow ~${space.estimatedAisleCm} cm café aisles block autonomous scrubbing passes.`,
+        };
+      }
+      return {
+        title: "4-in-1 Sweeping, Scrubbing, Vacuuming & Mopping",
+        fit: "good",
+        score:
+          isHotel || isRetailOrShowroom || isGym || isHoReCa
+            ? 86
+            : isMallOrTerminal || isOfficeOrClinic
+              ? 80
+              : 72,
+        why: "Combines sweeping, wet scrubbing, vacuuming, and mopping at ~743 m²/hr across both hard tile/concrete floors and low-pile carpet.",
+        limits:
+          "Requires ≥70 cm aisle clearance, ≤15 mm floor thresholds, and water refill/drain station access (or manual tank service).",
+      };
+    }
+
+    case "pudu_cc1_pro": {
+      if (space.isLargeVenue || isMallOrTerminal || isWarehouseOrFactory) {
+        return {
+          title: "AI-Camera Large Venue Scrubbing (5,000–8,000 m²)",
+          fit: "good",
+          score: isMallOrTerminal ? 95 : 85,
+          why: "Dual front & rear AI perception cameras safely scrub 5,000–8,000 m² shopping malls, airport terminals, lobbies, and clean warehouse aisles.",
+          limits:
+            "Requires ≥75 cm pathways, flat ≤15 mm transitions, and scheduled clean/dirty water docking.",
+        };
+      }
+      if (space.hasNarrowAislesUnder65Cm) {
+        return {
+          title: "Large-Venue AI Floor Scrubber",
+          fit: "no",
+          score: 17,
+          why: "Engineered for 5,000–8,000 m² malls and terminals, not small narrow-aisle venues.",
+          limits:
+            "Oversized footprint (≥75 cm aisle min) and excess capacity for compact venues.",
+        };
+      }
+      return {
+        title: "Extended-Area AI Floor Scrubbing",
+        fit: "partial",
+        score: 60,
+        why: "Front & rear AI obstacle avoidance handles busy lobbies and showrooms reliably, even if total floor area is below its 5,000 m² peak capacity.",
+        limits:
+          "Built for 5,000–8,000 m² facilities — smaller venues get faster ROI from LionsBot R3 Vac (€387/mo) or standard Pudu CC1 (€646/mo).",
+      };
+    }
+
+    case "avidbots_neo_2": {
+      if (space.isLargeVenue || isMallOrTerminal || isWarehouseOrFactory) {
+        return {
+          title: "No-Route-Training Autonomous Industrial Scrubbing",
+          fit: "good",
+          score: 92,
+          why: "Fully autonomous industrial scrubber cleans vast airport concourses, shopping malls, and distribution centers dynamically without manual route teaching.",
+          limits:
+            "Requires ≥120 cm wide corridors, industrial water/drain bay, and ≥2 operating shifts (≥110 hrs/week) in Latvia to beat human scrubber operator payroll.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 14,
+        why: `Heavy industrial scrubber (€2,344/mo RaaS) is physically and economically oversized for ${businessType} (~${space.areaSqm} m²).`,
+        limits:
+          "Requires ≥120 cm industrial aisles, large open floor plates, and 2–3 shifts (≥110 operating hrs/week).",
+      };
+    }
+
+    case "gausium_scrubber_75p": {
+      if (space.isLargeVenue || isMallOrTerminal || isWarehouseOrFactory) {
+        return {
+          title: "Heavy-Duty 24/7 Concourse & Logistics Scrubbing",
           fit: "good",
           score: 89,
-          why: "Patrols store aisles with a tall optical sensor mast to detect out-of-stock gaps, misplaced products, and mismatched price labels.",
+          why: "Heavy-duty 75 cm scrub deck tackles tire marks, grease, and high-traffic grime across hypermarkets, airports, and massive logistics hubs.",
           limits:
-            "Optical scanning only — cannot restock shelves, straighten items, or see products hidden behind front-row packaging.",
-          hoursPerWeek: scaledHours(10),
-          hourlyCost,
-        }),
-      );
+            "Requires ≥130 cm wide aisles, heavy-duty water dump station, and 2–3 shifts (≥110 hrs/week) in Latvia for positive monthly RaaS ROI.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 12,
+        why: `Flagship heavy industrial scrubber (€2,799/mo RaaS) is far too large for ${businessType}.`,
+        limits:
+          "Built strictly for airports, hypermarkets, and massive warehouses running 2–3 shifts.",
+      };
     }
 
-    jobs.push(
-      makeHelperJob({
-        id: "helper_security_patrol",
-        robotType: "security_rover",
-        title: "After-Hours Facility Security Patrol",
-        fit: "good",
-        score: 82,
-        why: "Performs overnight autonomous patrols along main aisles, entrances, and glass fronts to verify closed doors and send instant anomaly alerts.",
+    case "pudu_t300": {
+      if (isWarehouseOrFactory) {
+        return {
+          title: "300 kg Trackless Pallet, Cage & Material Transport",
+          fit: space.estimatedAisleCm >= 90 ? "good" : "partial",
+          score: space.estimatedAisleCm >= 90 ? 95 : 64,
+          why: "Visual-SLAM + LiDAR industrial AMR hauls up to 300 kg cages, carts, and sub-assemblies across warehouse and factory lanes with zero magnetic tape.",
+          limits:
+            "Requires ≥90 cm clear logistics aisles, ≤20 mm floor threshold/gap tolerance, and manual/forklift loading onto deck or towing hitch.",
+        };
+      }
+      if (isRetailOrShowroom || isMallOrTerminal) {
+        return {
+          title: "Back-of-House Heavy Stock & Cart Shuttle",
+          fit: space.estimatedAisleCm >= 90 ? "partial" : "no",
+          score: space.estimatedAisleCm >= 90 ? 56 : 19,
+          why: "Can shuttle heavy restock cages (up to 300 kg) along wide backroom corridors between receiving docks and sales floors.",
+          limits:
+            "Industrial AMR chassis requires ≥90 cm separated service corridors and ≤20 mm thresholds; cannot place items onto retail shelves.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 15,
+        why: `300 kg industrial material-handling AMR is not suited for guest-facing ${businessType} interiors.`,
         limits:
-          "Monitoring and alert rover only; cannot climb stairs, unlock/lock doors, or physically stop intruders.",
-        hoursPerWeek: scaledHours(10),
-        hourlyCost,
-      }),
-    );
+          "Requires ≥90 cm industrial corridors, flat ≤20 mm concrete/tile transitions, and pallet/cage workflows.",
+      };
+    }
 
-    jobs.push(
-      makeHelperJob({
-        id: "helper_vacuum_floor",
-        robotType: "vacuum",
-        title: "After-Hours Aisle Floor Vacuum & Mop",
-        fit: "good",
-        score: 80,
-        why: "Sweeps and mops wide retail aisles and entry areas overnight, returning automatically to its auto-empty dock.",
+    case "mir250": {
+      if (isWarehouseOrFactory) {
+        const stdOk = space.estimatedAisleCm >= 145;
+        const minOk = space.estimatedAisleCm >= 85;
+        if (!minOk) {
+          return {
+            title: "Autonomous Intralogistics AMR (250 kg)",
+            fit: "no",
+            score: 21,
+            why: "250 kg industrial AMR automates line-side kitting and warehouse dock-to-rack transport, but corridors here are below minimum spec.",
+            limits: `Marked Not Suitable: corridor (~${space.estimatedAisleCm * 10} mm) is narrower than MiR250's 850 mm minimum (1,450 mm standard corridor width) and 20 mm max threshold tolerance.`,
+          };
+        }
+        return {
+          title: "250 kg Line-Side & Warehouse Corridor AMR",
+          fit: stdOk ? "good" : "partial",
+          score: stdOk ? 93 : 68,
+          why: stdOk
+            ? `Low-profile 800 × 580 × 300 mm AMR carries 250 kg payloads smoothly through ≥1,450 mm standard warehouse corridors (est. ~${space.estimatedAisleCm * 10} mm).`
+            : `Clears MiR250's 850 mm minimum single-lane passage (est. ~${space.estimatedAisleCm * 10} mm) for 250 kg autonomous material runs.`,
+          limits: stdOk
+            ? "Strict simulation & safety specs: 1,450 mm standard corridor width (850 mm minimum), ≤20 mm max floor threshold/expansion-joint gap tolerance."
+            : "Corridor is between 850 mm minimum and 1,450 mm standard width — restrict to one-way AMR traffic and enforce ≤20 mm max threshold/gap tolerance.",
+        };
+      }
+      return {
+        title: robot.defaultJobTitle,
+        fit: "no",
+        score: 14,
+        why: `Enterprise intralogistics AMR (€1,426/mo RaaS) is built for factories and distribution centers, not ${businessType}.`,
         limits:
-          "Cannot navigate display pallets, floor cable covers over 2 cm, or spilled glass/packaging debris.",
-        hoursPerWeek: scaledHours(8),
-        hourlyCost,
-      }),
-    );
-
-    jobs.push(
-      makeHelperJob({
-        id: "helper_window_storefront",
-        robotType: "window_cleaner",
-        title: "Storefront Window Cleaning",
-        fit: "partial",
-        score: 68,
-        why: "Cleans large exterior-facing display windows to keep product showcases clear and smudge-free.",
-        limits:
-          "Requires flat glass, power cord reach, and safety tether attachment; must be moved manually across divided window frames.",
-        hoursPerWeek: scaledHours(4),
-        hourlyCost,
-      }),
-    );
-
-    return jobs;
+          "Requires 1,450 mm standard industrial corridors (850 mm min), ≤20 mm max threshold/gap tolerance, and top-module/cart integration.",
+      };
+    }
   }
-
-  // 4. Event / University Hall, Office, Library, Museum, Terminal, Generic
-  jobs.push(
-    makeHelperJob({
-      id: "helper_vacuum_floor",
-      robotType: "vacuum",
-      title: "Scheduled Hall & Floor Sweeping",
-      fit: "good",
-      score: 83,
-      why: "Automates daily sweeping and light mopping across open hall walkways and lobby floors with an auto-empty dock.",
-      limits:
-        "Limited by raised thresholds (> 2 cm), loose cables, and cluttered seating rows; requires a docked charging corner.",
-      hoursPerWeek: scaledHours(7),
-      hourlyCost,
-    }),
-  );
-
-  jobs.push(
-    makeHelperJob({
-      id: "helper_air_purifier",
-      robotType: "air_purifier",
-      title: "Mobile Air Quality & CO2 Purifier",
-      fit: "good",
-      score: 78,
-      why: "Circulates between busy seating, waiting, and registration areas to keep air fresh and CO2 levels comfortable during high foot traffic.",
-      limits:
-        "Supplements HVAC systems only; needs unobstructed aisles and periodic HEPA filter replacement.",
-      hoursPerWeek: scaledHours(5),
-      hourlyCost,
-    }),
-  );
-
-  jobs.push(
-    makeHelperJob({
-      id: "helper_security_patrol",
-      robotType: "security_rover",
-      title: "Night-Time Perimeter & Door Patrol",
-      fit: "good",
-      score: 76,
-      why: "Patrols entrances, corridors, and shared zones after closing to check doors/windows and alert security to anomalies.",
-      limits:
-        "Single-floor autonomous patrol only; cannot open doors, climb stairs, or intervene physically.",
-      hoursPerWeek: scaledHours(9),
-      hourlyCost,
-    }),
-  );
-
-  jobs.push(
-    makeHelperJob({
-      id: "helper_uvc_sterilization",
-      robotType: "uvc_disinfection",
-      title: "After-Hours UV-C Shared Space Sterilization",
-      fit: "partial",
-      score: 65,
-      why: "Runs overnight UV-C disinfection cycles across shared tables, lounges, and waiting areas between busy days.",
-      limits:
-        "Strictly limited to empty rooms after closing hours (UV-C is hazardous to people); shaded surfaces still need manual wiping.",
-      hoursPerWeek: scaledHours(6),
-      hourlyCost,
-    }),
-  );
-
-  jobs.push(
-    makeHelperJob({
-      id: "helper_window_glass",
-      robotType: "window_cleaner",
-      title: "Panoramic Window & Glass Cleaning",
-      fit: "partial",
-      score: 60,
-      why: "Automates routine cleaning of tall entrance glass and interior glass partitions.",
-      limits:
-        "Requires flat glass panes, continuous power cord, and safety tether; staff must reposition the unit across separate window frames.",
-      hoursPerWeek: scaledHours(3.5),
-      hourlyCost,
-    }),
-  );
-
-  return jobs;
 }
 
 /**
- * Ensures a JobsResult includes relevant optional helper robot jobs alongside
- * its primary Booster K1 jobs (idempotent: if helper jobs already exist, returns as-is).
+ * Evaluates ALL 15 commercial robots against the target space, business preset/type,
+ * operating hours, and Latvia 2026 multi-shift employer labor costs.
+ * Enforces strict economic & spatial honesty: any robot with `savingsPct <= 0`
+ * is automatically marked `"Not Suitable"` (`fit = "no"`).
  */
-export function ensureHelperJobs(
-  jobs: Job[],
-  scene: Scene,
-  businessType: string,
-  hourlyCost = 8.5,
-  hoursPerWeek = 60,
-): Job[] {
-  const hasHelpers = jobs.some((j) => isHelperRobot(inferRobotType(j)));
-  if (hasHelpers) return jobs;
-  const helpers = generateHelperRobotJobs(
-    scene,
-    businessType,
-    hourlyCost,
-    hoursPerWeek,
+export function evaluateCatalogForSpace(opts: {
+  scene: Scene;
+  businessType: string;
+  hoursPerWeek?: number;
+  hourlyCost?: number;
+  shiftsOverride?: 1 | 2 | 3 | null;
+  baselineHourlyCost?: number | null;
+}): Job[] {
+  const hoursPerWeek =
+    opts.hoursPerWeek && opts.hoursPerWeek > 0 ? opts.hoursPerWeek : 60;
+  const family = detectBusiness(
+    opts.businessType,
+    opts.scene.zones.map((z) => z.label),
   );
-  return [...jobs, ...helpers];
+  const space = analyzeSpaceProfile(opts.scene, opts.businessType);
+
+  const baselineHourly =
+    opts.baselineHourlyCost && opts.baselineHourlyCost > 0
+      ? opts.baselineHourlyCost
+      : null;
+  const hourlyCostOverrideRatio =
+    opts.hourlyCost &&
+    opts.hourlyCost > 0 &&
+    baselineHourly &&
+    Math.abs(opts.hourlyCost - baselineHourly) > 0.05
+      ? opts.hourlyCost / baselineHourly
+      : 1;
+
+  const evaluated: Job[] = ROBOTS_CATALOG_LIST.map((robot) => {
+    const roi = computeRobotRoiMetrics(robot, {
+      hoursPerWeek,
+      shiftsOverride: opts.shiftsOverride,
+      hourlyCostOverrideRatio,
+    });
+
+    const spatial = evaluateSpatialFit(
+      robot,
+      family,
+      space,
+      opts.businessType || "this venue",
+    );
+
+    let fit: Fit = spatial.fit;
+    let score = spatial.score;
+    let limits = spatial.limits;
+
+    // HONESTY RULE 1: Negative or zero RaaS savings vs Latvia 2026 labor -> force "Not Suitable"
+    if (roi.savingsPct <= 0) {
+      fit = "no";
+      score = Math.min(score, 22);
+      const shiftWord = roi.shiftsCount === 1 ? "1 shift" : `${roi.shiftsCount} shifts`;
+      const econReason = `Not cost-effective on ${shiftWord} in Latvia (€${roi.humanMonthlyCostEur.toLocaleString("en-US")}/mo human vs €${robot.clientRaaSEur.toLocaleString("en-US")}/mo RaaS, ${roi.savingsPct.toFixed(1)}%); requires 2–3 shifts / large 24/7 venue.`;
+      limits = spatial.fit === "no" ? `${econReason} ${spatial.limits}` : econReason;
+    } else if (
+      robot.minViableShifts &&
+      roi.shiftsCount < robot.minViableShifts
+    ) {
+      // HONESTY RULE 2: Industrial scrubbers (Avidbots Neo 2, Gausium 75P) require >= 2 shifts in Latvia
+      fit = "no";
+      score = Math.min(score, 24);
+      limits = `Not cost-effective on ${roi.shiftsCount} shift in Latvia (€${roi.humanMonthlyCostEur.toLocaleString("en-US")}/mo human vs €${robot.clientRaaSEur.toLocaleString("en-US")}/mo RaaS); requires ${robot.minViableShifts}+ shifts (≥${robot.minViableHoursWeek ?? 110} operating hrs/week).`;
+    }
+
+    const activeHoursWeek = Math.min(
+      168,
+      Math.max(14, Math.round(roi.shiftsCount * 42)),
+    );
+
+    return {
+      id: `job_${robot.id}`,
+      title: `${robot.name} — ${spatial.title}`,
+      fit,
+      score,
+      why: spatial.why,
+      limits,
+      hours_per_week: activeHoursWeek,
+      savings_eur_month: roi.monthlySavingsEur,
+      payback_months: fit === "no" ? null : roi.paybackMonths,
+      robot_type: robot.id,
+      robot_name: robot.name,
+      category: robot.category,
+      role: robot.role,
+      purchase_price_eur: robot.purchasePriceEur,
+      base_raas_eur: robot.baseRaaSEur,
+      client_raas_eur: robot.clientRaaSEur,
+      monthly_commission_eur: robot.monthlyCommissionEur,
+      sale_commission_eur: robot.saleCommissionEur,
+      human_monthly_cost_eur: roi.humanMonthlyCostEur,
+      savings_pct: roi.savingsPct,
+      shifts_count: roi.shiftsCount,
+    };
+  });
+
+  return evaluated.sort((a, b) => {
+    const rankFit = (f: Fit) => (f === "good" ? 2 : f === "partial" ? 1 : 0);
+    if (rankFit(b.fit) !== rankFit(a.fit)) {
+      return rankFit(b.fit) - rankFit(a.fit);
+    }
+    return b.score - a.score || b.savings_eur_month - a.savings_eur_month;
+  });
 }
 
 /**
- * Builds a smooth, scene-aware sequential Scenario for any of the 7 optional helper
+ * Recomputes Latvia 2026 labor & RaaS brokerage numbers on an existing job list
+ * when shift count or hourly rate changes, or upgrades raw task-level jobs into the
+ * 15-robot commercial catalog evaluation.
+ */
+export function ensureCommercialCatalogJobs(opts: {
+  jobs: Job[];
+  scene: Scene;
+  businessType: string;
+  hoursPerWeek?: number;
+  hourlyCost?: number;
+  shiftsOverride?: 1 | 2 | 3 | null;
+  baselineHourlyCost?: number | null;
+}): Job[] {
+  return evaluateCatalogForSpace({
+    scene: opts.scene,
+    businessType: opts.businessType,
+    hoursPerWeek: opts.hoursPerWeek,
+    hourlyCost: opts.hourlyCost,
+    shiftsOverride: opts.shiftsOverride,
+    baselineHourlyCost: opts.baselineHourlyCost,
+  });
+}
+
+/**
+ * Builds a realistic sequential 3D simulation scenario for any of the 15 commercial
  * robots using ONLY the 6 allowed actions (`walk_to`, `turn_to`, `wave`, `point_to`, `say`, `wait`).
  */
-export function buildHelperRobotScenario(
-  robotType: HelperRobotType,
+export function buildRobotScenario(
+  robotType: RobotType,
   job: Job,
   scene: Scene,
 ): Scenario {
+  const spec = getRobotSpec(robotType);
   const zones = scene.zones;
   const zoneIds = zones.map((z) => z.id);
-  const label = shortLabel(job.title);
+  const fallbackLabel = shortLabel(spec.shortName);
 
   if (zones.length === 0) {
     return {
       job_id: job.id,
-      steps: finalizeSteps([{ action: "wait", seconds: 2 }], label),
+      steps: finalizeSteps([{ action: "wait", seconds: 2 }], fallbackLabel),
     };
   }
 
@@ -629,118 +759,169 @@ export function buildHelperRobotScenario(
     zones.find((z) => re.test(`${z.id} ${z.label}`)) ??
     zones[fallbackIdx % zones.length];
 
-  const z0 = zones[0];
-  const z1 = zones[1] ?? z0;
-  const z2 = zones[2] ?? z1;
-  const z3 = zones[3] ?? z0;
-
   let rawSteps: ScenarioStep[];
 
-  switch (robotType) {
-    case "vacuum": {
-      const openA = pickZone(/table|seat|lounge|aisle|floor|waiting/i, 0);
-      const openB = pickZone(/entrance|corridor|walkway|hall/i, 1);
-      const openC = pickZone(/counter|desk|reception|checkout/i, 2);
+  switch (spec.archetype) {
+    case "tray_waiter": {
+      const passZone = pickZone(/counter|bar|kitchen|pass|desk/i, 0);
+      const tableA = pickZone(/table|seat|dining|booth|lounge/i, 1);
+      const tableB =
+        zones.find(
+          (z) =>
+            z.id !== passZone.id &&
+            z.id !== tableA.id &&
+            /table|seat|waiting|lounge|display/i.test(`${z.id} ${z.label}`),
+        ) ?? zones[2 % zones.length];
+
       rawSteps = [
-        { action: "walk_to", target: openA.id, label: "Sweep floor zone" },
-        { action: "wait", seconds: 1.8, label: "Sweep floor zone" },
-        { action: "walk_to", target: openB.id, label: "Mop main walkway" },
-        { action: "wait", seconds: 1.8, label: "Mop main walkway" },
-        { action: "walk_to", target: openC.id, label: "Edge pass & dock" },
-        { action: "turn_to", target: openA.id, label: "Edge pass & dock" },
-        { action: "wait", seconds: 1.5, label: "Edge pass & dock" },
+        { action: "walk_to", target: passZone.id, label: "Load order trays" },
+        {
+          action: "say",
+          text: `${spec.shortName} trays loaded at service pass.`,
+          label: "Load order trays",
+        },
+        { action: "wait", seconds: 1.2, label: "Load order trays" },
+        { action: "walk_to", target: tableA.id, label: "Deliver table order" },
+        { action: "turn_to", target: tableA.id, label: "Deliver table order" },
+        {
+          action: "say",
+          text: "Your order has arrived. Enjoy your meal!",
+          label: "Deliver table order",
+        },
+        { action: "wait", seconds: 1.5, label: "Deliver table order" },
+        { action: "walk_to", target: tableB.id, label: "Collect bussing dishes" },
+        {
+          action: "say",
+          text: "Collecting cleared dishes for kitchen return.",
+          label: "Collect bussing dishes",
+        },
+        { action: "walk_to", target: passZone.id, label: "Return to counter" },
+        {
+          action: "say",
+          text: "Delivery cycle complete. Ready at pass.",
+          label: "Return to counter",
+        },
       ];
       break;
     }
 
-    case "window_cleaner": {
-      const glassA = pickZone(/entrance|window|display|promo|board/i, 0);
-      const glassB = pickZone(/seating|table|lounge|waiting/i, 1);
+    case "greeter_screen": {
+      const entry = pickZone(/entrance|door|foyer|lobby/i, 0);
+      const promo = pickZone(/display|menu|board|promo|desk|counter/i, 1);
+      const dest = pickZone(/seat|table|lounge|shelves|corridor|waiting/i, 2);
+
       rawSteps = [
-        { action: "walk_to", target: glassA.id, label: "Clean front glass" },
-        { action: "wait", seconds: 2.2, label: "Clean front glass" },
-        { action: "walk_to", target: glassB.id, label: "Clean side pane" },
-        { action: "wait", seconds: 2.2, label: "Clean side pane" },
-        { action: "walk_to", target: glassA.id, label: "Complete glass pass" },
-        { action: "wait", seconds: 1.4, label: "Complete glass pass" },
+        { action: "walk_to", target: entry.id, label: "Greet at entrance" },
+        { action: "wave", label: "Greet at entrance" },
+        {
+          action: "say",
+          text: "Welcome! Let me show today's highlights.",
+          label: "Greet at entrance",
+        },
+        { action: "walk_to", target: promo.id, label: "Display promotions" },
+        { action: "point_to", target: promo.id, label: "Display promotions" },
+        {
+          action: "say",
+          text: "Check my front screen for special offers.",
+          label: "Display promotions",
+        },
+        { action: "walk_to", target: dest.id, label: "Escort visitors" },
+        { action: "point_to", target: dest.id, label: "Escort visitors" },
+        {
+          action: "say",
+          text: "Right this way. Enjoy your visit!",
+          label: "Escort visitors",
+        },
       ];
       break;
     }
 
-    case "tray_delivery": {
-      const counter = pickZone(/counter|bar|desk|reception|checkout/i, 0);
-      const tables = pickZone(/table|seat|lounge|waiting|room/i, 1);
+    case "enclosed_cabinet": {
+      const desk = pickZone(/reception|desk|counter|concierge/i, 0);
+      const lift = pickZone(/elevator|lift|corridor|hall/i, 1);
+      const roomZone = pickZone(/waiting|lounge|seat|room|office|shelves/i, 2);
+
       rawSteps = [
-        { action: "walk_to", target: counter.id, label: "Load tray at counter" },
-        { action: "wait", seconds: 1.6, label: "Load tray at counter" },
-        { action: "walk_to", target: tables.id, label: "Deliver to seating" },
-        { action: "turn_to", target: counter.id, label: "Deliver to seating" },
-        { action: "wait", seconds: 2.0, label: "Deliver to seating" },
-        { action: "walk_to", target: counter.id, label: "Return cleared trays" },
-        { action: "wait", seconds: 1.2, label: "Return cleared trays" },
+        { action: "walk_to", target: desk.id, label: "Load locked cabinet" },
+        {
+          action: "say",
+          text: "Loading sealed parcel into secure compartment.",
+          label: "Load locked cabinet",
+        },
+        { action: "wait", seconds: 1.4, label: "Load locked cabinet" },
+        { action: "walk_to", target: lift.id, label: "Call elevator" },
+        { action: "point_to", target: lift.id, label: "Call elevator" },
+        {
+          action: "say",
+          text: "Calling smart elevator for multi-floor transit.",
+          label: "Call elevator",
+        },
+        { action: "wait", seconds: 1.5, label: "Call elevator" },
+        { action: "walk_to", target: roomZone.id, label: "Deliver to suite" },
+        {
+          action: "say",
+          text: "Delivery arrived. Enter PIN to unlock.",
+          label: "Deliver to suite",
+        },
+        { action: "walk_to", target: desk.id, label: "Return to lobby" },
       ];
       break;
     }
 
-    case "uvc_disinfection": {
-      const zoneA = pickZone(/waiting|lounge|seat|table/i, 0);
-      const zoneB = pickZone(/counter|desk|reception/i, 1);
-      const zoneC = pickZone(/entrance|corridor/i, 2);
+    case "floor_scrubber": {
+      const laneA = pickZone(/entrance|corridor|concourse|aisle|promenade/i, 0);
+      const laneB = pickZone(/seat|table|lounge|shelves|waiting|floor/i, 1);
+      const laneC = pickZone(/counter|desk|checkout|display/i, 2);
+
       rawSteps = [
-        { action: "walk_to", target: zoneA.id, label: "UV-C cycle zone 1" },
-        { action: "wait", seconds: 2.2, label: "UV-C cycle zone 1" },
-        { action: "walk_to", target: zoneB.id, label: "UV-C cycle zone 2" },
-        { action: "wait", seconds: 2.2, label: "UV-C cycle zone 2" },
-        { action: "walk_to", target: zoneC.id, label: "UV-C exit sweep" },
-        { action: "wait", seconds: 1.8, label: "UV-C exit sweep" },
+        { action: "walk_to", target: laneA.id, label: "Scrub main lane" },
+        {
+          action: "say",
+          text: `Starting ${spec.shortName} autonomous floor scrub.`,
+          label: "Scrub main lane",
+        },
+        { action: "wait", seconds: 1.6, label: "Scrub main lane" },
+        { action: "walk_to", target: laneB.id, label: "Clean central floor" },
+        { action: "turn_to", target: laneC.id, label: "Clean central floor" },
+        { action: "wait", seconds: 1.6, label: "Clean central floor" },
+        { action: "walk_to", target: laneC.id, label: "Perimeter edge pass" },
+        {
+          action: "say",
+          text: "Floor lane clean and dry. Docking.",
+          label: "Perimeter edge pass",
+        },
+        { action: "wait", seconds: 1.2, label: "Perimeter edge pass" },
       ];
       break;
     }
 
-    case "shelf_scanner": {
-      const shelfA = pickZone(/shelf|shelves|aisle|rack|display/i, 0);
-      const shelfB = pickZone(/promo|board|display|product/i, 1);
-      const checkout = pickZone(/checkout|counter|entrance/i, 2);
-      rawSteps = [
-        { action: "walk_to", target: shelfA.id, label: "Scan main shelves" },
-        { action: "turn_to", target: shelfB.id, label: "Scan main shelves" },
-        { action: "wait", seconds: 2.0, label: "Scan main shelves" },
-        { action: "walk_to", target: shelfB.id, label: "Verify price tags" },
-        { action: "wait", seconds: 2.0, label: "Verify price tags" },
-        { action: "walk_to", target: checkout.id, label: "Sync stock report" },
-        { action: "wait", seconds: 1.4, label: "Sync stock report" },
-      ];
-      break;
-    }
+    case "warehouse_amr": {
+      const dock = pickZone(/inbound|dock|entrance|counter|receiving/i, 0);
+      const rack = pickZone(/shelves|rack|aisle|pallet|storage|corridor/i, 1);
+      const outbound = pickZone(/outbound|packing|desk|waiting|display/i, 2);
 
-    case "air_purifier": {
-      const busyA = pickZone(/table|seat|lounge|waiting/i, 0);
-      const busyB = pickZone(/counter|desk|reception|bar/i, 1);
-      const busyC = pickZone(/entrance|hall|corridor/i, 2);
       rawSteps = [
-        { action: "walk_to", target: busyA.id, label: "Purify seating air" },
-        { action: "wait", seconds: 2.0, label: "Purify seating air" },
-        { action: "walk_to", target: busyB.id, label: "Filter counter zone" },
-        { action: "wait", seconds: 2.0, label: "Filter counter zone" },
-        { action: "walk_to", target: busyC.id, label: "Balance entry airflow" },
-        { action: "wait", seconds: 1.5, label: "Balance entry airflow" },
-      ];
-      break;
-    }
-
-    case "security_rover": {
-      const entry = pickZone(/entrance|door|lobby/i, 0);
-      const mid = z1.id === entry.id ? z2 : z1;
-      const far = z3.id === mid.id ? z0 : z3;
-      rawSteps = [
-        { action: "walk_to", target: entry.id, label: "Inspect main entry" },
-        { action: "turn_to", target: mid.id, label: "Inspect main entry" },
-        { action: "wait", seconds: 1.8, label: "Inspect main entry" },
-        { action: "walk_to", target: mid.id, label: "Patrol interior zone" },
-        { action: "turn_to", target: far.id, label: "Patrol interior zone" },
-        { action: "wait", seconds: 1.8, label: "Patrol interior zone" },
-        { action: "walk_to", target: far.id, label: "Verify perimeter" },
-        { action: "wait", seconds: 1.5, label: "Verify perimeter" },
+        { action: "walk_to", target: dock.id, label: "Pick up pallet load" },
+        {
+          action: "say",
+          text: `${spec.shortName} locking pallet at inbound bay.`,
+          label: "Pick up pallet load",
+        },
+        { action: "wait", seconds: 1.5, label: "Pick up pallet load" },
+        { action: "walk_to", target: rack.id, label: "Transit AMR corridor" },
+        { action: "point_to", target: rack.id, label: "Transit AMR corridor" },
+        {
+          action: "say",
+          text: "Navigating wide corridor with LiDAR safety.",
+          label: "Transit AMR corridor",
+        },
+        { action: "walk_to", target: outbound.id, label: "Drop at staging bay" },
+        {
+          action: "say",
+          text: "Payload delivered to outbound staging.",
+          label: "Drop at staging bay",
+        },
+        { action: "wait", seconds: 1.2, label: "Drop at staging bay" },
       ];
       break;
     }
@@ -748,6 +929,6 @@ export function buildHelperRobotScenario(
 
   return {
     job_id: job.id,
-    steps: finalizeSteps(filterValidSteps(rawSteps, zoneIds), label),
+    steps: finalizeSteps(filterValidSteps(rawSteps, zoneIds), fallbackLabel),
   };
 }

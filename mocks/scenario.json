@@ -1,15 +1,14 @@
 {
-  "job_id": "greeter",
+  "job_id": "job_keenon_t8",
   "steps": [
-    { "action": "walk_to", "target": "entrance" },
-    { "action": "turn_to", "target": "entrance" },
-    { "action": "wave" },
-    { "action": "say", "text": "Welcome to the café! Today's special is a cinnamon bun with coffee." },
-    { "action": "turn_to", "target": "counter" },
-    { "action": "point_to", "target": "counter" },
-    { "action": "say", "text": "You can order at the counter over there." },
-    { "action": "wait", "seconds": 2 },
-    { "action": "point_to", "target": "waiting_area" },
-    { "action": "say", "text": "Please wait here if you need a moment." }
+    { "action": "walk_to", "target": "counter", "label": "Load order trays" },
+    { "action": "say", "text": "Keenon T8 trays loaded at counter.", "label": "Load order trays" },
+    { "action": "walk_to", "target": "tables", "label": "Deliver to tables" },
+    { "action": "turn_to", "target": "tables", "label": "Deliver to tables" },
+    { "action": "wave", "label": "Deliver to tables" },
+    { "action": "say", "text": "Fresh coffee and pastries have arrived!", "label": "Deliver to tables" },
+    { "action": "wait", "seconds": 2, "label": "Deliver to tables" },
+    { "action": "point_to", "target": "menu_board", "label": "Show daily menu" },
+    { "action": "walk_to", "target": "entrance", "label": "Return via aisle" }
   ]
 }

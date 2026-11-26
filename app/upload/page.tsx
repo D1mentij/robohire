@@ -11,12 +11,21 @@ import {
   CUSTOM_DEFAULTS,
   type BusinessPreset,
 } from "@/lib/ai/businessPresets";
-import { BusinessTypeSelector, type BusinessSelection } from "./BusinessTypeSelector";
+import {
+  BusinessTypeSelector,
+  type BusinessSelection,
+} from "./BusinessTypeSelector";
 import { FAMILY_OPTIONS, familyLabel, isFamily } from "@/lib/ai/families";
 import { rebuildForFamily } from "@/lib/ai/zoneTasks";
-import { applyShowcase, downloadCurrentAsShowcase, fetchShowcases, type Showcase } from "@/lib/ai/showcase";
+import {
+  applyShowcase,
+  downloadCurrentAsShowcase,
+  fetchShowcases,
+  type Showcase,
+} from "@/lib/ai/showcase";
 import { getCached, hashInputs, putCached } from "@/lib/ai/uploadCache";
 import { extractFrames, loadVideo } from "@/lib/ai/extractFrames";
+import { shiftsFromHours } from "@/src/data/robots";
 import type { JobsResult, RobotPlan } from "@/types/contracts";
 import {
   ANALYSIS_STORAGE_KEY,
@@ -31,19 +40,23 @@ import {
 } from "@/lib/ai/types";
 
 const MAX_SECONDS = 60;
-// local models (Ollama) can need up to ~2 minutes for the one analysis call
 const FETCH_TIMEOUT_MS = 130_000;
 
 function netError(err: unknown, fallback: string): string {
-  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError"))
+  if (
+    err instanceof DOMException &&
+    (err.name === "TimeoutError" || err.name === "AbortError")
+  )
     return "The AI took too long (over 2 minutes). Check that Ollama is not busy, or use demo mode.";
-  if (err instanceof TypeError) return "Network error — could not reach the server.";
+  if (err instanceof TypeError)
+    return "Network error — could not reach the server.";
   return err instanceof Error ? err.message : fallback;
 }
 
 const noopSubscribe = () => () => {};
-/** /upload?dev=1 on a dev server only (never in a production build). */
-const readDev = () => process.env.NODE_ENV !== "production" && new URLSearchParams(window.location.search).get("dev") === "1";
+const readDev = () =>
+  process.env.NODE_ENV !== "production" &&
+  new URLSearchParams(window.location.search).get("dev") === "1";
 
 export default function UploadPage() {
   const router = useRouter();
@@ -56,19 +69,25 @@ export default function UploadPage() {
       alive = false;
     };
   }, []);
+
   const defaultPreset = BUSINESS_PRESETS[0];
   const [file, setFile] = useState<File | null>(null);
-  const [selection, setSelection] = useState<BusinessSelection>({ mode: "preset", preset: defaultPreset });
-  const [hoursPerWeek, setHoursPerWeek] = useState(String(defaultPreset.defaultHoursPerWeek));
-  const [hourlyCost, setHourlyCost] = useState(String(defaultPreset.defaultHourlyCost));
+  const [selection, setSelection] = useState<BusinessSelection>({
+    mode: "preset",
+    preset: defaultPreset,
+  });
+  const [hoursPerWeek, setHoursPerWeek] = useState(
+    String(defaultPreset.defaultHoursPerWeek),
+  );
+  const [hourlyCost, setHourlyCost] = useState(
+    defaultPreset.defaultHourlyCost.toFixed(2),
+  );
+  const [shiftsOverride, setShiftsOverride] = useState<1 | 2 | 3 | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // smart defaults never overwrite what the user typed
-  const hoursTouched = useRef(false);
-  const costTouched = useRef(false);
-  function fillDefaults(hours: number, cost: number) {
-    if (!hoursTouched.current) setHoursPerWeek(String(hours));
-    if (!costTouched.current) setHourlyCost(String(cost));
-  }
+
+  const parsedHours = Number(hoursPerWeek);
+  const autoShifts = shiftsFromHours(parsedHours > 0 ? parsedHours : 60);
+  const effectiveShifts: 1 | 2 | 3 = shiftsOverride ?? autoShifts;
 
   const effectiveBusinessType =
     selection.mode === "preset"
@@ -77,6 +96,13 @@ export default function UploadPage() {
         ? AUTO_DETECT_ID
         : selection.customText.trim();
 
+  const baselineHourlyCost =
+    selection.mode === "preset"
+      ? selection.preset.defaultHourlyCost
+      : selection.mode === "auto"
+        ? AUTO_DETECT_DEFAULTS.defaultHourlyCost
+        : CUSTOM_DEFAULTS.defaultHourlyCost;
+
   const costHelperText =
     selection.mode === "preset"
       ? selection.preset.costHelper
@@ -84,16 +110,35 @@ export default function UploadPage() {
         ? AUTO_DETECT_DEFAULTS.costHelper
         : CUSTOM_DEFAULTS.costHelper;
 
+  function applyPresetDefaults(hours: number, cost: number) {
+    setHoursPerWeek(String(hours));
+    setHourlyCost(cost.toFixed(2));
+    setShiftsOverride(null);
+  }
+
   function handleSelectPreset(preset: BusinessPreset) {
     setSelection({ mode: "preset", preset });
-    fillDefaults(preset.defaultHoursPerWeek, preset.defaultHourlyCost);
-    setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
+    applyPresetDefaults(preset.defaultHoursPerWeek, preset.defaultHourlyCost);
+    setErrors((e) => ({
+      ...e,
+      businessType: "",
+      hoursPerWeek: "",
+      hourlyCost: "",
+    }));
   }
 
   function handleSelectAuto() {
     setSelection({ mode: "auto" });
-    fillDefaults(AUTO_DETECT_DEFAULTS.defaultHoursPerWeek, AUTO_DETECT_DEFAULTS.defaultHourlyCost);
-    setErrors((e) => ({ ...e, businessType: "", hoursPerWeek: "", hourlyCost: "" }));
+    applyPresetDefaults(
+      AUTO_DETECT_DEFAULTS.defaultHoursPerWeek,
+      AUTO_DETECT_DEFAULTS.defaultHourlyCost,
+    );
+    setErrors((e) => ({
+      ...e,
+      businessType: "",
+      hoursPerWeek: "",
+      hourlyCost: "",
+    }));
   }
 
   function handleSelectCustom() {
@@ -101,6 +146,10 @@ export default function UploadPage() {
       mode: "custom",
       customText: prev.mode === "custom" ? prev.customText : "",
     }));
+    applyPresetDefaults(
+      CUSTOM_DEFAULTS.defaultHoursPerWeek,
+      CUSTOM_DEFAULTS.defaultHourlyCost,
+    );
     setErrors((e) => ({ ...e, businessType: "" }));
   }
 
@@ -108,7 +157,11 @@ export default function UploadPage() {
     setSelection({ mode: "custom", customText: text });
     if (text.trim()) setErrors((e) => ({ ...e, businessType: "" }));
   }
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [frames, setFrames] = useState<string[]>([]);
 
   const [checking, setChecking] = useState(false);
@@ -129,22 +182,37 @@ export default function UploadPage() {
   const [jobsStart, setJobsStart] = useState(0);
   const [now, setNow] = useState(0);
   const running = analyzing || jobsLoading;
+
   useEffect(() => {
     if (!running) return;
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [running]);
-  const elapsed = running && runStart ? Math.max(0, Math.round((Math.max(now, runStart) - runStart) / 1000)) : 0;
-  const STEPS = ["Reading frames", "Mapping zones", "Matching K1 jobs", "Building shift plan"];
-  // The first call does reading + mapping in one go; the split is a time-based estimate.
+
+  const elapsed =
+    running && runStart
+      ? Math.max(0, Math.round((Math.max(now, runStart) - runStart) / 1000))
+      : 0;
+  const STEPS = [
+    "Reading frames",
+    "Mapping zones & clearances",
+    "Matching 15 commercial robots",
+    "Computing RaaS vs Latvia VSAOI",
+  ];
   const stage = analyzing
-    ? elapsed < 6 ? 0 : 1
+    ? elapsed < 6
+      ? 0
+      : 1
     : jobsLoading
-      ? Math.max(now, jobsStart) - jobsStart < 8000 ? 2 : 3
+      ? Math.max(now, jobsStart) - jobsStart < 8000
+        ? 2
+        : 3
       : -1;
 
   const busy = progress !== null;
-  const totalKb = Math.round(frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024);
+  const totalKb = Math.round(
+    frames.reduce((n, f) => n + f.length * 0.75, 0) / 1024,
+  );
 
   async function onFile(f: File | null) {
     const id = ++checkId.current;
@@ -165,15 +233,21 @@ export default function UploadPage() {
     try {
       const { video, url } = await loadVideo(f);
       URL.revokeObjectURL(url);
-      if (id !== checkId.current) return; // a newer selection superseded this check
+      if (id !== checkId.current) return;
       if (video.duration > MAX_SECONDS) {
-        setErrors((e) => ({ ...e, video: `Video is ${Math.round(video.duration)} s; max is ${MAX_SECONDS} s.` }));
+        setErrors((e) => ({
+          ...e,
+          video: `Video is ${Math.round(video.duration)} s; max is ${MAX_SECONDS} s.`,
+        }));
         return;
       }
       setFile(f);
     } catch (err) {
       if (id !== checkId.current) return;
-      setErrors((e) => ({ ...e, video: err instanceof Error ? err.message : "Unsupported video" }));
+      setErrors((e) => ({
+        ...e,
+        video: err instanceof Error ? err.message : "Unsupported video",
+      }));
     } finally {
       if (id === checkId.current) setChecking(false);
     }
@@ -183,11 +257,13 @@ export default function UploadPage() {
     ev.preventDefault();
     if (checking) return;
     const errs: Record<string, string> = {};
-    // Keep the real video error (duration/format) if there is one.
-    if (!file) errs.video = errors.video || "Please choose a video (max 60 s).";
-    if (!effectiveBusinessType) errs.businessType = "Select a business type or enter a custom one.";
+    if (!file)
+      errs.video = errors.video || "Please choose a video (max 60 s).";
+    if (!effectiveBusinessType)
+      errs.businessType = "Select a business type or enter a custom one.";
     const hours = Number(hoursPerWeek);
-    if (!(hours > 0 && hours <= 168)) errs.hoursPerWeek = "Enter hours per week (1–168).";
+    if (!(hours > 0 && hours <= 168))
+      errs.hoursPerWeek = "Enter hours per week (1–168).";
     const cost = Number(hourlyCost);
     if (!(cost > 0)) errs.hourlyCost = "Enter an hourly cost above 0.";
     setErrors(errs);
@@ -203,16 +279,24 @@ export default function UploadPage() {
     setProgress({ done: 0, total: 4 });
     try {
       const out = await extractFrames(file, {
-        count: 4, // measured: 4 frames @ 512 px is the fastest local setting that still finds the zones
+        count: 4,
         maxSide: 512,
         quality: 0.7,
         onProgress: (done, total) => setProgress({ done, total }),
       });
       setFrames(out);
-      const data: UploadData = { businessType: effectiveBusinessType, hoursPerWeek: hours, hourlyCost: cost, frames: out };
+      const data: UploadData = {
+        businessType: effectiveBusinessType,
+        hoursPerWeek: hours,
+        hourlyCost: cost,
+        shiftsOverride,
+        frames: out,
+      };
       sessionStorage.setItem(UPLOAD_STORAGE_KEY, JSON.stringify(data));
     } catch (err) {
-      setErrors({ video: `Frame extraction failed: ${err instanceof Error ? err.message : "unknown error"}` });
+      setErrors({
+        video: `Frame extraction failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      });
     } finally {
       setProgress(null);
     }
@@ -221,7 +305,10 @@ export default function UploadPage() {
   async function onAnalyze(force = false) {
     if (!frames.length || analyzing || jobsLoading) return;
     if (!effectiveBusinessType) {
-      setErrors((e) => ({ ...e, businessType: "Select a business type or enter a custom one." }));
+      setErrors((e) => ({
+        ...e,
+        businessType: "Select a business type or enter a custom one.",
+      }));
       return;
     }
     setAnalyzeError("");
@@ -231,9 +318,15 @@ export default function UploadPage() {
       businessType: effectiveBusinessType,
       hoursPerWeek: Number(hoursPerWeek),
       hourlyCost: Number(hourlyCost),
+      shiftsOverride,
       frames,
     };
-    const hash = await hashInputs(frames, data.businessType, data.hoursPerWeek, data.hourlyCost);
+    const hash = await hashInputs(
+      frames,
+      `${data.businessType}|shifts:${effectiveShifts}`,
+      data.hoursPerWeek,
+      data.hourlyCost,
+    );
     hashRef.current = hash;
     const hit = hash && !force ? getCached(hash) : null;
     if (hit) {
@@ -242,7 +335,10 @@ export default function UploadPage() {
       setJobs(hit.jobs);
       setPlan(hit.plan);
       setCached(true);
-      sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(hit.analysis));
+      sessionStorage.setItem(
+        ANALYSIS_STORAGE_KEY,
+        JSON.stringify(hit.analysis),
+      );
       sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(hit.jobs));
       sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(hit.plan));
       return;
@@ -265,18 +361,22 @@ export default function UploadPage() {
       try {
         json = (await res.json()) as AnalyzeResponse;
       } catch {
-        /* non-JSON error page */
+        /* non-JSON */
       }
       if (!json) throw new Error(`Server error (${res.status})`);
       if (!json.ok) throw new Error(json.error);
       setAnalysis(json.result);
-      // Auto-detect: the jobs/report use the detected family's name instead of "auto-detect"
-      const detected = json.result.familyDetected && isFamily(json.result.family) ? familyLabel(json.result.family) : null;
+      const detected =
+        json.result.familyDetected && isFamily(json.result.family)
+          ? familyLabel(json.result.family)
+          : null;
       const stored: StoredAnalysis = {
         ...json.result,
         businessType: detected ?? data.businessType,
         hoursPerWeek: data.hoursPerWeek,
         hourlyCost: data.hourlyCost,
+        baselineHourlyCost,
+        shiftsOverride,
       };
       sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(stored));
       setAnalyzing(false);
@@ -302,7 +402,10 @@ export default function UploadPage() {
         body: JSON.stringify(stored),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      let json: { ok: true; jobs: JobsResult; plan: RobotPlan } | { ok: false; error: string } | null = null;
+      let json:
+        | { ok: true; jobs: JobsResult; plan: RobotPlan }
+        | { ok: false; error: string }
+        | null = null;
       try {
         json = await res.json();
       } catch {
@@ -314,22 +417,36 @@ export default function UploadPage() {
       setPlan(json.plan);
       sessionStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(json.jobs));
       sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(json.plan));
-      if (hashRef.current) putCached(hashRef.current, { analysis: stored, jobs: json.jobs, plan: json.plan });
+      if (hashRef.current)
+        putCached(hashRef.current, {
+          analysis: stored,
+          jobs: json.jobs,
+          plan: json.plan,
+        });
     } catch (err) {
-      setJobsError(netError(err, "Job rating failed"));
+      setJobsError(netError(err, "Job matching failed"));
     } finally {
       setJobsLoading(false);
     }
   }
 
-  /** Auto-detect correction: same zones, tasks rebuilt from the chosen family's templates, jobs/plan recomputed (no AI call). */
   async function onCorrectFamily(value: string) {
     if (!analysis || !isFamily(value) || analyzing || jobsLoading) return;
     const hours = Number(hoursPerWeek);
-    const next = { ...rebuildForFamily(analysis, value, hours > 0 ? hours : 60), familyDetected: true };
+    const next = {
+      ...rebuildForFamily(analysis, value, hours > 0 ? hours : 60),
+      familyDetected: true,
+    };
     setAnalysis(next);
-    hashRef.current = null; // do not cache the corrected result under the original inputs
-    const stored: StoredAnalysis = { ...next, businessType: familyLabel(value), hoursPerWeek: hours, hourlyCost: Number(hourlyCost) };
+    hashRef.current = null;
+    const stored: StoredAnalysis = {
+      ...next,
+      businessType: familyLabel(value),
+      hoursPerWeek: hours,
+      hourlyCost: Number(hourlyCost),
+      baselineHourlyCost,
+      shiftsOverride,
+    };
     sessionStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(stored));
     await loadJobs(stored);
   }
@@ -341,19 +458,26 @@ export default function UploadPage() {
       businessType: effectiveBusinessType || undefined,
       hoursPerWeek: hours > 0 && hours <= 168 ? hours : undefined,
       hourlyCost: cost > 0 ? cost : undefined,
+      baselineHourlyCost,
+      shiftsOverride,
     });
     router.push("/jobs");
   }
 
   const input =
     "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-2xs transition focus:border-sky-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
-  const label = "mb-1.5 block text-sm font-semibold text-slate-800 dark:text-slate-200";
+  const label =
+    "mb-1.5 block text-sm font-semibold text-slate-800 dark:text-slate-200";
   const err = (k: string) =>
     errors[k] ? (
       <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
         {errors[k]}
       </p>
     ) : null;
+
+  const topRecommendedJob = jobs?.jobs.find(
+    (j) => j.fit !== "no" && j.savings_eur_month > 0,
+  );
 
   return (
     <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
@@ -363,10 +487,12 @@ export default function UploadPage() {
             Step 1 of 3 • Space Analysis
           </span>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Upload a video of your space
+            Analyze your commercial or industrial space
           </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Extract 4 key frames in your browser and let AI map floor zones and repetitive tasks.
+            Extract 4 key video frames locally (Ollama Vision AI) or test an
+            enterprise preset to benchmark 15 real robots against Latvia 2026
+            employer labor costs.
           </p>
         </div>
 
@@ -393,7 +519,9 @@ export default function UploadPage() {
           </div>
 
           <div>
-            <label className={label}>Business type</label>
+            <label className={label}>
+              Venue / Business type (SMB, Mid-Market &amp; Enterprise)
+            </label>
             <BusinessTypeSelector
               selection={selection}
               onSelectPreset={handleSelectPreset}
@@ -402,6 +530,11 @@ export default function UploadPage() {
               onCustomTextChange={handleCustomTextChange}
               disabled={busy || analyzing || jobsLoading}
             />
+            {selection.mode === "preset" && (
+              <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                Spatial benchmark: {selection.preset.spatialNotes}
+              </p>
+            )}
             {err("businessType")}
           </div>
 
@@ -415,15 +548,12 @@ export default function UploadPage() {
                 max={168}
                 value={hoursPerWeek}
                 onChange={(e) => {
-                  hoursTouched.current = true;
                   setHoursPerWeek(e.target.value);
                 }}
                 className={input}
               />
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {selection.mode === "preset"
-                  ? `Suggested for ${selection.preset.label} — override freely`
-                  : "Weekly operating hours used for ROI & capacity"}
+                ≤60h = 1 shift · 61–119h = 2 shifts · ≥120h = 3 shifts (24/7)
               </p>
               {err("hoursPerWeek")}
             </div>
@@ -434,18 +564,69 @@ export default function UploadPage() {
                 type="number"
                 data-testid="hourly-cost-input"
                 min={0}
-                step="0.5"
+                step="0.01"
                 value={hourlyCost}
                 onChange={(e) => {
-                  costTouched.current = true;
                   setHourlyCost(e.target.value);
                 }}
                 className={input}
               />
-              <p data-testid="hourly-cost-helper" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p
+                data-testid="hourly-cost-helper"
+                className="mt-1 text-xs text-slate-500 dark:text-slate-400"
+              >
                 {costHelperText}
               </p>
               {err("hourlyCost")}
+            </div>
+          </div>
+
+          {/* Operating Shifts Selector (Auto from hours or manual 1 / 2 / 3 override) */}
+          <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Operating Shifts
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {shiftsOverride === null
+                    ? `Auto-computed from ${hoursPerWeek || 0}h/wk → ${effectiveShifts} ${effectiveShifts === 1 ? "shift" : "shifts"}`
+                    : `Manual override active: ${effectiveShifts} ${effectiveShifts === 1 ? "shift" : "shifts"}`}
+                </p>
+              </div>
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label="Shift count override"
+              >
+                <button
+                  type="button"
+                  data-testid="upload-shift-auto"
+                  onClick={() => setShiftsOverride(null)}
+                  className={`cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                    shiftsOverride === null
+                      ? "border-sky-500 bg-sky-600 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  }`}
+                >
+                  Auto ({autoShifts})
+                </button>
+                {([1, 2, 3] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    data-testid={`upload-shift-${s}`}
+                    onClick={() => setShiftsOverride(s)}
+                    className={`cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                      shiftsOverride === s
+                        ? "border-sky-500 bg-sky-600 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                    }`}
+                  >
+                    {s === 3 ? "3 Shifts (24/7)" : `${s} Shift${s > 1 ? "s" : ""}`}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -455,7 +636,11 @@ export default function UploadPage() {
               disabled={busy || checking}
               className="cursor-pointer rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? "Extracting…" : checking ? "Checking video…" : "Extract frames"}
+              {busy
+                ? "Extracting…"
+                : checking
+                  ? "Checking video…"
+                  : "Extract frames"}
             </button>
             <button
               type="button"
@@ -468,11 +653,12 @@ export default function UploadPage() {
             </button>
             <button
               type="button"
+              data-testid="upload-demo-btn"
               onClick={runDemo}
               disabled={busy || analyzing || jobsLoading}
               className="cursor-pointer rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-5 py-2.5 text-sm font-bold text-emerald-700 transition hover:bg-emerald-500/20 disabled:opacity-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-950"
             >
-              Try demo (no video needed)
+              Compare 15 robots (no video needed)
             </button>
             {showcases.map((sc) => (
               <button
@@ -484,7 +670,7 @@ export default function UploadPage() {
                   router.push("/jobs");
                 }}
                 disabled={busy || analyzing || jobsLoading}
-                title="A saved real analysis, no AI call"
+                title="Saved real space analysis, no AI call"
                 className="cursor-pointer rounded-xl border border-violet-500/50 bg-violet-500/10 px-5 py-2.5 text-sm font-bold text-violet-700 transition hover:bg-violet-500/20 disabled:opacity-50 dark:border-violet-500/40 dark:text-violet-300 dark:hover:bg-violet-950"
               >
                 Try real example: {sc.name}
@@ -495,8 +681,14 @@ export default function UploadPage() {
                 type="button"
                 data-testid="save-showcase-btn"
                 onClick={() => {
-                  const name = window.prompt("Showcase name", analysis ? effectiveBusinessType || "My space" : "My space");
-                  if (name && !downloadCurrentAsShowcase(name)) window.alert("No complete run to save yet.");
+                  const name = window.prompt(
+                    "Showcase name",
+                    analysis
+                      ? effectiveBusinessType || "My space"
+                      : "My space",
+                  );
+                  if (name && !downloadCurrentAsShowcase(name))
+                    window.alert("No complete run to save yet.");
                 }}
                 className="cursor-pointer rounded-xl border border-dashed border-slate-400 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
               >
@@ -508,7 +700,11 @@ export default function UploadPage() {
 
         {progress && (
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-            <progress value={progress.done} max={progress.total} className="w-full" />
+            <progress
+              value={progress.done}
+              max={progress.total}
+              className="w-full"
+            />
             <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">
               Frame {progress.done} / {progress.total}
             </p>
@@ -518,7 +714,8 @@ export default function UploadPage() {
         {frames.length > 0 && (
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <p className="mb-3 text-xs font-medium text-slate-600 dark:text-slate-400">
-              {frames.length} frames, {totalKb} KB total · saved to sessionStorage
+              {frames.length} frames, {totalKb} KB total · saved to
+              sessionStorage
             </p>
             <div className="grid grid-cols-4 gap-2.5">
               {frames.map((f, i) => (
@@ -535,7 +732,10 @@ export default function UploadPage() {
         )}
 
         {running && (
-          <section aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+          <section
+            aria-live="polite"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900"
+          >
             <ol className="flex flex-wrap gap-x-2 gap-y-1 text-sm">
               {STEPS.map((name, i) => (
                 <li
@@ -550,7 +750,9 @@ export default function UploadPage() {
                 >
                   {i < stage ? "✓ " : i === stage ? "● " : "○ "}
                   {name}
-                  {i < STEPS.length - 1 && <span className="ml-2 text-slate-400">→</span>}
+                  {i < STEPS.length - 1 && (
+                    <span className="ml-2 text-slate-400">→</span>
+                  )}
                 </li>
               ))}
             </ol>
@@ -559,6 +761,7 @@ export default function UploadPage() {
             </p>
           </section>
         )}
+
         {analyzeError && (
           <p
             role="alert"
@@ -570,7 +773,8 @@ export default function UploadPage() {
 
         {(analyzeError || jobsError || (errors.video && !checking)) && (
           <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-            Something went wrong, but you can still see how RoboHire works.{" "}
+            Something went wrong, but you can still compare all 15 robots with
+            preset space benchmarks.{" "}
             <button
               type="button"
               onClick={runDemo}
@@ -587,7 +791,10 @@ export default function UploadPage() {
             className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-5 py-3 text-sm text-slate-800 dark:text-slate-100"
           >
             <span>
-              Detected: <strong data-testid="detected-family-label">{familyLabel(analysis.family)}</strong>
+              Detected:{" "}
+              <strong data-testid="detected-family-label">
+                {familyLabel(analysis.family)}
+              </strong>
             </span>
             <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
               Not right?
@@ -610,7 +817,7 @@ export default function UploadPage() {
 
         {jobsLoading && (
           <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-            Rating robot jobs…
+            Benchmarking 15 commercial robots…
           </p>
         )}
         {jobsError && (
@@ -618,7 +825,7 @@ export default function UploadPage() {
             role="alert"
             className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400"
           >
-            Job rating failed: {jobsError}{" "}
+            Job matching failed: {jobsError}{" "}
             <button
               type="button"
               className="underline"
@@ -631,30 +838,32 @@ export default function UploadPage() {
             </button>
           </p>
         )}
+
         {jobs && jobs.jobs.length > 0 && (
           <section className="space-y-3 rounded-2xl border border-emerald-500/40 bg-white p-5 shadow-sm dark:border-emerald-500/30 dark:bg-slate-900">
             <p className="text-sm text-slate-800 dark:text-slate-200">
-              {plan && plan.job_ids.length > 0 ? (
+              {topRecommendedJob ? (
                 <>
-                  1 K1 robot:{" "}
-                  <b>
-                    {plan.job_ids
-                      .map((id) => jobs.jobs.find((j) => j.id === id)?.title ?? id)
-                      .join(" + ")}
-                  </b>{" "}
-                  → €{plan.net_savings_eur_month}/month net
-                  {plan.payback_months !== null
-                    ? `, payback ${plan.payback_months} months`
-                    : ", no payback"}
+                  Top match: <b>{topRecommendedJob.robot_name ?? topRecommendedJob.title}</b>{" "}
+                  (€{topRecommendedJob.client_raas_eur}/mo RaaS vs €
+                  {topRecommendedJob.human_monthly_cost_eur?.toLocaleString("en-US")}
+                  /mo Latvia labor) →{" "}
+                  <b className="text-emerald-700 dark:text-emerald-400">
+                    +€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
+                    /month saved
+                  </b>
                 </>
               ) : (
-                <>{jobs.jobs.length} jobs found, but none is worth a robot yet.</>
+                <>
+                  Evaluated 15 robots — adjust shifts or venue parameters on the
+                  jobs screen to explore viable options.
+                </>
               )}
             </p>
-            {plan && plan.job_ids.length > 0 && (
+            {plan && plan.assumptions.length > 0 && (
               <details className="text-xs text-slate-600 dark:text-slate-400">
                 <summary className="cursor-pointer font-semibold">
-                  Plan assumptions ({plan.hours_per_week} of {plan.capacity_hours_per_week} robot-hours/week)
+                  Latvia 2026 VSAOI &amp; RaaS Brokerage notes
                 </summary>
                 <ul className="mt-1 list-disc space-y-0.5 pl-5">
                   {plan.assumptions.map((a) => (
@@ -669,7 +878,11 @@ export default function UploadPage() {
                   cached
                 </span>
                 Same video and settings as before — no AI call made.{" "}
-                <button type="button" className="cursor-pointer underline" onClick={() => void onAnalyze(true)}>
+                <button
+                  type="button"
+                  className="cursor-pointer underline"
+                  onClick={() => void onAnalyze(true)}
+                >
                   Re-run AI
                 </button>
               </p>
@@ -679,9 +892,12 @@ export default function UploadPage() {
                 href="/jobs"
                 className="inline-block rounded-xl border border-sky-400/50 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-sky-500"
               >
-                See robot jobs →
+                See 15-robot ROI comparison →
               </Link>
-              <Link href="/report" className="text-sm font-semibold text-sky-700 underline dark:text-sky-300">
+              <Link
+                href="/report"
+                className="text-sm font-semibold text-sky-700 underline dark:text-sky-300"
+              >
                 Open business report →
               </Link>
             </div>
@@ -692,23 +908,24 @@ export default function UploadPage() {
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Space
+                Mapped Space
               </h2>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                Room: {analysis.scene.room.width} × {analysis.scene.room.depth} m
+                Room: {analysis.scene.room.width} × {analysis.scene.room.depth}{" "}
+                m
               </p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700 dark:text-slate-300">
                 {analysis.scene.zones.map((z) => (
                   <li key={z.id}>
-                    <b>{z.label}</b> <code>({z.id})</code> — center ({z.x}, {z.z}),{" "}
-                    {z.w} × {z.d} m
+                    <b>{z.label}</b> <code>({z.id})</code> — center ({z.x},{" "}
+                    {z.z}), {z.w} × {z.d} m
                   </li>
                 ))}
               </ul>
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Repetitive tasks
+                Observed Workflows
               </h2>
               <ul className="mt-2 space-y-2.5 text-sm text-slate-700 dark:text-slate-300">
                 {analysis.tasks.map((t) => (
@@ -718,7 +935,8 @@ export default function UploadPage() {
                   >
                     <b>{t.title}</b>{" "}
                     <span className="text-slate-600 dark:text-slate-400">
-                      @ {t.zone_id} · {t.frequency_per_day}×/day · {t.minutes_each} min each
+                      @ {t.zone_id} · {t.frequency_per_day}×/day ·{" "}
+                      {t.minutes_each} min each
                     </span>
                     <br />
                     {t.description}

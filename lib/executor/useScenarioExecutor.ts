@@ -25,9 +25,8 @@ import type {
 } from "./types";
 
 const FIVE_DEGREES_RAD = (5 * Math.PI) / 180;
-const WAVE_DURATION_SECONDS = 1.78;
+const WAVE_DURATION_SECONDS = 1.65;
 const POINT_HOLD_SECONDS = 1.25;
-const SAY_GESTURE_SECONDS = 1.5;
 
 interface EngineInternalState {
   status: ExecutorStatus;
@@ -40,43 +39,66 @@ interface EngineInternalState {
 }
 
 export interface ScenarioExecutorController {
-  /** Validated scenario steps via filterValidSteps() */
   steps: ScenarioStep[];
-  /** Active step index (0..steps.length-1) while running, or null when idle/completed */
   currentStepIndex: number | null;
-  /** Overall execution status */
   status: ExecutorStatus;
-  /** Granular sub-phase of the active step */
   phase: StepPhase;
-  /** Target zone id of the active step (if any) */
   activeZoneId: string | null;
-  /** Current robot skeletal animation clip name */
+  activeSpeech: string | null;
   animation: RobotAnimationName;
-  /** Whether the robot is currently holding a point_to arm gesture */
   isPointing: boolean;
-  /** World XZ coordinates of the zone being pointed at */
   pointTarget: Vec2XZ | null;
-  /** Initial floor position of the robot */
   startPosition: Vec2XZ;
-  /** Current walk_to edge stop target info (for floor indicator) */
   currentTargetInfo: WalkTargetInfo | null;
-  /** Mutable 60fps pose reference read by Three.js useFrame */
   poseRef: React.MutableRefObject<RobotPose>;
-  /** Start execution from step 0 */
   start: () => void;
-  /** Immediately abort any active step, reset to start pose, and restart from step 0 */
   replay: () => void;
-  /** Abort any active step and return robot to start pose in idle state */
   reset: () => void;
-  /** Frame tick called by R3F useFrame */
   tick: (deltaSeconds: number) => void;
+}
+
+function stopSpeechSynthesisSafe(): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {
+    // Ignore browser speechSynthesis errors
+  }
+}
+
+function speakWithFallbackSafe(text: string, enabled: boolean): void {
+  if (
+    !enabled ||
+    typeof window === "undefined" ||
+    !("speechSynthesis" in window) ||
+    typeof SpeechSynthesisUtterance === "undefined"
+  ) {
+    return;
+  }
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 1.06;
+    utterance.volume = 0.9;
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // Graceful fallback: timer advances step automatically even if TTS fails
+  }
 }
 
 export function useScenarioExecutor(
   scene: Scene,
   rawSteps: ScenarioStep[],
   autoStart = true,
+  voiceEnabled = true,
 ): ScenarioExecutorController {
+  const voiceEnabledRef = useRef<boolean>(voiceEnabled);
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+    if (!voiceEnabled) stopSpeechSynthesisSafe();
+  }, [voiceEnabled]);
+
   const zoneMap = useMemo(() => {
     const map = new Map<string, Zone>();
     for (const z of scene.zones) {
@@ -95,7 +117,6 @@ export function useScenarioExecutor(
     [scene],
   );
 
-  // Start slightly angled so initial rotation is visible
   const initialRotationY = useMemo(() => {
     const firstStep = steps[0];
     if (firstStep?.target) {
@@ -132,6 +153,7 @@ export function useScenarioExecutor(
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<StepPhase>("idle");
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
+  const [activeSpeech, setActiveSpeech] = useState<string | null>(null);
   const [animation, setAnimation] = useState<RobotAnimationName>("Idle");
   const [isPointing, setIsPointing] = useState<boolean>(false);
   const [pointTarget, setPointTarget] = useState<Vec2XZ | null>(null);
@@ -151,6 +173,11 @@ export function useScenarioExecutor(
 
     const step = eng.stepIndex !== null ? steps[eng.stepIndex] : undefined;
     setActiveZoneId(step?.target ?? eng.targetInfo?.zone.id ?? null);
+    setActiveSpeech(
+      eng.status === "running" && step?.action === "say" && step.text
+        ? step.text
+        : null,
+    );
   }, [steps]);
 
   const beginStep = useCallback(
@@ -164,7 +191,6 @@ export function useScenarioExecutor(
         if (runId !== runIdRef.current) return;
         const step = steps[i];
 
-        // Reset step-scoped state
         eng.status = "running";
         eng.stepIndex = i;
         eng.targetInfo = null;
@@ -217,16 +243,12 @@ export function useScenarioExecutor(
             const dx = zone.x - pose.x;
             const dz = zone.z - pose.z;
             const dist = Math.hypot(dx, dz);
-            if (dist < 0.05) {
-              // Already standing at target -> no-op
-              continue;
-            }
+            if (dist < 0.05) continue;
             const targetAngle = Math.atan2(dx, dz);
             const angleDiff = Math.abs(
               shortestAngleDelta(pose.rotationY, targetAngle),
             );
             if (angleDiff <= FIVE_DEGREES_RAD) {
-              // Already facing within ~5° -> no-op
               pose.rotationY = targetAngle;
               continue;
             }
@@ -278,10 +300,17 @@ export function useScenarioExecutor(
           }
 
           case "say": {
-            // No speech output on stage: ~1.5s pause with a small nod/gesture
+            const line = (step.text ?? "").trim();
+            if (!line) continue;
+            const wordCount = line.split(/\s+/).length;
+            const fallbackSeconds = Math.min(
+              3.2,
+              Math.max(1.6, wordCount * 0.28 + 0.8),
+            );
             eng.phase = "speaking";
-            eng.phaseTimer = SAY_GESTURE_SECONDS;
+            eng.phaseTimer = fallbackSeconds;
             pose.animation = "Yes";
+            speakWithFallbackSafe(line, voiceEnabledRef.current);
             syncUiState();
             return;
           }
@@ -300,6 +329,7 @@ export function useScenarioExecutor(
       }
 
       // All steps finished
+      stopSpeechSynthesisSafe();
       eng.status = "completed";
       eng.stepIndex = null;
       eng.phase = "idle";
@@ -317,6 +347,7 @@ export function useScenarioExecutor(
 
   const reset = useCallback(() => {
     runIdRef.current += 1;
+    stopSpeechSynthesisSafe();
 
     poseRef.current = {
       x: startPosition.x,
@@ -340,6 +371,7 @@ export function useScenarioExecutor(
 
   const replay = useCallback(() => {
     runIdRef.current += 1;
+    stopSpeechSynthesisSafe();
     const nextRunId = runIdRef.current;
 
     poseRef.current = {
@@ -366,11 +398,11 @@ export function useScenarioExecutor(
     replay();
   }, [replay]);
 
-  // Auto-start on mount and clean up on unmount
   useEffect(() => {
     if (!autoStart || steps.length === 0) {
       return () => {
         runIdRef.current += 1;
+        stopSpeechSynthesisSafe();
       };
     }
     const timerId = window.setTimeout(() => {
@@ -379,6 +411,7 @@ export function useScenarioExecutor(
     return () => {
       window.clearTimeout(timerId);
       runIdRef.current += 1;
+      stopSpeechSynthesisSafe();
     };
   }, [autoStart, steps.length, replay]);
 
@@ -402,9 +435,7 @@ export function useScenarioExecutor(
 
       if (eng.phase === "rotating") {
         const targetAngle =
-          eng.targetAngle ??
-          eng.targetInfo?.lookAtAngle ??
-          pose.rotationY;
+          eng.targetAngle ?? eng.targetInfo?.lookAtAngle ?? pose.rotationY;
 
         const { angle, reached } = stepAngleTowards(
           pose.rotationY,
@@ -426,7 +457,6 @@ export function useScenarioExecutor(
             pose.isPointing = true;
             syncUiState();
           } else {
-            // turn_to finished rotating
             pose.animation = "Idle";
             beginStep(stepIndex + 1, activeRunId);
           }
@@ -459,7 +489,6 @@ export function useScenarioExecutor(
           pose.z = currentWp.z;
 
           if (eng.waypointIndex + 1 < targetInfo.waypoints.length) {
-            // Advance to next waypoint (around obstacle furniture)
             eng.waypointIndex += 1;
             const nextWp = targetInfo.waypoints[eng.waypointIndex];
             const nextLegAngle = Math.atan2(
@@ -533,6 +562,7 @@ export function useScenarioExecutor(
     status,
     phase,
     activeZoneId,
+    activeSpeech,
     animation,
     isPointing,
     pointTarget,

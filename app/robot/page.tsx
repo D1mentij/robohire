@@ -5,11 +5,10 @@ import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
 import { shortLabel } from "@/lib/ai/labels";
-import { getRobotMeta, isHelperRobot } from "@/lib/robots/catalog";
 import {
-  scriptFileName,
-  toBoosterScript,
-} from "@/lib/k1export/toBoosterScript";
+  LATVIA_2026_LABOR_BENCHMARKS,
+  getRobotSpec,
+} from "@/lib/robots/catalog";
 import type { ScenarioStep, Zone } from "@/types/contracts";
 
 interface ShiftTaskGroup {
@@ -86,9 +85,9 @@ function formatCurrentActionLine(
   zones: Zone[],
   activeTaskZoneName: string | null,
 ): string {
-  if (status === "idle") return "Ready to start shift";
-  if (status === "completed") return "All shift tasks completed";
-  if (!step) return "Running shift…";
+  if (status === "idle") return "Ready to start simulation";
+  if (status === "completed") return "All tasks completed";
+  if (!step) return "Executing mission…";
 
   const zoneLabel = step.target
     ? (zones.find((z) => z.id === step.target)?.label ?? step.target)
@@ -96,27 +95,32 @@ function formatCurrentActionLine(
 
   switch (step.action) {
     case "walk_to":
-      return zoneLabel ? `Walking to ${zoneLabel}` : "Walking across space";
+      return zoneLabel ? `Navigating to ${zoneLabel}` : "Navigating floor lane";
     case "turn_to":
-      return zoneLabel ? `Turning to ${zoneLabel}` : "Turning";
+      return zoneLabel ? `Aligning toward ${zoneLabel}` : "Rotating chassis";
     case "point_to":
-      return zoneLabel ? `Pointing at ${zoneLabel}` : "Pointing";
+      return zoneLabel ? `Highlighting ${zoneLabel}` : "Highlighting zone";
     case "wave":
-      return zoneLabel ? `Waving at ${zoneLabel}` : "Waving to guests";
+      return zoneLabel ? `Greeting at ${zoneLabel}` : "Greeting visitors";
     case "say":
-      if (step.label === "Shift start") return "Starting shift…";
-      if (step.label === "Shift end") return "Finishing shift…";
-      return zoneLabel ? `Assisting at ${zoneLabel}` : "Assisting guests";
+      return step.text ? `"${step.text}"` : "Announcing status";
     case "wait":
-      return zoneLabel ? `Pausing at ${zoneLabel}` : "Pausing briefly";
+      return zoneLabel ? `Operating at ${zoneLabel}` : "Holding position";
   }
 }
 
 export default function RobotSimulationPage() {
   const simData = useSimulationData();
-  const executor = useScenarioExecutor(simData.scene, simData.steps, true);
   const [followCamera, setFollowCamera] = useState<boolean>(true);
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [presentMode, setPresentMode] = useState<boolean>(false);
+
+  const executor = useScenarioExecutor(
+    simData.scene,
+    simData.steps,
+    true,
+    voiceEnabled,
+  );
 
   const enterPresentMode = useCallback(() => {
     setPresentMode(true);
@@ -129,7 +133,7 @@ export default function RobotSimulationPage() {
         void document.documentElement.requestFullscreen().catch(() => {});
       }
     } catch {
-      // Fullscreen may be blocked by browser policy; visual present mode still activates
+      // Visual present mode still activates if fullscreen API is blocked
     }
   }, []);
 
@@ -144,16 +148,13 @@ export default function RobotSimulationPage() {
         void document.exitFullscreen().catch(() => {});
       }
     } catch {
-      // Ignore fullscreen exit errors
+      // Ignore
     }
   }, []);
 
   const togglePresentMode = useCallback(() => {
-    if (presentMode) {
-      exitPresentMode();
-    } else {
-      enterPresentMode();
-    }
+    if (presentMode) exitPresentMode();
+    else enterPresentMode();
   }, [presentMode, enterPresentMode, exitPresentMode]);
 
   useEffect(() => {
@@ -203,9 +204,14 @@ export default function RobotSimulationPage() {
     };
   }, []);
 
-  const isShiftScenario = simData.scenario.job_id === "shift";
-  const robotMeta = getRobotMeta(simData.robotType);
-  const isHelper = isHelperRobot(simData.robotType);
+  const robotSpec = getRobotSpec(simData.robotType);
+  const roleInfo = LATVIA_2026_LABOR_BENCHMARKS[robotSpec.role];
+  const shifts = simData.job.shifts_count ?? 1;
+  const clientRaaS = simData.job.client_raas_eur ?? robotSpec.clientRaaSEur;
+  const humanCost =
+    simData.job.human_monthly_cost_eur ?? roleInfo.employerMonthlyEur * shifts;
+  const monthlySavings =
+    simData.job.savings_eur_month || humanCost - clientRaaS;
 
   const taskGroups = useMemo(
     () =>
@@ -251,31 +257,6 @@ export default function RobotSimulationPage() {
     ],
   );
 
-  const shiftJobTitles = useMemo(
-    () => taskGroups.map((g) => g.label),
-    [taskGroups],
-  );
-
-  function handleExportForRealK1() {
-    const py = toBoosterScript(simData.scenario, simData.scene, {
-      businessType: simData.businessType,
-      what: isShiftScenario
-        ? `whole shift: ${shiftJobTitles.join(", ")}`
-        : simData.job.title,
-    });
-    const fileName = scriptFileName(simData.scenario);
-    const url = URL.createObjectURL(
-      new Blob([py], { type: "text/x-python;charset=utf-8" }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
   const statusBadgeClass =
     executor.status === "running"
       ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-200"
@@ -297,24 +278,20 @@ export default function RobotSimulationPage() {
         presentMode ? "h-screen" : "h-[calc(100vh-3.5rem)]"
       }`}
     >
-      {/* Simulation Sub-Toolbar (hidden in Present mode) */}
+      {/* Simulation Sub-Toolbar */}
       {!presentMode && (
         <div className="z-20 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-5 py-2.5 backdrop-blur-md transition-colors dark:border-slate-800 dark:bg-slate-900/95">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
-                3D Workspace Simulation
+                3D Space Simulation
               </h1>
               <span
                 data-testid="active-robot-badge"
                 data-robot-type={simData.robotType}
-                className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                  isHelper
-                    ? robotMeta.badgeClass
-                    : "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-200"
-                }`}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${robotSpec.badgeClass}`}
               >
-                {isHelper ? robotMeta.roleBadge : "K1 (simulation stand-in)"}
+                {robotSpec.name} • {robotSpec.category}
               </span>
               <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {simData.businessType}
@@ -323,11 +300,9 @@ export default function RobotSimulationPage() {
             <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
               Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
               {simData.scene.zones.length} zones •{" "}
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {isShiftScenario ? "Full Shift" : simData.job.title}
-              </span>{" "}
-              <span className="font-mono text-slate-500 dark:text-slate-400">
-                ({taskGroups.length} {taskGroups.length === 1 ? "task" : "tasks"})
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                €{clientRaaS}/mo RaaS (saves +€
+                {Math.max(0, monthlySavings).toLocaleString("en-US")}/mo)
               </span>
             </p>
           </div>
@@ -372,6 +347,19 @@ export default function RobotSimulationPage() {
 
             <button
               type="button"
+              data-testid="voice-tts-btn"
+              onClick={() => setVoiceEnabled((v) => !v)}
+              className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                voiceEnabled
+                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200"
+                  : "border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              }`}
+            >
+              Voice: {voiceEnabled ? "ON" : "OFF"}
+            </button>
+
+            <button
+              type="button"
               data-testid="present-mode-btn"
               title="Fullscreen presentation mode (Press P)"
               onClick={enterPresentMode}
@@ -380,21 +368,17 @@ export default function RobotSimulationPage() {
               ⛶ Present
             </button>
 
-            {!isHelper && (
-              <button
-                type="button"
-                data-testid="export-k1-btn"
-                onClick={handleExportForRealK1}
-                className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                Export for real K1 (.py)
-              </button>
-            )}
+            <Link
+              href="/jobs"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              ← All 15 Robots
+            </Link>
           </div>
         </div>
       )}
 
-      {/* Main Content: Unobstructed 3D Viewport + Shift Tasks Checklist Sidebar */}
+      {/* Main Content: 3D Viewport + Mission Checklist Sidebar */}
       <div className="relative flex flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="relative flex-1 overflow-hidden">
           {presentMode && (
@@ -407,6 +391,7 @@ export default function RobotSimulationPage() {
               Exit Present (Esc)
             </button>
           )}
+
           <SimCanvas
             scene={simData.scene}
             businessType={simData.businessType}
@@ -421,7 +406,18 @@ export default function RobotSimulationPage() {
             onTick={executor.tick}
           />
 
-          {/* Job / Shift Completed ✓ Overlay Card */}
+          {/* Live Speech Banner during `say` action */}
+          {executor.activeSpeech && executor.status === "running" && (
+            <div
+              data-testid="active-speech-banner"
+              className="pointer-events-none absolute bottom-6 left-1/2 z-20 max-w-md -translate-x-1/2 rounded-2xl border border-sky-400/50 bg-slate-900/90 px-4 py-2.5 text-center text-sm font-semibold text-sky-100 shadow-xl backdrop-blur-md"
+            >
+              <span className="mr-1.5 text-sky-400">{robotSpec.shortName}:</span>
+              &ldquo;{executor.activeSpeech}&rdquo;
+            </div>
+          )}
+
+          {/* Job Completed ✓ Overlay Card */}
           {executor.status === "completed" && (
             <div
               data-testid="job-completed-card"
@@ -430,15 +426,14 @@ export default function RobotSimulationPage() {
               <div className="rounded-2xl border-2 border-emerald-400/80 bg-white/95 p-5 text-slate-900 shadow-2xl backdrop-blur-md dark:bg-slate-900/95 dark:text-white">
                 <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-1 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
-                    {isShiftScenario ? "Shift completed ✓" : "Job Completed ✓"}
+                    Deployment Verified ✓
                   </span>
                   <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                    {taskGroups.length}/{taskGroups.length} tasks done
+                    {robotSpec.name}
                   </span>
                 </div>
 
-                {/* Same checklist, all ✓ */}
-                <ul className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                <ul className="mt-3 max-h-40 space-y-1.5 overflow-y-auto pr-1">
                   {taskGroups.map((task) => (
                     <li
                       key={task.id}
@@ -459,37 +454,26 @@ export default function RobotSimulationPage() {
                   ))}
                 </ul>
 
-                {/* Plan Net €/month + Payback (K1) or Helper Robot Savings + Payback */}
                 <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {isHelper
-                        ? `${robotMeta.name} Est. Savings`
-                        : "Net Shift Plan Savings"}
+                      Monthly Savings vs Latvia Staff
                     </span>
                     <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
-                      {isHelper
-                        ? `€${simData.job.savings_eur_month}/month`
-                        : `€${simData.plan.net_savings_eur_month}/month net`}
+                      +€{Math.max(0, monthlySavings).toLocaleString("en-US")}/mo
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <span>
-                      Payback:{" "}
+                      Client RaaS:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        {isHelper
-                          ? simData.job.payback_months !== null
-                            ? `${simData.job.payback_months} months`
-                            : "—"
-                          : simData.plan.payback_months !== null
-                            ? `${simData.plan.payback_months} months`
-                            : "—"}
+                        €{clientRaaS.toLocaleString("en-US")}/mo
                       </strong>
                     </span>
                     <span>
-                      Robot price:{" "}
+                      Purchase:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        €{isHelper ? robotMeta.priceEur : simData.plan.robot_price_eur}
+                        €{robotSpec.purchasePriceEur.toLocaleString("en-US")}
                       </strong>
                     </span>
                   </div>
@@ -500,18 +484,8 @@ export default function RobotSimulationPage() {
                     href="/jobs"
                     className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
-                    ← Back to Jobs
+                    ← Back to 15 Robots
                   </Link>
-                  {!isHelper && (
-                    <button
-                      type="button"
-                      data-testid="export-k1-completed-btn"
-                      onClick={handleExportForRealK1}
-                      className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                    >
-                      Export for real K1
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={executor.replay}
@@ -525,7 +499,7 @@ export default function RobotSimulationPage() {
           )}
         </div>
 
-        {/* Dedicated "Shift tasks" Checklist Sidebar */}
+        {/* Dedicated Mission Checklist Sidebar */}
         <aside
           data-testid="shift-tasks-panel"
           className="z-20 flex max-h-72 w-full shrink-0 flex-col border-t border-slate-200 bg-white p-5 transition-colors dark:border-slate-800 dark:bg-slate-900/95 lg:max-h-none lg:w-96 lg:border-l lg:border-t-0 xl:w-[26rem]"
@@ -533,20 +507,19 @@ export default function RobotSimulationPage() {
           <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
             <div>
               <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                Shift tasks
+                {robotSpec.shortName} Mission
               </h2>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {simData.businessType}
+                {robotSpec.specsSummary}
               </p>
             </div>
             <span
-              className={`rounded-lg border px-2.5 py-1 font-mono text-xs font-bold ${statusBadgeClass}`}
+              className={`shrink-0 rounded-lg border px-2.5 py-1 font-mono text-xs font-bold ${statusBadgeClass}`}
             >
               {statusLabel}
             </span>
           </div>
 
-          {/* One row per task grouped by step.label */}
           <ol className="flex-1 space-y-2.5 overflow-y-auto pr-1">
             {taskGroups.map((task) => {
               const isDone =
@@ -616,10 +589,9 @@ export default function RobotSimulationPage() {
             })}
           </ol>
 
-          {/* Single line below with the current action */}
           <div
             data-testid="current-action-line"
-            className="mt-4 flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-100/90 px-4 py-3 text-base font-bold text-slate-800 dark:border-slate-800 dark:bg-slate-950/90 dark:text-sky-200"
+            className="mt-4 flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-100/90 px-4 py-3 text-sm font-bold text-slate-800 dark:border-slate-800 dark:bg-slate-950/90 dark:text-sky-200"
           >
             <span
               aria-hidden="true"

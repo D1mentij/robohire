@@ -3,9 +3,9 @@ import { AppHeader } from "@/components/AppHeader";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RoboHire — Booster K1 Humanoid Job Matcher & 3D Simulator",
+  title: "RoboHire — Commercial B2B RaaS Brokerage & 3D ROI Simulator",
   description:
-    "Upload a short video of your business space to match Booster K1 humanoid robot jobs, estimate ROI and payback, and simulate tasks in 3D.",
+    "Compare 15 real commercial & industrial service robots against verified 2026 Latvia full employer labor costs (incl. 23.59% VSAOI) across 1–3 shifts and simulate deployments in 3D.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

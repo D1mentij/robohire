@@ -14,12 +14,11 @@ import {
   type RobotPlan,
   type RobotType,
   type Scenario,
-  type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
 import { buildPlan } from "@/lib/roi/roi";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
-import { inferRobotType, isHelperRobot } from "@/lib/robots/catalog";
+import { buildRobotScenario, inferRobotType } from "@/lib/robots/catalog";
 import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
@@ -33,7 +32,7 @@ export const JOB_STORAGE_KEYS = ["robohire:job", "job"] as const;
 export const JOBS_LIST_STORAGE_KEYS = [JOBS_STORAGE_KEY, "jobs"] as const;
 export const PLAN_STORAGE_KEYS = [PLAN_STORAGE_KEY, "plan"] as const;
 
-const DEFAULT_HOURLY_COST = 8.5;
+const DEFAULT_HOURLY_COST = 9.24;
 const DEFAULT_MOCK_PLAN: RobotPlan = buildPlan(
   mockJobs.jobs,
   DEFAULT_HOURLY_COST,
@@ -49,10 +48,10 @@ function tryParseJson(raw: string | null): unknown {
 }
 
 /**
- * Reads handoff data from `sessionStorage` first, falling back to `localStorage`
- * only when no newer run exists in `sessionStorage`.
+ * Reads handoff keys from `sessionStorage` first, then `localStorage`
+ * (honoring `robohire:scene` and `robohire:scenario` in `localStorage` seamlessly).
  */
-function readFromSessionStorage(keys: readonly string[]): unknown {
+function readStorageKey(keys: readonly string[]): unknown {
   if (typeof window === "undefined") return null;
   for (const key of keys) {
     try {
@@ -62,23 +61,17 @@ function readFromSessionStorage(keys: readonly string[]): unknown {
       // Ignore storage access errors
     }
   }
-  const hasSessionRun =
-    window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) !== null ||
-    window.sessionStorage.getItem(JOBS_STORAGE_KEY) !== null;
-  if (!hasSessionRun) {
-    for (const key of keys) {
-      try {
-        const fromLocal = tryParseJson(window.localStorage.getItem(key));
-        if (fromLocal !== null) return fromLocal;
-      } catch {
-        // Ignore storage access errors
-      }
+  for (const key of keys) {
+    try {
+      const fromLocal = tryParseJson(window.localStorage.getItem(key));
+      if (fromLocal !== null) return fromLocal;
+    } catch {
+      // Ignore storage access errors
     }
   }
   return null;
 }
 
-/** Clears stale simulation handoff keys from both sessionStorage and legacy localStorage. */
 export function clearHandoffStorage(): void {
   if (typeof window === "undefined") return;
   for (const key of [
@@ -95,43 +88,6 @@ export function clearHandoffStorage(): void {
   }
 }
 
-function buildGenericScenarioForJob(job: Job, scene: Scene): Scenario {
-  const zoneIds = scene.zones.map((z) => z.id);
-  const label = shortLabel(job.title);
-  const firstZone = scene.zones[0]?.id;
-  const secondZone = scene.zones[1]?.id ?? firstZone;
-  const steps: ScenarioStep[] = firstZone
-    ? [
-        { action: "walk_to", target: firstZone },
-        { action: "wave" },
-        {
-          action: "say",
-          text: `Performing ${label}.`,
-        },
-        ...(secondZone
-          ? ([
-              { action: "turn_to", target: secondZone },
-              { action: "point_to", target: secondZone },
-            ] as ScenarioStep[])
-          : []),
-        { action: "wait", seconds: 2 },
-        {
-          action: "say",
-          text: "Task complete. Ready to help.",
-        },
-      ]
-    : [{ action: "wave" }];
-  return {
-    job_id: job.id,
-    steps: finalizeSteps(filterValidSteps(steps, zoneIds), label),
-  };
-}
-
-/**
- * Loads `scene`, `scenario`, `job`, and `plan` from URL query params or
- * `sessionStorage`, falling back cleanly to `mockScene`, `mockScenario`,
- * `mockJobs`, and `DEFAULT_MOCK_PLAN`. Always sanitizes steps with `filterValidSteps()`.
- */
 export function loadSimulationData(
   searchParams?: URLSearchParams | null,
 ): LoadedSimulationData {
@@ -143,18 +99,17 @@ export function loadSimulationData(
     candidateScenario = tryParseJson(searchParams.get("scenario"));
   }
 
-  const storedJobsRaw = readFromSessionStorage(JOBS_LIST_STORAGE_KEYS);
+  const storedJobsRaw = readStorageKey(JOBS_LIST_STORAGE_KEYS);
   const currentJobsResult: JobsResult = isJobsResult(storedJobsRaw)
     ? storedJobsRaw
     : mockJobs;
-  const currentJobIds = new Set(currentJobsResult.jobs.map((j) => j.id));
 
-  const storedPlanRaw = readFromSessionStorage(PLAN_STORAGE_KEYS);
+  const storedPlanRaw = readStorageKey(PLAN_STORAGE_KEYS);
   const plan: RobotPlan = isRobotPlan(storedPlanRaw)
     ? storedPlanRaw
     : buildPlan(currentJobsResult.jobs, DEFAULT_HOURLY_COST);
 
-  const storedAnalysisRaw = readFromSessionStorage([ANALYSIS_STORAGE_KEY]);
+  const storedAnalysisRaw = readStorageKey([ANALYSIS_STORAGE_KEY]);
   const analysisScene =
     typeof storedAnalysisRaw === "object" &&
     storedAnalysisRaw !== null &&
@@ -177,31 +132,14 @@ export function loadSimulationData(
     mockJobs.business_type;
 
   if (!isScene(candidateScene)) {
-    candidateScene = readFromSessionStorage(SCENE_STORAGE_KEYS) ?? analysisScene;
+    candidateScene = readStorageKey(SCENE_STORAGE_KEYS) ?? analysisScene;
   }
   if (!isScenario(candidateScenario)) {
-    candidateScenario = readFromSessionStorage(SCENARIO_STORAGE_KEYS);
+    candidateScenario = readStorageKey(SCENARIO_STORAGE_KEYS);
   }
 
-  const storedJobRaw = readFromSessionStorage(JOB_STORAGE_KEYS);
-  const validStoredJob =
-    isJob(storedJobRaw) &&
-    (currentJobIds.has(storedJobRaw.id) ||
-      isHelperRobot(inferRobotType(storedJobRaw)))
-      ? storedJobRaw
-      : null;
-
-  // Guard against stale scenario whose job_id is not in the current robohire:jobs list
-  // (allow whole-plan "shift" and freshly hired helper robot jobs)
-  if (
-    isScenario(candidateScenario) &&
-    isJobsResult(storedJobsRaw) &&
-    candidateScenario.job_id !== "shift" &&
-    !currentJobIds.has(candidateScenario.job_id) &&
-    !(validStoredJob && candidateScenario.job_id === validStoredJob.id)
-  ) {
-    candidateScenario = null;
-  }
+  const storedJobRaw = readStorageKey(JOB_STORAGE_KEYS);
+  const validStoredJob = isJob(storedJobRaw) ? storedJobRaw : null;
 
   const validCustomScene: Scene | null =
     isScene(candidateScene) &&
@@ -220,6 +158,8 @@ export function loadSimulationData(
     currentJobsResult.jobs[0] ??
     mockJobs.jobs[0];
 
+  const robotType: RobotType = inferRobotType(job);
+
   let scenario: Scenario;
   let hasCustomScenario = false;
   if (isScenario(candidateScenario)) {
@@ -231,11 +171,8 @@ export function loadSimulationData(
     if (matchedJob) {
       job = matchedJob;
     }
-  } else if (
-    currentJobsResult !== mockJobs &&
-    !mockJobs.jobs.some((mj) => mj.id === job.id)
-  ) {
-    scenario = buildGenericScenarioForJob(job, scene);
+  } else if (hasCustomScene || validStoredJob) {
+    scenario = buildRobotScenario(robotType, job, scene);
     hasCustomScenario = true;
   } else {
     scenario = mockScenario;
@@ -245,10 +182,9 @@ export function loadSimulationData(
   let steps = filterValidSteps(scenario.steps, zoneIds);
   if (steps.length === 0) {
     if (hasCustomScene && scene.zones.length > 0) {
-      scenario = buildGenericScenarioForJob(job, scene);
+      scenario = buildRobotScenario(robotType, job, scene);
       steps = scenario.steps;
     } else {
-      // Invalid/empty scenario with no custom room → fall back cleanly to demo
       const mockZoneIds = mockScene.zones.map((z) => z.id);
       scenario = mockScenario;
       steps = finalizeSteps(
@@ -258,7 +194,6 @@ export function loadSimulationData(
       hasCustomScenario = false;
     }
   } else {
-    // Ensure every step has a clean short label for the checklist without altering existing labels
     const needsLabels = steps.some((s) => !s.label || !s.label.trim());
     if (needsLabels) {
       steps = finalizeSteps(steps, shortLabel(job.title));
@@ -266,14 +201,12 @@ export function loadSimulationData(
   }
 
   const sanitizedScenario: Scenario = { ...scenario, steps };
+  const finalRobotType: RobotType = inferRobotType(job);
 
   const source: "custom" | "mock" =
     hasCustomScene || hasCustomScenario || isJobsResult(storedJobsRaw)
       ? "custom"
       : "mock";
-
-  const robotType: RobotType =
-    sanitizedScenario.job_id === "shift" ? "k1" : inferRobotType(job);
 
   return {
     scene:
@@ -283,7 +216,7 @@ export function loadSimulationData(
     scenario: sanitizedScenario,
     businessType,
     job,
-    robotType,
+    robotType: finalRobotType,
     plan,
     steps,
     source,
@@ -303,7 +236,7 @@ export function loadDefaultMockSimulationData(): LoadedSimulationData {
     scenario: { ...mockScenario, steps },
     businessType: mockJobs.business_type,
     job,
-    robotType: "k1",
+    robotType: inferRobotType(job),
     plan: DEFAULT_MOCK_PLAN,
     steps,
     source: "mock",
@@ -326,7 +259,7 @@ function getClientSnapshot(): LoadedSimulationData {
       ...PLAN_STORAGE_KEYS,
       ANALYSIS_STORAGE_KEY,
     ]) {
-      key += `|${window.sessionStorage.getItem(k) ?? ""}`;
+      key += `|${window.sessionStorage.getItem(k) ?? ""}|${window.localStorage.getItem(k) ?? ""}`;
     }
   } catch {
     // Ignore storage access errors

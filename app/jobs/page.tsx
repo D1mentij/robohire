@@ -3,20 +3,16 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { mockJobs, mockScenario, mockScene } from "@/mocks";
+import { mockScene } from "@/mocks";
 import {
   filterValidSteps,
-  isJob,
   isJobsResult,
-  isRobotPlan,
   isScene,
   type Fit,
   type Job,
   type JobsResult,
   type RobotPlan,
-  type RobotType,
   type Scenario,
-  type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
 import { buildPlan } from "@/lib/roi/roi";
@@ -24,421 +20,27 @@ import {
   ANALYSIS_STORAGE_KEY,
   JOBS_STORAGE_KEY,
   PLAN_STORAGE_KEY,
-  type Task,
+  type StoredAnalysis,
 } from "@/lib/ai/types";
-import { demoTasks } from "@/lib/ai/demoData";
-import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
-import { getOrCreateScenario, getOrCreateShift } from "@/lib/ai/scenarioCache";
+import { BUSINESS_PRESETS, findPreset, type BusinessPreset } from "@/lib/ai/businessPresets";
+import { tasksFromZones } from "@/lib/ai/zoneTasks";
+import { getOrCreateScenario } from "@/lib/ai/scenarioCache";
 import {
-  ROBOT_CATALOG,
-  ROBOT_FILTER_ORDER,
-  buildHelperRobotScenario,
-  ensureHelperJobs,
-  getRobotMeta,
+  LATVIA_2026_LABOR_BENCHMARKS,
+  ROBOT_CATEGORY_FILTERS,
+  buildRobotScenario,
+  evaluateCatalogForSpace,
+  getRobotSpec,
   inferRobotType,
-  isHelperRobot,
+  shiftsFromHours,
+  type CategoryFilterId,
 } from "@/lib/robots/catalog";
 import { clearHandoffStorage } from "@/lib/executor";
 
-const SCENARIO_TIMEOUT_MS = 25_000;
-const SHIFT_TIMEOUT_MS = 65_000;
-const DEFAULT_HOURLY_COST = 8.5;
-const ROBOT_PRICE_EUR = 8000;
+const SCENARIO_TIMEOUT_MS = 20_000;
 const SAVED_CUSTOM_ANALYSIS_KEY = "robohire:savedCustomAnalysis";
 
-export type SpacePresetId = "cafe" | "retail" | "hotel" | "hall";
-
-export interface SpacePreset {
-  id: SpacePresetId;
-  label: string;
-  tagline: string;
-  scene: Scene;
-  jobsData: JobsResult;
-  plan: RobotPlan;
-}
-
-const RETAIL_SCENE: Scene = {
-  room: { width: 12, depth: 9 },
-  zones: [
-    {
-      id: "entrance",
-      label: "Store Entrance",
-      x: 6.0,
-      z: 0.8,
-      w: 2.2,
-      d: 1.2,
-    },
-    {
-      id: "promo_display",
-      label: "Promo Display Board",
-      x: 2.0,
-      z: 2.0,
-      w: 2.2,
-      d: 1.0,
-    },
-    {
-      id: "main_aisle_shelves",
-      label: "Main Aisle Shelves",
-      x: 5.8,
-      z: 4.8,
-      w: 4.0,
-      d: 2.4,
-    },
-    {
-      id: "checkout_counter",
-      label: "Checkout Counter",
-      x: 10.2,
-      z: 4.5,
-      w: 2.0,
-      d: 3.8,
-    },
-    {
-      id: "waiting_bench",
-      label: "Fitting Lounge Sofa",
-      x: 2.2,
-      z: 7.4,
-      w: 2.8,
-      d: 1.8,
-    },
-  ],
-};
-
-const RETAIL_JOBS: JobsResult = {
-  business_type: "Retail Shop",
-  jobs: [
-    {
-      id: "retail_greeter",
-      title: "Aisle Guide & Store Greeter",
-      fit: "good",
-      score: 90,
-      why: "Shoppers frequently ask where product categories are located. K1 greets customers at the entrance, waves, and points or walks them toward the main aisle shelves.",
-      limits:
-        "Cannot retrieve items from high shelves or scan barcodes. Handles common wayfinding questions only.",
-      hours_per_week: 14,
-      savings_eur_month: 412,
-      payback_months: 19,
-    },
-    {
-      id: "promo_announcer",
-      title: "Seasonal Promo Announcer",
-      fit: "good",
-      score: 84,
-      why: "Staff rarely have time to pitch in-store deals. K1 stands near the promo display board, gestures to featured discounts, and announces offers clearly.",
-      limits:
-        "Cannot apply custom discounts at checkout or check live inventory counts without POS integration.",
-      hours_per_week: 10,
-      savings_eur_month: 295,
-      payback_months: 27,
-    },
-    {
-      id: "checkout_helper",
-      title: "Fitting & Checkout Queue Helper",
-      fit: "partial",
-      score: 58,
-      why: "During busy hours K1 guides shoppers from the fitting lounge sofa toward open checkout counters and explains self-checkout instructions.",
-      limits:
-        "Cannot fold garments, remove security tags, or bag purchased items at the register.",
-      hours_per_week: 8,
-      savings_eur_month: 118,
-      payback_months: 68,
-    },
-    {
-      id: "pallet_lifter",
-      title: "Heavy Stock & Pallet Lifter",
-      fit: "no",
-      score: 10,
-      why: "Restocking heavy boxes and moving warehouse pallets takes significant staff effort every morning.",
-      limits:
-        "K1 is a compact 95 cm communication humanoid without heavy payload lifting capacity or industrial grippers. Not suitable for stockroom lifting.",
-      hours_per_week: 15,
-      savings_eur_month: 0,
-      payback_months: null,
-    },
-  ],
-};
-
-const HOTEL_SCENE: Scene = {
-  room: { width: 12, depth: 9 },
-  zones: [
-    {
-      id: "entrance",
-      label: "Lobby Entrance",
-      x: 6.0,
-      z: 0.8,
-      w: 2.4,
-      d: 1.2,
-    },
-    {
-      id: "reception_desk",
-      label: "Reception Desk",
-      x: 10.2,
-      z: 4.4,
-      w: 2.0,
-      d: 4.2,
-    },
-    {
-      id: "waiting_lounge",
-      label: "Lobby Sofa Lounge",
-      x: 2.2,
-      z: 3.6,
-      w: 2.8,
-      d: 2.4,
-    },
-    {
-      id: "seating_tables",
-      label: "Café Seating Tables",
-      x: 2.4,
-      z: 7.2,
-      w: 2.8,
-      d: 2.0,
-    },
-    {
-      id: "info_board",
-      label: "Event & Concierge Board",
-      x: 6.5,
-      z: 7.8,
-      w: 2.4,
-      d: 1.0,
-    },
-  ],
-};
-
-const HOTEL_JOBS: JobsResult = {
-  business_type: "Hotel Lobby",
-  jobs: [
-    {
-      id: "hotel_greeter",
-      title: "Guest Greeter & Concierge Guide",
-      fit: "good",
-      score: 91,
-      why: "Arriving guests often wait in line just to ask where check-in, breakfast, or elevators are. K1 welcomes guests at the lobby entrance and directs them to the reception desk.",
-      limits:
-        "Cannot encode room keycards, verify passports, or process credit card deposits.",
-      hours_per_week: 16,
-      savings_eur_month: 471,
-      payback_months: 17,
-    },
-    {
-      id: "event_info_host",
-      title: "Event & Breakfast Info Host",
-      fit: "good",
-      score: 83,
-      why: "Front-desk staff repeat breakfast hours, Wi-Fi details, and conference schedules all morning. K1 presents schedules at the concierge board on demand.",
-      limits:
-        "Cannot book taxi transfers or modify room reservations directly.",
-      hours_per_week: 11,
-      savings_eur_month: 324,
-      payback_months: 25,
-    },
-    {
-      id: "lobby_patrol",
-      title: "Lobby Lounge & FAQ Assistant",
-      fit: "partial",
-      score: 56,
-      why: "K1 circulates between the lobby sofa lounge and reception desk to inform waiting guests about check-in queue status and local attractions.",
-      limits:
-        "Cannot serve welcome drinks or navigate crowded luggage piles without clear floor paths.",
-      hours_per_week: 9,
-      savings_eur_month: 132,
-      payback_months: 61,
-    },
-    {
-      id: "luggage_porter",
-      title: "Heavy Luggage Bellhop Porter",
-      fit: "no",
-      score: 7,
-      why: "Carrying guest suitcases to rooms and loading bell carts is a frequent physical task for lobby staff.",
-      limits:
-        "K1 cannot lift heavy suitcases, push loaded luggage carts, or operate guest elevator buttons autonomously.",
-      hours_per_week: 18,
-      savings_eur_month: 0,
-      payback_months: null,
-    },
-  ],
-};
-
-const HALL_SCENE: Scene = {
-  room: { width: 12, depth: 9 },
-  zones: [
-    {
-      id: "entrance",
-      label: "Main Hall Entrance",
-      x: 6.0,
-      z: 0.8,
-      w: 2.4,
-      d: 1.2,
-    },
-    {
-      id: "registration_desk",
-      label: "Registration Desk",
-      x: 10.2,
-      z: 3.8,
-      w: 2.0,
-      d: 3.6,
-    },
-    {
-      id: "agenda_board",
-      label: "Session Agenda Board",
-      x: 2.0,
-      z: 2.2,
-      w: 2.2,
-      d: 1.0,
-    },
-    {
-      id: "study_tables",
-      label: "Networking Tables",
-      x: 6.0,
-      z: 5.2,
-      w: 4.0,
-      d: 2.8,
-    },
-    {
-      id: "waiting_sofa",
-      label: "Speaker Waiting Sofa",
-      x: 2.2,
-      z: 7.2,
-      w: 2.8,
-      d: 1.8,
-    },
-  ],
-};
-
-const HALL_JOBS: JobsResult = {
-  business_type: "Event / University Hall",
-  jobs: [
-    {
-      id: "hall_wayfinder",
-      title: "Visitor Greeter & Room Wayfinder",
-      fit: "good",
-      score: 89,
-      why: "Students and conference attendees constantly ask for auditorium directions and badge check-in. K1 greets visitors at the main entrance and points them to registration.",
-      limits:
-        "Cannot print badges, check ID cards, or escort visitors up staircases.",
-      hours_per_week: 12,
-      savings_eur_month: 353,
-      payback_months: 23,
-    },
-    {
-      id: "agenda_announcer",
-      title: "Session & Agenda Announcer",
-      fit: "good",
-      score: 85,
-      why: "Organizers need timely reminders before keynote talks start. K1 stands by the session agenda board, highlights upcoming tracks, and invites attendees inside.",
-      limits:
-        "Cannot answer spontaneous academic questions or adjust live room schedules automatically.",
-      hours_per_week: 10,
-      savings_eur_month: 295,
-      payback_months: 27,
-    },
-    {
-      id: "crowd_flow_helper",
-      title: "Breakout & Crowd Flow Helper",
-      fit: "partial",
-      score: 54,
-      why: "Between lectures K1 guides attendees toward the networking tables and speaker waiting area to reduce bottlenecking near the entrance.",
-      limits:
-        "Voice announcements can be harder to hear in very loud halls without an external PA speaker.",
-      hours_per_week: 8,
-      savings_eur_month: 118,
-      payback_months: 68,
-    },
-    {
-      id: "av_mover",
-      title: "Heavy AV & Stage Furniture Mover",
-      fit: "no",
-      score: 6,
-      why: "Reconfiguring folding tables, podiums, and PA speakers between events requires significant manual labor.",
-      limits:
-        "K1 cannot lift furniture, rig audio-visual cables, or carry stage equipment. Not feasible for physical setup crews.",
-      hours_per_week: 10,
-      savings_eur_month: 0,
-      payback_months: null,
-    },
-  ],
-};
-
-export const SPACE_PRESETS: Record<SpacePresetId, SpacePreset> = {
-  cafe: {
-    id: "cafe",
-    label: "Café",
-    tagline: "Table seating, counter & menu board",
-    scene: mockScene,
-    jobsData: mockJobs,
-    plan: buildPlan(mockJobs.jobs, DEFAULT_HOURLY_COST),
-  },
-  retail: {
-    id: "retail",
-    label: "Retail Shop",
-    tagline: "Aisle shelves, promo display & checkout",
-    scene: RETAIL_SCENE,
-    jobsData: RETAIL_JOBS,
-    plan: buildPlan(RETAIL_JOBS.jobs, DEFAULT_HOURLY_COST),
-  },
-  hotel: {
-    id: "hotel",
-    label: "Hotel Lobby",
-    tagline: "Reception desk, lounge sofa & concierge board",
-    scene: HOTEL_SCENE,
-    jobsData: HOTEL_JOBS,
-    plan: buildPlan(HOTEL_JOBS.jobs, DEFAULT_HOURLY_COST),
-  },
-  hall: {
-    id: "hall",
-    label: "Event / University Hall",
-    tagline: "Registration desk, agenda board & networking tables",
-    scene: HALL_SCENE,
-    jobsData: HALL_JOBS,
-    plan: buildPlan(HALL_JOBS.jobs, DEFAULT_HOURLY_COST),
-  },
-};
-
-export const SPACE_PRESET_LIST: SpacePreset[] = [
-  SPACE_PRESETS.cafe,
-  SPACE_PRESETS.retail,
-  SPACE_PRESETS.hotel,
-  SPACE_PRESETS.hall,
-];
-
-/**
- * Matches a SpacePreset strictly by its data (exact job IDs + zone IDs if scene
- * is present), NEVER by business_type name — so a real upload or showcase named
- * "Small café" or "Hotel lobby" is never mistaken for a hardcoded preset.
- */
-function matchExactPreset(
-  jobsData: JobsResult,
-  scene?: Scene | null,
-): SpacePreset | null {
-  const k1Jobs = jobsData.jobs.filter((j) => inferRobotType(j) === "k1");
-  for (const preset of SPACE_PRESET_LIST) {
-    if (jobsData.business_type !== preset.jobsData.business_type) continue;
-    if (k1Jobs.length !== preset.jobsData.jobs.length) continue;
-    const sameJobIds = preset.jobsData.jobs.every(
-      (pj, idx) => k1Jobs[idx]?.id === pj.id,
-    );
-    if (!sameJobIds) continue;
-    if (scene) {
-      const sameZoneIds =
-        scene.zones.length === preset.scene.zones.length &&
-        preset.scene.zones.every((pz, idx) => scene.zones[idx]?.id === pz.id);
-      if (!sameZoneIds) continue;
-    }
-    return preset;
-  }
-  return null;
-}
-
-function buildPresetTasks(preset: SpacePreset): Task[] {
-  if (preset.id === "cafe") return demoTasks;
-  const fallbackZoneId = preset.scene.zones[0]?.id ?? "entrance";
-  return preset.jobsData.jobs.map((job, idx) => ({
-    id: job.id,
-    title: job.title,
-    zone_id: preset.scene.zones[idx % preset.scene.zones.length]?.id ?? fallbackZoneId,
-    description: job.why,
-    frequency_per_day: Math.max(1, Math.round((job.hours_per_week * 60) / 6 / 3)),
-    minutes_each: 3,
-  }));
-}
+type ViewMode = "client" | "broker";
 
 interface SavedCustomAnalysis {
   businessType: string;
@@ -467,7 +69,7 @@ function parseSavedCustomAnalysis(raw: string | null): SavedCustomAnalysis | nul
       };
     }
   } catch {
-    // Ignore malformed saved backup
+    // Ignore malformed backup
   }
   return null;
 }
@@ -502,339 +104,172 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
       "border-slate-400/40 bg-slate-500/15 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400",
     scoreBarClass: "bg-slate-400 dark:bg-slate-600",
     cardClass:
-      "border-slate-300/70 bg-slate-100/70 opacity-60 grayscale-[35%] dark:border-slate-800 dark:bg-slate-900/40",
+      "border-slate-300/70 bg-slate-100/70 opacity-65 grayscale-[30%] dark:border-slate-800 dark:bg-slate-900/40",
   },
 };
 
-const PRESET_SCENARIOS: Record<string, ScenarioStep[]> = {
-  // Café scenarios
-  greeter: mockScenario.steps,
-  menu_presenter: [
-    { action: "walk_to", target: "menu_board" },
-    { action: "turn_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Hello everyone! Check out today's fresh pastry and roast coffee combo on our menu board.",
-    },
-    { action: "point_to", target: "menu_board" },
-    { action: "wait", seconds: 2 },
-    { action: "point_to", target: "counter" },
-    {
-      action: "say",
-      text: "Head right over to the counter whenever you are ready to order.",
-    },
-  ],
-  table_guide: [
-    { action: "walk_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Welcome! Follow me and I will guide you to our seating area.",
-    },
-    { action: "walk_to", target: "tables" },
-    { action: "point_to", target: "tables" },
-    {
-      action: "say",
-      text: "Here are our available tables. Please make yourself comfortable!",
-    },
-    { action: "wait", seconds: 2 },
-    { action: "point_to", target: "counter" },
-    {
-      action: "say",
-      text: "When you are ready, you can place your order at the counter.",
-    },
-  ],
+function matchExactBusinessPreset(
+  businessType: string,
+  scene: Scene | null,
+): BusinessPreset | null {
+  for (const preset of BUSINESS_PRESETS) {
+    if (businessType !== preset.label) continue;
+    if (scene) {
+      const sameZones =
+        scene.zones.length === preset.demoScene.zones.length &&
+        preset.demoScene.zones.every(
+          (pz, idx) => scene.zones[idx]?.id === pz.id,
+        );
+      if (!sameZones) continue;
+    }
+    return preset;
+  }
+  return null;
+}
 
-  // Retail Shop scenarios
-  retail_greeter: [
-    { action: "walk_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Welcome to our retail store! Let me help you find what you are looking for today.",
-    },
-    { action: "turn_to", target: "main_aisle_shelves" },
-    { action: "point_to", target: "main_aisle_shelves" },
-    {
-      action: "say",
-      text: "New arrivals and popular essentials are organized along our main aisle shelves.",
-    },
-    { action: "walk_to", target: "main_aisle_shelves" },
-    { action: "turn_to", target: "checkout_counter" },
-    { action: "point_to", target: "checkout_counter" },
-    {
-      action: "say",
-      text: "When you finish browsing, our checkout counter is right over there.",
-    },
-  ],
-  promo_announcer: [
-    { action: "walk_to", target: "promo_display" },
-    { action: "turn_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Good day shoppers! Take a look at our seasonal promotion board for today's member deals.",
-    },
-    { action: "point_to", target: "promo_display" },
-    { action: "wait", seconds: 2 },
-    { action: "point_to", target: "main_aisle_shelves" },
-    {
-      action: "say",
-      text: "All featured promotional items are stocked on the main aisle shelves.",
-    },
-  ],
-  checkout_helper: [
-    { action: "walk_to", target: "waiting_bench" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Ready to check out? Follow me toward the checkout counter.",
-    },
-    { action: "walk_to", target: "checkout_counter" },
-    { action: "point_to", target: "checkout_counter" },
-    {
-      action: "say",
-      text: "Register two and contactless self-checkout are open right here.",
-    },
-    { action: "wait", seconds: 2 },
-  ],
-
-  // Hotel Lobby scenarios
-  hotel_greeter: [
-    { action: "walk_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Welcome to our hotel! We are delighted to have you with us today.",
-    },
-    { action: "turn_to", target: "reception_desk" },
-    { action: "point_to", target: "reception_desk" },
-    {
-      action: "say",
-      text: "Please proceed to the reception desk on the right for room check-in and keycards.",
-    },
-    { action: "walk_to", target: "reception_desk" },
-    { action: "turn_to", target: "waiting_lounge" },
-    { action: "point_to", target: "waiting_lounge" },
-    {
-      action: "say",
-      text: "Feel free to relax in our lobby sofa lounge while your room is prepared.",
-    },
-  ],
-  event_info_host: [
-    { action: "walk_to", target: "info_board" },
-    { action: "turn_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Good morning guests! Breakfast is served until ten thirty next to our café seating tables.",
-    },
-    { action: "point_to", target: "seating_tables" },
-    { action: "wait", seconds: 2 },
-    { action: "point_to", target: "info_board" },
-    {
-      action: "say",
-      text: "Today's conference rooms and city shuttle departures are listed on this concierge board.",
-    },
-  ],
-  lobby_patrol: [
-    { action: "walk_to", target: "waiting_lounge" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Hello everyone in the lobby lounge! Check-in wait time is currently under two minutes.",
-    },
-    { action: "turn_to", target: "reception_desk" },
-    { action: "point_to", target: "reception_desk" },
-    { action: "wait", seconds: 2 },
-    { action: "walk_to", target: "seating_tables" },
-    {
-      action: "say",
-      text: "High-speed guest Wi-Fi is available throughout the lobby seating area.",
-    },
-  ],
-
-  // Event / University Hall scenarios
-  hall_wayfinder: [
-    { action: "walk_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Welcome to the hall! Please pick up your visitor badge at the registration desk.",
-    },
-    { action: "turn_to", target: "registration_desk" },
-    { action: "point_to", target: "registration_desk" },
-    { action: "walk_to", target: "registration_desk" },
-    { action: "turn_to", target: "agenda_board" },
-    { action: "point_to", target: "agenda_board" },
-    {
-      action: "say",
-      text: "Check the session agenda board for lecture room numbers and keynote times.",
-    },
-  ],
-  agenda_announcer: [
-    { action: "walk_to", target: "agenda_board" },
-    { action: "turn_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Attention attendees! The next keynote session begins in five minutes.",
-    },
-    { action: "point_to", target: "agenda_board" },
-    { action: "wait", seconds: 2 },
-    { action: "point_to", target: "study_tables" },
-    {
-      action: "say",
-      text: "Workshop groups are gathering around the networking tables right now.",
-    },
-  ],
-  crowd_flow_helper: [
-    { action: "walk_to", target: "entrance" },
-    { action: "wave" },
-    {
-      action: "say",
-      text: "Please keep the main entrance clear and move toward the networking tables.",
-    },
-    { action: "walk_to", target: "study_tables" },
-    { action: "point_to", target: "study_tables" },
-    { action: "turn_to", target: "waiting_sofa" },
-    { action: "point_to", target: "waiting_sofa" },
-    {
-      action: "say",
-      text: "Guest speakers are welcome to rest at the speaker waiting sofa before their panel.",
-    },
-  ],
-};
-
-interface JobsAndPlanSnapshot {
-  jobsData: JobsResult;
-  plan: RobotPlan;
+interface JobsSnapshot {
+  businessType: string;
   scene: Scene;
+  hoursPerWeek: number;
+  hourlyCost: number;
+  baselineHourlyCost: number | null;
+  storedShiftsOverride: 1 | 2 | 3 | null;
   hasCustomUpload: boolean;
-  activePresetId: SpacePresetId | null;
+  activePresetId: string | null;
   savedCustomAnalysis: SavedCustomAnalysis | null;
 }
 
-const SERVER_JOBS_PLAN_SNAPSHOT: JobsAndPlanSnapshot = {
-  jobsData: SPACE_PRESETS.cafe.jobsData,
-  plan: SPACE_PRESETS.cafe.plan,
-  scene: SPACE_PRESETS.cafe.scene,
+const DEFAULT_PRESET = BUSINESS_PRESETS[0]; // Tight Café / Bistro (~55 cm)
+
+const SERVER_SNAPSHOT: JobsSnapshot = {
+  businessType: DEFAULT_PRESET.label,
+  scene: DEFAULT_PRESET.demoScene,
+  hoursPerWeek: DEFAULT_PRESET.defaultHoursPerWeek,
+  hourlyCost: DEFAULT_PRESET.defaultHourlyCost,
+  baselineHourlyCost: DEFAULT_PRESET.defaultHourlyCost,
+  storedShiftsOverride: null,
   hasCustomUpload: false,
-  activePresetId: "cafe",
+  activePresetId: DEFAULT_PRESET.id,
   savedCustomAnalysis: null,
 };
 
 let cachedStorageKey = "";
-let cachedSnapshot: JobsAndPlanSnapshot = SERVER_JOBS_PLAN_SNAPSHOT;
+let cachedSnapshot: JobsSnapshot = SERVER_SNAPSHOT;
 
-function getJobsAndPlanClientSnapshot(): JobsAndPlanSnapshot {
-  if (typeof window === "undefined") return SERVER_JOBS_PLAN_SNAPSHOT;
+function getClientSnapshot(): JobsSnapshot {
+  if (typeof window === "undefined") return SERVER_SNAPSHOT;
   try {
     const rawJobs = window.sessionStorage.getItem(JOBS_STORAGE_KEY) ?? "";
-    const rawPlan = window.sessionStorage.getItem(PLAN_STORAGE_KEY) ?? "";
-    const rawAnalysis =
-      window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) ?? "";
+    const rawAnalysis = window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY) ?? "";
     const rawScene = window.sessionStorage.getItem("robohire:scene") ?? "";
     const rawSavedCustom =
       window.sessionStorage.getItem(SAVED_CUSTOM_ANALYSIS_KEY) ?? "";
-    const key = `${rawJobs}|${rawPlan}|${rawAnalysis}|${rawScene}|${rawSavedCustom}`;
+    const key = `${rawJobs}|${rawAnalysis}|${rawScene}|${rawSavedCustom}`;
 
     if (key !== cachedStorageKey) {
       cachedStorageKey = key;
 
-      let jobsData: JobsResult = mockJobs;
-      let hasStoredJobs = false;
+      let parsedJobs: JobsResult | null = null;
       if (rawJobs) {
         try {
-          const parsedJobs = JSON.parse(rawJobs) as unknown;
-          if (isJobsResult(parsedJobs)) {
-            jobsData = parsedJobs;
-            hasStoredJobs = true;
-          }
+          const cand = JSON.parse(rawJobs) as unknown;
+          if (isJobsResult(cand)) parsedJobs = cand;
         } catch {
-          jobsData = mockJobs;
+          parsedJobs = null;
         }
       }
 
-      let storedScene: Scene | null = null;
-      let analysisTasksCount = 0;
+      let parsedAnalysis: Partial<StoredAnalysis> | null = null;
       if (rawAnalysis) {
         try {
-          const parsedAnalysis = JSON.parse(rawAnalysis) as {
-            scene?: unknown;
-            tasks?: unknown;
-          };
-          if (isScene(parsedAnalysis?.scene)) {
-            storedScene = parsedAnalysis.scene;
-          }
-          if (Array.isArray(parsedAnalysis?.tasks)) {
-            analysisTasksCount = parsedAnalysis.tasks.length;
-          }
+          parsedAnalysis = JSON.parse(rawAnalysis) as Partial<StoredAnalysis>;
         } catch {
-          // ignore malformed analysis
+          parsedAnalysis = null;
         }
       }
+
+      let storedScene: Scene | null = isScene(parsedAnalysis?.scene)
+        ? parsedAnalysis.scene
+        : null;
       if (!storedScene && rawScene) {
         try {
-          const parsedScene = JSON.parse(rawScene) as unknown;
-          if (isScene(parsedScene)) {
-            storedScene = parsedScene;
-          }
+          const candScene = JSON.parse(rawScene) as unknown;
+          if (isScene(candScene)) storedScene = candScene;
         } catch {
-          // ignore malformed scene
+          storedScene = null;
         }
       }
 
-      const matchedPreset = matchExactPreset(jobsData, storedScene);
-      const hasCustomUpload =
-        matchedPreset === null && (hasStoredJobs || analysisTasksCount > 0);
-      const activePresetId = matchedPreset ? matchedPreset.id : null;
+      const businessType =
+        parsedJobs?.business_type ||
+        (typeof parsedAnalysis?.businessType === "string" &&
+        parsedAnalysis.businessType.trim()
+          ? parsedAnalysis.businessType.trim()
+          : DEFAULT_PRESET.label);
 
-      const scene: Scene = storedScene ?? matchedPreset?.scene ?? mockScene;
+      const matchedPreset = matchExactBusinessPreset(businessType, storedScene);
+      const hasAnyStored =
+        parsedJobs !== null ||
+        (parsedAnalysis !== null && isScene(parsedAnalysis.scene));
+      const hasCustomUpload = matchedPreset === null && hasAnyStored;
+      const activePresetId = matchedPreset
+        ? matchedPreset.id
+        : hasCustomUpload
+          ? null
+          : DEFAULT_PRESET.id;
 
-      const jobIdsSet = new Set(jobsData.jobs.map((j) => j.id));
-      let plan: RobotPlan | null = null;
-      if (rawPlan) {
-        try {
-          const parsedPlan = JSON.parse(rawPlan) as unknown;
-          if (
-            isRobotPlan(parsedPlan) &&
-            parsedPlan.job_ids.every((id) => jobIdsSet.has(id))
-          ) {
-            plan = parsedPlan;
-          }
-        } catch {
-          plan = null;
-        }
-      }
+      const fallbackPreset = matchedPreset ?? findPreset(businessType) ?? DEFAULT_PRESET;
+      const scene: Scene = storedScene ?? fallbackPreset.demoScene ?? mockScene;
 
-      if (!plan) {
-        plan = buildPlan(jobsData.jobs, DEFAULT_HOURLY_COST);
-      }
+      const hoursPerWeek =
+        typeof parsedAnalysis?.hoursPerWeek === "number" &&
+        parsedAnalysis.hoursPerWeek > 0
+          ? parsedAnalysis.hoursPerWeek
+          : fallbackPreset.defaultHoursPerWeek;
+
+      const hourlyCost =
+        typeof parsedAnalysis?.hourlyCost === "number" &&
+        parsedAnalysis.hourlyCost > 0
+          ? parsedAnalysis.hourlyCost
+          : fallbackPreset.defaultHourlyCost;
+
+      const baselineHourlyCost =
+        typeof parsedAnalysis?.baselineHourlyCost === "number" &&
+        parsedAnalysis.baselineHourlyCost > 0
+          ? parsedAnalysis.baselineHourlyCost
+          : fallbackPreset.defaultHourlyCost;
+
+      const storedShiftsOverride =
+        parsedAnalysis?.shiftsOverride === 1 ||
+        parsedAnalysis?.shiftsOverride === 2 ||
+        parsedAnalysis?.shiftsOverride === 3
+          ? parsedAnalysis.shiftsOverride
+          : null;
 
       const savedCustomAnalysis = hasCustomUpload
         ? null
         : parseSavedCustomAnalysis(rawSavedCustom);
 
       cachedSnapshot = {
-        jobsData,
-        plan,
+        businessType,
         scene,
+        hoursPerWeek,
+        hourlyCost,
+        baselineHourlyCost,
+        storedShiftsOverride,
         hasCustomUpload,
         activePresetId,
         savedCustomAnalysis,
       };
     }
   } catch {
-    cachedSnapshot = SERVER_JOBS_PLAN_SNAPSHOT;
-    return SERVER_JOBS_PLAN_SNAPSHOT;
+    cachedSnapshot = SERVER_SNAPSHOT;
   }
   return cachedSnapshot;
 }
 
-function getJobsAndPlanServerSnapshot(): JobsAndPlanSnapshot {
-  return SERVER_JOBS_PLAN_SNAPSHOT;
+function getServerSnapshot(): JobsSnapshot {
+  return SERVER_SNAPSHOT;
 }
 
 function subscribeJobsStorage(callback: () => void): () => void {
@@ -851,66 +286,16 @@ function subscribeJobsStorage(callback: () => void): () => void {
   };
 }
 
-function buildFallbackScenario(job: Job, scene: Scene): Scenario {
-  const robotType = inferRobotType(job);
-  if (isHelperRobot(robotType)) {
-    return buildHelperRobotScenario(robotType, job, scene);
-  }
-
-  const zoneIds = scene.zones.map((z) => z.id);
-  const label = shortLabel(job.title);
-  const preset = PRESET_SCENARIOS[job.id];
-  if (preset) {
-    const validPreset = filterValidSteps(preset, zoneIds);
-    if (validPreset.length >= 2) {
-      return { job_id: job.id, steps: finalizeSteps(validPreset, label) };
-    }
-  }
-
-  const firstZone = scene.zones[0]?.id;
-  const secondZone = scene.zones[1]?.id ?? firstZone;
-
-  const genericSteps: ScenarioStep[] = firstZone
-    ? [
-        { action: "walk_to", target: firstZone },
-        { action: "wave" },
-        {
-          action: "say",
-          text: `Performing ${label}.`,
-        },
-        ...(secondZone
-          ? ([
-              { action: "turn_to", target: secondZone },
-              { action: "point_to", target: secondZone },
-            ] as ScenarioStep[])
-          : []),
-        { action: "wait", seconds: 2 },
-        {
-          action: "say",
-          text: "Task complete. Ready to help.",
-        },
-      ]
-    : [{ action: "wave" }];
-
-  return {
-    job_id: job.id,
-    steps: finalizeSteps(filterValidSteps(genericSteps, zoneIds), label),
-  };
-}
-
-function getDisplayPaybackMonths(job: Job): number | null {
-  if (job.fit === "no" || job.savings_eur_month <= 0) return null;
-  if (typeof job.payback_months === "number" && job.payback_months > 0) {
-    return job.payback_months;
-  }
-  const priceEur = getRobotMeta(inferRobotType(job)).priceEur || ROBOT_PRICE_EUR;
-  return Math.max(1, Math.round(priceEur / job.savings_eur_month));
+function formatEur(n: number): string {
+  const abs = Math.abs(Math.round(n)).toLocaleString("en-US");
+  return n < 0 ? `-€${abs}` : `€${abs}`;
 }
 
 interface JobCardProps {
   job: Job;
   rank: number;
-  inPlan: boolean;
+  viewMode: ViewMode;
+  isTopRecommended: boolean;
   isHiring: boolean;
   isAnyHiring: boolean;
   onHire: (job: Job) => void;
@@ -919,7 +304,8 @@ interface JobCardProps {
 function JobCard({
   job,
   rank,
-  inPlan,
+  viewMode,
+  isTopRecommended,
   isHiring,
   isAnyHiring,
   onHire,
@@ -927,59 +313,87 @@ function JobCard({
   const style = FIT_STYLES[job.fit];
   const isNotSuitable = job.fit === "no";
   const canHire = job.fit === "good" || job.fit === "partial";
-  const paybackMonths = getDisplayPaybackMonths(job);
   const robotType = inferRobotType(job);
-  const robotMeta = getRobotMeta(robotType);
+  const spec = getRobotSpec(robotType);
+  const roleInfo = LATVIA_2026_LABOR_BENCHMARKS[spec.role];
+
+  const clientRaaS = job.client_raas_eur ?? spec.clientRaaSEur;
+  const baseRaaS = job.base_raas_eur ?? spec.baseRaaSEur;
+  const monthlyComm = job.monthly_commission_eur ?? spec.monthlyCommissionEur;
+  const purchasePrice = job.purchase_price_eur ?? spec.purchasePriceEur;
+  const saleComm = job.sale_commission_eur ?? spec.saleCommissionEur;
+  const shifts = job.shifts_count ?? 1;
+  const humanCost =
+    job.human_monthly_cost_eur ?? roleInfo.employerMonthlyEur * shifts;
+  const monthlySavings = job.savings_eur_month;
+  const savingsPct =
+    job.savings_pct ??
+    Math.round(((humanCost - clientRaaS) / Math.max(1, humanCost)) * 1000) / 10;
+
+  const isCheaper = savingsPct > 0;
+  const pctBadgeText = isCheaper
+    ? `+${savingsPct.toFixed(1)}% Cheaper`
+    : `${Math.abs(savingsPct).toFixed(1)}% More Expensive`;
+
+  const deploymentSubtitle = job.title.includes(" — ")
+    ? job.title.split(" — ").slice(1).join(" — ")
+    : job.title;
 
   return (
     <article
-      data-testid={`job-card-${job.id}`}
+      data-testid={`job-card-${spec.id}`}
       data-fit={job.fit}
-      data-robot-type={robotType}
+      data-robot-type={spec.id}
       className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
-        {/* Header: Robot Badge, Rank, Title, In Plan Badge, Fit Badge, Score, and Hire Button */}
+        {/* Card Header: Badges, Robot Name, Score & Hire CTA */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                data-testid={`robot-badge-${job.id}`}
-                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${robotMeta.badgeClass}`}
+                data-testid={`robot-category-${spec.id}`}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${spec.badgeClass}`}
               >
-                {robotMeta.roleBadge}
+                {spec.category}
               </span>
-              {inPlan && !isHelperRobot(robotType) && (
-                <span
-                  data-testid={`in-plan-badge-${job.id}`}
-                  className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300"
-                >
-                  In K1 shift plan
+              <span className="rounded-full border border-slate-300/80 bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                vs {roleInfo.title}
+              </span>
+              {isTopRecommended && !isNotSuitable && (
+                <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-700 dark:text-sky-300">
+                  ★ Top ROI Pick
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2.5">
+
+            <div className="flex flex-wrap items-baseline gap-2.5">
               <span className="font-mono text-xs font-bold text-slate-400 dark:text-slate-500">
                 #{rank}
               </span>
               <h2
-                className={`text-xl font-bold tracking-tight ${
+                className={`text-xl font-extrabold tracking-tight ${
                   isNotSuitable
                     ? "text-slate-600 dark:text-slate-400"
                     : "text-slate-900 dark:text-white"
                 }`}
               >
-                {job.title}
+                {spec.name}
               </h2>
             </div>
+            <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+              {deploymentSubtitle}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
             <span
+              data-testid={`fit-badge-${spec.id}`}
               className={`rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${style.badgeClass}`}
             >
               {style.label}
             </span>
+
             <div className="flex items-baseline gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono dark:border-slate-800 dark:bg-slate-950">
               <span
                 className={`text-base font-extrabold ${
@@ -996,7 +410,7 @@ function JobCard({
             {canHire && (
               <button
                 type="button"
-                data-testid={`hire-job-btn-${job.id}`}
+                data-testid={`hire-job-btn-${spec.id}`}
                 disabled={isAnyHiring}
                 onClick={() => onHire(job)}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
@@ -1013,7 +427,7 @@ function JobCard({
           </div>
         </div>
 
-        {/* Score Bar */}
+        {/* Fit Score Progress Bar */}
         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
           <div
             className={`h-full rounded-full transition-all ${style.scoreBarClass}`}
@@ -1021,8 +435,81 @@ function JobCard({
           />
         </div>
 
-        {/* Why it fits & Limitations */}
-        <div className="grid gap-3 pt-1 sm:grid-cols-2">
+        {/* Real Cost Comparison Banner: Robot RaaS vs Latvia Staff Cost + % Highlight Badge */}
+        <div className="rounded-xl border border-slate-200/90 bg-slate-50/90 p-4 dark:border-slate-800 dark:bg-slate-950/70">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <div>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Robot RaaS:{" "}
+                </span>
+                <strong className="font-mono text-base font-extrabold text-sky-700 dark:text-sky-300">
+                  €{clientRaaS.toLocaleString("en-US")}/mo
+                </strong>
+              </div>
+              <span className="text-xs font-bold text-slate-400">vs</span>
+              <div>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Latvia Staff Cost:{" "}
+                </span>
+                <strong className="font-mono text-base font-extrabold text-slate-900 dark:text-white">
+                  €{humanCost.toLocaleString("en-US")}/mo
+                </strong>{" "}
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  ({shifts} {shifts === 1 ? "shift" : "shifts"}, incl. 23.59%
+                  VSAOI)
+                </span>
+              </div>
+            </div>
+
+            <span
+              data-testid={`savings-pct-badge-${spec.id}`}
+              className={`rounded-full border px-3 py-1 font-mono text-xs font-extrabold ${
+                isCheaper
+                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  : "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300"
+              }`}
+            >
+              {pctBadgeText}
+            </span>
+          </div>
+        </div>
+
+        {/* Broker / Partner View Intermediary Economics Drawer */}
+        {viewMode === "broker" && (
+          <div
+            data-testid={`broker-metrics-${spec.id}`}
+            className="grid gap-2.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3.5 sm:grid-cols-3 dark:border-indigo-400/30 dark:bg-indigo-950/40"
+          >
+            <div>
+              <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
+                Supplier Base RaaS
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-extrabold text-slate-900 dark:text-white">
+                €{baseRaaS.toLocaleString("en-US")}/mo
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
+                RoboHire 15% Monthly Comm.
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
+                +€{monthlyComm.toLocaleString("en-US")}/mo
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
+                Direct Sale 7% Commission
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-extrabold text-indigo-700 dark:text-indigo-200">
+                +€{saleComm.toLocaleString("en-US")} one-time
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Why it fits & Physical / Economic Limitations */}
+        <div className="grid gap-3 pt-0.5 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               Why it fits
@@ -1034,7 +521,7 @@ function JobCard({
 
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Limitations
+              Physical / Economic Limitations
             </div>
             <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
               {job.limits}
@@ -1043,38 +530,41 @@ function JobCard({
         </div>
       </div>
 
-      {/* Metrics Footer: Hours/week, Savings/mo (€), and Payback (months) */}
+      {/* Metrics Footer: Monthly Savings, Purchase Price, Min Aisle / Specs */}
       <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Hours / week
-          </dt>
-          <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-            {job.hours_per_week} hrs/wk
-          </dd>
-        </div>
-
-        <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
-          <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Savings / mo
+            Monthly Savings
           </dt>
           <dd
             className={`mt-0.5 font-mono text-base font-bold ${
-              job.savings_eur_month > 0
+              monthlySavings > 0
                 ? "text-emerald-700 dark:text-emerald-400"
-                : "text-slate-500 dark:text-slate-500"
+                : "text-rose-600 dark:text-rose-400"
             }`}
           >
-            €{job.savings_eur_month}/mo
+            {monthlySavings > 0
+              ? `+€${monthlySavings.toLocaleString("en-US")}/mo`
+              : `${formatEur(monthlySavings)}/mo`}
           </dd>
         </div>
 
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Payback
+            Purchase Price
           </dt>
           <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-            {paybackMonths !== null ? `${paybackMonths} mo` : "—"}
+            €{purchasePrice.toLocaleString("en-US")}
+          </dd>
+        </div>
+
+        <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
+          <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+            Min Aisle / Buy Payback
+          </dt>
+          <dd className="mt-0.5 font-mono text-sm font-bold text-slate-900 dark:text-slate-100">
+            {spec.minAisleCm} cm ·{" "}
+            {job.payback_months !== null ? `${job.payback_months} mo` : "RaaS N/A"}
           </dd>
         </div>
       </dl>
@@ -1085,57 +575,143 @@ function JobCard({
 export default function JobsPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const {
-    jobsData,
-    plan,
-    scene,
-    hasCustomUpload,
-    activePresetId,
-    savedCustomAnalysis,
-  } = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     subscribeJobsStorage,
-    getJobsAndPlanClientSnapshot,
-    getJobsAndPlanServerSnapshot,
+    getClientSnapshot,
+    getServerSnapshot,
   );
-  const [hiringTargetTitle, setHiringTargetTitle] = useState<string | null>(
-    null,
-  );
+
+  const [viewMode, setViewMode] = useState<ViewMode>("client");
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryFilterId>("all");
+  const shiftScopeKey = `${pathname}|${snapshot.businessType}|${snapshot.hoursPerWeek}|${snapshot.storedShiftsOverride ?? "auto"}`;
+  const [localShiftState, setLocalShiftState] = useState<{
+    scopeKey: string;
+    shift: 1 | 2 | 3;
+  } | null>(null);
   const [hiringJobId, setHiringJobId] = useState<string | null>(null);
-  const [selectedRobotFilter, setSelectedRobotFilter] = useState<
-    "all" | RobotType
-  >("all");
   const isHiringRef = useRef(false);
 
+  const localShiftOverride =
+    localShiftState && localShiftState.scopeKey === shiftScopeKey
+      ? localShiftState.shift
+      : null;
+
+  const autoShifts = shiftsFromHours(snapshot.hoursPerWeek);
+  const activeShifts: 1 | 2 | 3 =
+    localShiftOverride ?? snapshot.storedShiftsOverride ?? autoShifts;
+
+  const effectiveHoursForEval = useMemo(() => {
+    if (localShiftOverride === 1) return Math.min(snapshot.hoursPerWeek, 56);
+    if (localShiftOverride === 2)
+      return snapshot.hoursPerWeek >= 61 && snapshot.hoursPerWeek <= 119
+        ? snapshot.hoursPerWeek
+        : 96;
+    if (localShiftOverride === 3) return Math.max(snapshot.hoursPerWeek, 168);
+    return snapshot.hoursPerWeek;
+  }, [localShiftOverride, snapshot.hoursPerWeek]);
+
+  const evaluatedJobs = useMemo(
+    () =>
+      evaluateCatalogForSpace({
+        scene: snapshot.scene,
+        businessType: snapshot.businessType,
+        hoursPerWeek: effectiveHoursForEval,
+        hourlyCost: snapshot.hourlyCost,
+        shiftsOverride: activeShifts,
+        baselineHourlyCost: snapshot.baselineHourlyCost,
+      }),
+    [
+      snapshot.scene,
+      snapshot.businessType,
+      effectiveHoursForEval,
+      snapshot.hourlyCost,
+      activeShifts,
+      snapshot.baselineHourlyCost,
+    ],
+  );
+
+  const computedPlan = useMemo(
+    () =>
+      buildPlan(evaluatedJobs, snapshot.hourlyCost, effectiveHoursForEval),
+    [evaluatedJobs, snapshot.hourlyCost, effectiveHoursForEval],
+  );
+
+  // Keep sessionStorage robohire:jobs & robohire:plan synced with live shift toggles
   useEffect(() => {
     try {
-      const currentIds = new Set(jobsData.jobs.map((j) => j.id));
-      const rawJob = window.sessionStorage.getItem("robohire:job");
-      if (rawJob) {
-        const parsed = JSON.parse(rawJob) as unknown;
-        if (!isJob(parsed) || !currentIds.has(parsed.id)) {
-          clearHandoffStorage();
-        }
-      }
-      if (hasCustomUpload) {
-        // Fresh real analysis is active — discard any older saved backup
+      const jobsPayload: JobsResult = {
+        business_type: snapshot.businessType,
+        jobs: evaluatedJobs,
+      };
+      window.sessionStorage.setItem(
+        JOBS_STORAGE_KEY,
+        JSON.stringify(jobsPayload),
+      );
+      window.sessionStorage.setItem(
+        PLAN_STORAGE_KEY,
+        JSON.stringify(computedPlan),
+      );
+      if (snapshot.hasCustomUpload) {
         window.sessionStorage.removeItem(SAVED_CUSTOM_ANALYSIS_KEY);
       }
     } catch {
-      // Ignore storage errors
+      // Ignore storage quota errors
     }
-    window.dispatchEvent(new Event("robohire:storage"));
-  }, [pathname, jobsData.jobs, hasCustomUpload]);
+  }, [
+    snapshot.businessType,
+    snapshot.hasCustomUpload,
+    evaluatedJobs,
+    computedPlan,
+  ]);
 
-  function handleSelectPreset(preset: SpacePreset) {
-    if (hiringTargetTitle !== null) return;
-    setSelectedRobotFilter("all");
+  const categoryCounts = useMemo(() => {
+    const map: Record<CategoryFilterId, number> = {
+      all: evaluatedJobs.length,
+      "HoReCa Delivery": 0,
+      "Greeting & Retail": 0,
+      "Hotel & Office Delivery": 0,
+      "Commercial Cleaning": 0,
+      "Industrial Cleaning": 0,
+      "Warehouse & Factory AMR": 0,
+      "General Service & Reception": 0,
+    };
+    for (const j of evaluatedJobs) {
+      const spec = getRobotSpec(inferRobotType(j));
+      map[spec.category] += 1;
+    }
+    return map;
+  }, [evaluatedJobs]);
+
+  const filteredJobs = useMemo(() => {
+    if (selectedCategory === "all") return evaluatedJobs;
+    return evaluatedJobs.filter(
+      (j) => getRobotSpec(inferRobotType(j)).category === selectedCategory,
+    );
+  }, [evaluatedJobs, selectedCategory]);
+
+  const topRecommendedJob = useMemo(
+    () =>
+      evaluatedJobs.find((j) => j.fit !== "no" && j.savings_eur_month > 0) ??
+      null,
+    [evaluatedJobs],
+  );
+
+  const topSpec = topRecommendedJob
+    ? getRobotSpec(inferRobotType(topRecommendedJob))
+    : null;
+
+  function handleSelectPreset(preset: BusinessPreset) {
+    if (hiringJobId !== null) return;
+    setSelectedCategory("all");
+    setLocalShiftState(null);
+
     try {
-      // Preserve the user's real analysis before switching to a demo preset
-      if (hasCustomUpload) {
+      if (snapshot.hasCustomUpload) {
         const rawJobs = window.sessionStorage.getItem(JOBS_STORAGE_KEY);
         if (rawJobs) {
           const backup: SavedCustomAnalysis = {
-            businessType: jobsData.business_type,
+            businessType: snapshot.businessType,
             rawAnalysis: window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY),
             rawJobs,
             rawPlan: window.sessionStorage.getItem(PLAN_STORAGE_KEY),
@@ -1149,32 +725,53 @@ export default function JobsPage() {
       }
 
       clearHandoffStorage();
-      window.sessionStorage.setItem(
-        JOBS_STORAGE_KEY,
-        JSON.stringify(preset.jobsData),
+      const { tasks, ratings } = tasksFromZones(
+        preset.demoScene,
+        [],
+        preset.defaultHoursPerWeek,
+        preset.label,
+        preset.family,
       );
-      window.sessionStorage.setItem(
-        PLAN_STORAGE_KEY,
-        JSON.stringify(preset.plan),
+      const nextJobs = evaluateCatalogForSpace({
+        scene: preset.demoScene,
+        businessType: preset.label,
+        hoursPerWeek: preset.defaultHoursPerWeek,
+        hourlyCost: preset.defaultHourlyCost,
+        baselineHourlyCost: preset.defaultHourlyCost,
+      });
+      const jobsResult: JobsResult = {
+        business_type: preset.label,
+        jobs: nextJobs,
+      };
+      const nextPlan: RobotPlan = buildPlan(
+        nextJobs,
+        preset.defaultHourlyCost,
+        preset.defaultHoursPerWeek,
       );
+      const analysisPayload: StoredAnalysis = {
+        scene: preset.demoScene,
+        tasks,
+        ratings,
+        family: preset.family,
+        businessType: preset.label,
+        hoursPerWeek: preset.defaultHoursPerWeek,
+        hourlyCost: preset.defaultHourlyCost,
+        baselineHourlyCost: preset.defaultHourlyCost,
+        shiftsOverride: null,
+      };
+
       window.sessionStorage.setItem(
         ANALYSIS_STORAGE_KEY,
-        JSON.stringify({
-          scene: preset.scene,
-          tasks: buildPresetTasks(preset),
-          businessType: preset.jobsData.business_type,
-          hoursPerWeek: 60,
-          hourlyCost: DEFAULT_HOURLY_COST,
-        }),
+        JSON.stringify(analysisPayload),
       );
       window.sessionStorage.setItem(
-        "robohire:scene",
-        JSON.stringify(preset.scene),
+        JOBS_STORAGE_KEY,
+        JSON.stringify(jobsResult),
       );
-      window.localStorage.setItem(
-        "robohire:scene",
-        JSON.stringify(preset.scene),
-      );
+      window.sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(nextPlan));
+      const sceneJson = JSON.stringify(preset.demoScene);
+      window.sessionStorage.setItem("robohire:scene", sceneJson);
+      window.localStorage.setItem("robohire:scene", sceneJson);
       window.dispatchEvent(new Event("robohire:storage"));
     } catch {
       // Ignore storage errors
@@ -1182,34 +779,21 @@ export default function JobsPage() {
   }
 
   function handleRestoreCustomAnalysis() {
-    if (hiringTargetTitle !== null || !savedCustomAnalysis) return;
+    if (hiringJobId !== null || !snapshot.savedCustomAnalysis) return;
+    setLocalShiftState(null);
     try {
+      const saved = snapshot.savedCustomAnalysis;
       clearHandoffStorage();
-      window.sessionStorage.setItem(
-        JOBS_STORAGE_KEY,
-        savedCustomAnalysis.rawJobs,
-      );
-      if (savedCustomAnalysis.rawPlan) {
-        window.sessionStorage.setItem(
-          PLAN_STORAGE_KEY,
-          savedCustomAnalysis.rawPlan,
-        );
-      } else {
-        window.sessionStorage.removeItem(PLAN_STORAGE_KEY);
+      window.sessionStorage.setItem(JOBS_STORAGE_KEY, saved.rawJobs);
+      if (saved.rawPlan) {
+        window.sessionStorage.setItem(PLAN_STORAGE_KEY, saved.rawPlan);
       }
-      if (savedCustomAnalysis.rawAnalysis) {
-        window.sessionStorage.setItem(
-          ANALYSIS_STORAGE_KEY,
-          savedCustomAnalysis.rawAnalysis,
-        );
-      } else {
-        window.sessionStorage.removeItem(ANALYSIS_STORAGE_KEY);
+      if (saved.rawAnalysis) {
+        window.sessionStorage.setItem(ANALYSIS_STORAGE_KEY, saved.rawAnalysis);
       }
-      if (savedCustomAnalysis.rawScene) {
-        window.sessionStorage.setItem(
-          "robohire:scene",
-          savedCustomAnalysis.rawScene,
-        );
+      if (saved.rawScene) {
+        window.sessionStorage.setItem("robohire:scene", saved.rawScene);
+        window.localStorage.setItem("robohire:scene", saved.rawScene);
       }
       window.sessionStorage.removeItem(SAVED_CUSTOM_ANALYSIS_KEY);
       window.dispatchEvent(new Event("robohire:storage"));
@@ -1218,72 +802,22 @@ export default function JobsPage() {
     }
   }
 
-  const enrichedJobs = useMemo(
-    () =>
-      ensureHelperJobs(
-        jobsData.jobs,
-        scene,
-        jobsData.business_type,
-        DEFAULT_HOURLY_COST,
-      ),
-    [jobsData.jobs, scene, jobsData.business_type],
-  );
-
-  const sortedJobs = useMemo(
-    () => [...enrichedJobs].sort((a, b) => b.score - a.score),
-    [enrichedJobs],
-  );
-
-  const primaryK1Jobs = useMemo(
-    () => sortedJobs.filter((j) => inferRobotType(j) === "k1"),
-    [sortedJobs],
-  );
-
-  const helperRobotJobs = useMemo(
-    () => sortedJobs.filter((j) => isHelperRobot(inferRobotType(j))),
-    [sortedJobs],
-  );
-
-  const filterCounts = useMemo(() => {
-    const counts: Record<"all" | RobotType, number> = {
-      all: sortedJobs.length,
-      k1: 0,
-      vacuum: 0,
-      window_cleaner: 0,
-      tray_delivery: 0,
-      uvc_disinfection: 0,
-      shelf_scanner: 0,
-      air_purifier: 0,
-      security_rover: 0,
-    };
-    for (const j of sortedJobs) {
-      counts[inferRobotType(j)] += 1;
+  function handleShiftChange(nextShift: 1 | 2 | 3) {
+    setLocalShiftState({ scopeKey: shiftScopeKey, shift: nextShift });
+    try {
+      const raw = window.sessionStorage.getItem(ANALYSIS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as StoredAnalysis;
+        parsed.shiftsOverride = nextShift;
+        window.sessionStorage.setItem(
+          ANALYSIS_STORAGE_KEY,
+          JSON.stringify(parsed),
+        );
+      }
+    } catch {
+      // Ignore storage errors
     }
-    return counts;
-  }, [sortedJobs]);
-
-  const filteredJobs = useMemo(() => {
-    if (selectedRobotFilter === "all") return sortedJobs;
-    return sortedJobs.filter((j) => inferRobotType(j) === selectedRobotFilter);
-  }, [sortedJobs, selectedRobotFilter]);
-
-  const planIdSet = useMemo(() => new Set(plan.job_ids), [plan.job_ids]);
-
-  const includedJobs = useMemo(
-    () =>
-      plan.job_ids
-        .map((id) => primaryK1Jobs.find((j) => j.id === id))
-        .filter((j): j is Job => j !== undefined),
-    [plan.job_ids, primaryK1Jobs],
-  );
-
-  const primaryHireJob = useMemo(
-    () =>
-      includedJobs[0] ??
-      primaryK1Jobs.find((j) => j.fit === "good" || j.fit === "partial") ??
-      null,
-    [includedJobs, primaryK1Jobs],
-  );
+  }
 
   function persistHandoff(
     targetScene: Scene,
@@ -1291,15 +825,15 @@ export default function JobsPage() {
     targetJob: Job,
   ) {
     try {
-      const enrichedJobsResult: JobsResult = {
-        business_type: jobsData.business_type,
-        jobs: enrichedJobs,
+      const jobsResult: JobsResult = {
+        business_type: snapshot.businessType,
+        jobs: evaluatedJobs,
       };
       const sceneJson = JSON.stringify(targetScene);
       const scenarioJson = JSON.stringify(targetScenario);
       const jobJson = JSON.stringify(targetJob);
-      const planJson = JSON.stringify(plan);
-      const jobsJson = JSON.stringify(enrichedJobsResult);
+      const planJson = JSON.stringify(computedPlan);
+      const jobsJson = JSON.stringify(jobsResult);
 
       window.sessionStorage.setItem("robohire:scene", sceneJson);
       window.sessionStorage.setItem("robohire:scenario", scenarioJson);
@@ -1313,201 +847,250 @@ export default function JobsPage() {
 
       window.dispatchEvent(new Event("robohire:storage"));
     } catch {
-      // Ignore storage quota errors
+      // Ignore storage errors
     }
   }
 
   async function handleHireJob(job: Job) {
-    if (isHiringRef.current || hiringTargetTitle !== null) return;
+    if (isHiringRef.current || hiringJobId !== null) return;
     isHiringRef.current = true;
-    setHiringTargetTitle(job.title);
     setHiringJobId(job.id);
 
     try {
       clearHandoffStorage();
+      const robotType = inferRobotType(job);
       let scenario: Scenario | null = null;
 
       try {
-        const { scenario: candidate } = await getOrCreateScenario(job, scene, {
-          businessType: jobsData.business_type,
-          timeoutMs: SCENARIO_TIMEOUT_MS,
-        });
+        const { scenario: candidate } = await getOrCreateScenario(
+          job,
+          snapshot.scene,
+          {
+            businessType: snapshot.businessType,
+            timeoutMs: SCENARIO_TIMEOUT_MS,
+          },
+        );
         const validSteps = filterValidSteps(
           candidate.steps,
-          scene.zones.map((z) => z.id),
+          snapshot.scene.zones.map((z) => z.id),
         );
         if (validSteps.length > 0) {
           scenario = { job_id: candidate.job_id, steps: validSteps };
         }
       } catch {
-        // Gracefully fall back to matching preset scenario below
+        // Fallback to archetype scenario builder
       }
 
       if (!scenario) {
-        scenario = buildFallbackScenario(job, scene);
+        scenario = buildRobotScenario(robotType, job, snapshot.scene);
       }
 
-      persistHandoff(scene, scenario, job);
+      persistHandoff(snapshot.scene, scenario, job);
       router.push("/robot");
     } finally {
       isHiringRef.current = false;
-      setHiringTargetTitle(null);
       setHiringJobId(null);
     }
   }
 
-  async function handleHireShift() {
-    if (isHiringRef.current || hiringTargetTitle !== null || !primaryHireJob) return;
-    isHiringRef.current = true;
-    setHiringTargetTitle(
-      includedJobs.map((j) => j.title).join(" + ") || primaryHireJob.title,
-    );
-    setHiringJobId("shift");
-
-    try {
-      clearHandoffStorage();
-      let scenario: Scenario | null = null;
-
-      try {
-        const { scenario: shiftCandidate } = await getOrCreateShift(
-          plan,
-          jobsData.jobs,
-          scene,
-          {
-            businessType: jobsData.business_type,
-            timeoutMs: SHIFT_TIMEOUT_MS,
-          },
-        );
-        const validSteps = filterValidSteps(
-          shiftCandidate.steps,
-          scene.zones.map((z) => z.id),
-        );
-        if (validSteps.length > 0) {
-          scenario = { job_id: shiftCandidate.job_id, steps: validSteps };
-        }
-      } catch {
-        // If shift endpoint fails, fall back to first plan job's scenario
-        try {
-          const { scenario: jobCandidate } = await getOrCreateScenario(
-            primaryHireJob,
-            scene,
-            {
-              businessType: jobsData.business_type,
-              timeoutMs: SCENARIO_TIMEOUT_MS,
-            },
-          );
-          const validSteps = filterValidSteps(
-            jobCandidate.steps,
-            scene.zones.map((z) => z.id),
-          );
-          if (validSteps.length > 0) {
-            scenario = { job_id: jobCandidate.job_id, steps: validSteps };
-          }
-        } catch {
-          // Fall through to buildFallbackScenario
-        }
-      }
-
-      if (!scenario) {
-        scenario = buildFallbackScenario(primaryHireJob, scene);
-      }
-
-      persistHandoff(scene, scenario, primaryHireJob);
-      router.push("/robot");
-    } finally {
-      isHiringRef.current = false;
-      setHiringTargetTitle(null);
-      setHiringJobId(null);
-    }
-  }
-
-  const capacityPercent =
-    plan.capacity_hours_per_week > 0
-      ? Math.min(
-          100,
-          Math.round((plan.hours_per_week / plan.capacity_hours_per_week) * 100),
-        )
-      : 0;
+  const suitableCount = evaluatedJobs.filter((j) => j.fit === "good").length;
+  const partialCount = evaluatedJobs.filter((j) => j.fit === "partial").length;
+  const notSuitableCount = evaluatedJobs.filter((j) => j.fit === "no").length;
 
   return (
     <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
-          <div>
+      <div className="mx-auto max-w-5xl space-y-6">
+        {/* Page Header + Client View vs Broker / Partner View Toggle */}
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
+          <div className="max-w-2xl">
             <span className="inline-block rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
-              Step 2 of 3 • {jobsData.business_type}
+              Step 2 of 3 • {snapshot.businessType}
             </span>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Matched Booster K1 Robot Jobs
+              15-Robot Commercial Catalog &amp; RaaS ROI
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Switch between business space presets or review your uploaded
-              space, ranked by Booster K1 capability fit score (0–100), monthly
-              savings, and payback period.
+              Every robot&apos;s monthly RaaS rental compared directly against
+              verified 2026 Latvia full employer labor costs (gross wage +
+              23.59% employer VSAOI social tax).
             </p>
+          </div>
+
+          {/* Client View vs Broker / Partner View Segmented Toggle */}
+          <div className="flex flex-col items-end gap-2">
+            <div
+              role="group"
+              aria-label="Pricing View Mode"
+              className="inline-flex rounded-xl border border-slate-300 bg-slate-100 p-1 shadow-2xs dark:border-slate-700 dark:bg-slate-900"
+            >
+              <button
+                type="button"
+                data-testid="view-mode-client"
+                onClick={() => setViewMode("client")}
+                className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+                  viewMode === "client"
+                    ? "bg-sky-600 text-white shadow-xs"
+                    : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                }`}
+              >
+                Client View
+              </button>
+              <button
+                type="button"
+                data-testid="view-mode-broker"
+                onClick={() => setViewMode("broker")}
+                className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+                  viewMode === "broker"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                }`}
+              >
+                Broker / Partner View
+              </button>
+            </div>
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              {viewMode === "broker"
+                ? "Showing +15% RaaS margin & 7% direct-sale commission"
+                : "Showing end-customer RaaS & Latvia payroll savings"}
+            </span>
           </div>
         </div>
 
-        {/* Space Preset Selector Tabs / Pills */}
+        {/* Broker / Partner View Summary Banner */}
+        {viewMode === "broker" && (
+          <section
+            data-testid="broker-summary-banner"
+            className="rounded-2xl border-2 border-indigo-500/50 bg-indigo-500/10 p-5 shadow-sm dark:border-indigo-400/40 dark:bg-indigo-950/35"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-3 py-0.5 text-xs font-bold text-indigo-800 dark:text-indigo-200">
+                  RoboHire B2B Intermediary / RaaS Brokerage Model
+                </div>
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  +15% Recurring Monthly RaaS Margin • 7% Direct Sale Commission
+                </h2>
+                <p className="text-xs text-slate-700 dark:text-slate-300">
+                  Catalog converted at <code>1 EUR = 1.09644 USD</code>. Client
+                  RaaS = Supplier Base RaaS × 1.15. Each card below exposes our
+                  exact monthly recurring fee and 7% hardware sale fee.
+                </p>
+              </div>
+
+              {topSpec && topRecommendedJob && (
+                <div className="flex flex-wrap gap-3">
+                  <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
+                    <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Top Deal ({topSpec.shortName}) RaaS Fee
+                    </div>
+                    <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
+                      +€{topSpec.monthlyCommissionEur}/mo recurring
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
+                    <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Or 7% Direct Sale Fee
+                    </div>
+                    <div className="font-mono text-base font-extrabold text-indigo-700 dark:text-indigo-300">
+                      +€{topSpec.saleCommissionEur.toLocaleString("en-US")} once
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Space / Business Preset Switcher + Operating Shifts Bar */}
         <section
           aria-label="Business Space Presets"
           data-testid="space-preset-tabs"
-          className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
+          className="space-y-3.5 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
         >
-          {hasCustomUpload && (
+          {snapshot.hasCustomUpload && (
             <div
               data-testid="custom-analysis-banner"
-              className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-200"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-200"
             >
               <span className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
                 Showing your analyzed space:{" "}
-                <strong className="font-bold">{jobsData.business_type}</strong>
+                <strong className="font-bold">{snapshot.businessType}</strong>
               </span>
               <span className="font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
-                {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
-                zones
+                {snapshot.scene.room.width}m × {snapshot.scene.room.depth}m •{" "}
+                {snapshot.scene.zones.length} zones
               </span>
             </div>
           )}
 
-          {!hasCustomUpload && savedCustomAnalysis && (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3.5 py-2 text-xs text-sky-900 dark:text-sky-200">
+          {!snapshot.hasCustomUpload && snapshot.savedCustomAnalysis && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3.5 py-2 text-xs text-sky-900 dark:text-sky-200">
               <span className="font-medium">
-                Previewing demo preset. Your real analysis is saved.
+                Previewing preset benchmark. Your video analysis is saved.
               </span>
               <button
                 type="button"
                 data-testid="back-to-my-analysis-btn"
-                disabled={hiringTargetTitle !== null}
+                disabled={hiringJobId !== null}
                 onClick={handleRestoreCustomAnalysis}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-500/50 bg-sky-600 px-3 py-1 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95 disabled:opacity-50"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-sky-500/50 bg-sky-600 px-3 py-1 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500"
               >
-                ← Back to my analysis ({savedCustomAnalysis.businessType})
+                ← Back to my analysis (
+                {snapshot.savedCustomAnalysis.businessType})
               </button>
             </div>
           )}
 
-          <div className="mb-2 flex items-center justify-between px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              {hasCustomUpload || savedCustomAnalysis
-                ? "Try other demo spaces"
-                : "Select Business Space Preset"}
-            </span>
-            {!hasCustomUpload && (
-              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                {scene.room.width}m × {scene.room.depth}m • {scene.zones.length}{" "}
-                zones
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                SMB, Mid-Market &amp; Enterprise Venue Presets
               </span>
-            )}
+              <span className="ml-2 font-mono text-xs text-slate-500 dark:text-slate-400">
+                ({snapshot.scene.room.width}m × {snapshot.scene.room.depth}m •{" "}
+                {snapshot.scene.zones.length} zones)
+              </span>
+            </div>
+
+            {/* Live Multi-Shift Toggle (1, 2, or 3 Shifts) */}
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Operating Shifts"
+            >
+              <span className="mr-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+                Operating Shifts:
+              </span>
+              {([1, 2, 3] as const).map((sh) => {
+                const active = activeShifts === sh;
+                return (
+                  <button
+                    key={sh}
+                    type="button"
+                    data-testid={`jobs-shift-${sh}`}
+                    onClick={() => handleShiftChange(sh)}
+                    className={`cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
+                      active
+                        ? "border-sky-500 bg-sky-600 text-white shadow-2xs"
+                        : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    {sh === 3 ? "3 Shifts (24/7)" : `${sh} Shift${sh > 1 ? "s" : ""}`}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
           <div
             role="tablist"
-            className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
           >
-            {SPACE_PRESET_LIST.map((preset) => {
-              const isSelected = !hasCustomUpload && activePresetId === preset.id;
+            {BUSINESS_PRESETS.map((preset) => {
+              const isSelected =
+                !snapshot.hasCustomUpload &&
+                snapshot.activePresetId === preset.id;
               return (
                 <button
                   key={preset.id}
@@ -1515,17 +1098,20 @@ export default function JobsPage() {
                   role="tab"
                   aria-selected={isSelected}
                   data-testid={`space-preset-${preset.id}`}
-                  disabled={hiringTargetTitle !== null}
+                  disabled={hiringJobId !== null}
                   onClick={() => handleSelectPreset(preset)}
-                  className={`flex cursor-pointer flex-col items-start rounded-xl border px-3.5 py-2.5 text-left transition active:scale-[0.98] disabled:cursor-wait ${
+                  className={`flex cursor-pointer flex-col items-start rounded-xl border px-3 py-2 text-left transition active:scale-[0.98] disabled:cursor-wait ${
                     isSelected
                       ? "border-sky-500 bg-sky-500/10 text-sky-900 shadow-2xs ring-1 ring-sky-500/40 dark:border-sky-400 dark:bg-sky-500/15 dark:text-white"
                       : "border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/70"
                   }`}
                 >
-                  <span className="text-sm font-bold">{preset.label}</span>
-                  <span className="mt-0.5 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    {preset.tagline}
+                  <span className="line-clamp-1 text-xs font-bold">
+                    {preset.shortLabel}
+                  </span>
+                  <span className="mt-0.5 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                    {preset.defaultShifts}sh · €
+                    {preset.defaultHourlyCost.toFixed(2)}/h
                   </span>
                 </button>
               );
@@ -1533,326 +1119,117 @@ export default function JobsPage() {
           </div>
         </section>
 
-        {/* Recommended: hire 1 Booster K1 Shift Plan Panel */}
-        <section
-          data-testid="robot-plan-panel"
-          className="rounded-2xl border-2 border-sky-500/50 bg-white p-6 shadow-md transition-colors dark:border-sky-500/40 dark:bg-slate-900"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300">
-                <span>Robot Shift Plan</span>
-              </div>
-              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                Recommended: hire 1 Booster K1
-              </h2>
-              {includedJobs.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    Included jobs:
+        {/* Top Recommended Robot Summary Panel */}
+        {topRecommendedJob && topSpec && (
+          <section
+            data-testid="robot-plan-panel"
+            className="rounded-2xl border-2 border-sky-500/50 bg-white p-5 shadow-md transition-colors dark:border-sky-500/40 dark:bg-slate-900"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300">
+                    Best Match for {snapshot.businessType}
                   </span>
-                  {includedJobs.map((j) => (
-                    <span
-                      key={j.id}
-                      className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-200"
-                    >
-                      {j.title}
-                    </span>
-                  ))}
+                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                    {suitableCount} Suitable · {partialCount} Partial ·{" "}
+                    {notSuitableCount} Not Suitable
+                  </span>
                 </div>
-              ) : (
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  No tasks currently meet the minimum gross savings threshold
-                  for a shift plan.
+                <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                  Recommended: {topSpec.name} — €{topSpec.clientRaaSEur}/mo RaaS
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Saves{" "}
+                  <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                    +€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
+                    /mo
+                  </strong>{" "}
+                  ({topRecommendedJob.savings_pct?.toFixed(1)}% cheaper) vs €
+                  {topRecommendedJob.human_monthly_cost_eur?.toLocaleString(
+                    "en-US",
+                  )}
+                  /mo Latvia employer cost on {activeShifts}{" "}
+                  {activeShifts === 1 ? "shift" : "shifts"}.
                 </p>
-              )}
-            </div>
+              </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Link
-                href="/report"
-                data-testid="download-report-btn"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                <span>Download report</span>
-              </Link>
-              {primaryHireJob && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Link
+                  href="/report"
+                  data-testid="download-report-btn"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  Business report
+                </Link>
                 <button
                   type="button"
                   data-testid="hire-plan-btn"
-                  disabled={hiringTargetTitle !== null}
-                  onClick={handleHireShift}
+                  disabled={hiringJobId !== null}
+                  onClick={() => void handleHireJob(topRecommendedJob)}
                   className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {hiringJobId === "shift" && (
+                  {hiringJobId === topRecommendedJob.id && (
                     <span
                       aria-hidden="true"
                       className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
                     />
                   )}
                   <span>
-                    {hiringJobId === "shift" ? "Hiring…" : "Hire this K1"}
+                    {hiringJobId === topRecommendedJob.id
+                      ? "Hiring…"
+                      : `Hire ${topSpec.shortName} in 3D →`}
                   </span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Shift Plan Economics Grid */}
-          <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5">
-              <dt className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
-                Net savings
-              </dt>
-              <dd className="mt-0.5 font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
-                €{plan.net_savings_eur_month}/mo
-              </dd>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-              <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                Payback
-              </dt>
-              <dd className="mt-0.5 font-mono text-lg font-extrabold text-slate-900 dark:text-white">
-                {plan.payback_months !== null
-                  ? `${plan.payback_months} mo`
-                  : "—"}
-              </dd>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-              <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                Robot price
-              </dt>
-              <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-                €{plan.robot_price_eur}
-              </dd>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-              <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                Running cost
-              </dt>
-              <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
-                €{plan.running_cost_eur_month}/mo
-              </dd>
-            </div>
-          </dl>
-
-          {/* Robot Hours Used vs Capacity Bar */}
-          <div className="mt-4 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                Robot hours used vs weekly capacity
-              </span>
-              <span className="font-mono font-bold text-slate-900 dark:text-white">
-                {plan.hours_per_week} / {plan.capacity_hours_per_week} hrs/wk (
-                {capacityPercent}%)
-              </span>
-            </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-              <div
-                className="h-full rounded-full bg-sky-500 transition-all"
-                style={{ width: `${capacityPercent}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Collapsible Assumptions */}
-          {plan.assumptions.length > 0 && (
-            <details className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
-              <summary className="cursor-pointer font-semibold text-slate-800 dark:text-slate-200">
-                Assumptions ({plan.assumptions.length})
-              </summary>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {plan.assumptions.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </section>
-
-        {/* Hiring Transition Loading Banner */}
-        {hiringTargetTitle && (
-          <div
-            role="status"
-            data-testid="hiring-loading-banner"
-            className="flex items-center gap-3 rounded-2xl border border-sky-500/50 bg-sky-500/10 px-5 py-3.5 text-sm font-semibold text-sky-800 shadow-sm dark:text-sky-200"
-          >
-            <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
-            <span>
-              Preparing 3D workspace &amp; robot simulation for{" "}
-              <strong className="font-bold">{hiringTargetTitle}</strong>…
-            </span>
-          </div>
-        )}
-
-        {/* Robot Platform Filter Bar */}
-        <section
-          aria-label="Filter by Robot Type"
-          data-testid="robot-filter-bar"
-          className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs transition-colors dark:border-slate-800 dark:bg-slate-900"
-        >
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Filter by Robot Platform
-            </span>
-            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-              {primaryK1Jobs.length} Primary K1 • {helperRobotJobs.length}{" "}
-              Optional Helper{helperRobotJobs.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {ROBOT_FILTER_ORDER.map((filterId) => {
-              const isSelected = selectedRobotFilter === filterId;
-              const count = filterCounts[filterId];
-              const label =
-                filterId === "all"
-                  ? "All Robots"
-                  : ROBOT_CATALOG[filterId].filterLabel;
-              return (
-                <button
-                  key={filterId}
-                  type="button"
-                  data-testid={`robot-filter-${filterId}`}
-                  aria-pressed={isSelected}
-                  onClick={() => setSelectedRobotFilter(filterId)}
-                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition active:scale-[0.98] ${
-                    isSelected
-                      ? "border-sky-500 bg-sky-600 text-white shadow-2xs dark:border-sky-400 dark:bg-sky-500"
-                      : count === 0
-                        ? "border-slate-200/80 bg-slate-50/60 text-slate-400 hover:border-slate-300 hover:text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-500 dark:hover:text-slate-300"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <span>{label}</span>
-                  <span
-                    className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
-                      isSelected
-                        ? "bg-white/20 text-white"
-                        : "bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Sorted Job Cards List */}
-        {selectedRobotFilter === "all" ? (
-          <div className="space-y-8">
-            {/* Primary Robot: Booster K1 */}
-            <section
-              className="space-y-4"
-              aria-label="Primary Robot: Booster K1 Jobs"
-              data-testid="primary-k1-section"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
-                <div>
-                  <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                    Primary Robot: Booster K1
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Featured smart humanoid assistant for greeting, wayfinding,
-                    announcements, and guest guidance.
-                  </p>
-                </div>
-                <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2.5 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
-                  {primaryK1Jobs.length} roles
-                </span>
-              </div>
-              {primaryK1Jobs.map((job, idx) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  rank={idx + 1}
-                  inPlan={planIdSet.has(job.id)}
-                  isHiring={hiringJobId === job.id}
-                  isAnyHiring={hiringTargetTitle !== null}
-                  onHire={handleHireJob}
-                />
-              ))}
-            </section>
-
-            {/* Optional Add-On Helper Robots */}
-            {helperRobotJobs.length > 0 && (
-              <section
-                className="space-y-4"
-                aria-label="Optional Add-On Helper Robots"
-                data-testid="optional-helpers-section"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
-                  <div>
-                    <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                      Optional Add-On Helper Robots
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Specialized single-purpose robots recommended alongside
-                      Booster K1 when matched to this space, with honest
-                      hardware limits.
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-teal-500/40 bg-teal-500/10 px-2.5 py-0.5 font-mono text-xs font-semibold text-teal-700 dark:text-teal-300">
-                    {helperRobotJobs.length} recommended
-                  </span>
-                </div>
-                {helperRobotJobs.map((job, idx) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    rank={idx + 1}
-                    inPlan={false}
-                    isHiring={hiringJobId === job.id}
-                    isAnyHiring={hiringTargetTitle !== null}
-                    onHire={handleHireJob}
-                  />
-                ))}
-              </section>
-            )}
-          </div>
-        ) : (
-          <section className="space-y-4" aria-label="Filtered Robot Jobs">
-            {filteredJobs.length > 0 ? (
-              filteredJobs.map((job, idx) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  rank={idx + 1}
-                  inPlan={planIdSet.has(job.id)}
-                  isHiring={hiringJobId === job.id}
-                  isAnyHiring={hiringTargetTitle !== null}
-                  onHire={handleHireJob}
-                />
-              ))
-            ) : (
-              <div
-                data-testid="empty-filter-state"
-                className="rounded-2xl border border-dashed border-slate-300 bg-white/80 p-8 text-center dark:border-slate-700 dark:bg-slate-900/60"
-              >
-                <p className="text-base font-bold text-slate-800 dark:text-slate-200">
-                  {ROBOT_CATALOG[selectedRobotFilter].name} is not recommended
-                  for {jobsData.business_type}
-                </p>
-                <p className="mx-auto mt-1.5 max-w-md text-xs text-slate-500 dark:text-slate-400">
-                  Optional helper robots are only matched when relevant to the
-                  space layout and business type. Try switching space presets or
-                  viewing all matched robots.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRobotFilter("all")}
-                  className="mt-4 cursor-pointer rounded-xl border border-sky-500/50 bg-sky-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-sky-500"
-                >
-                  Show All Robots
                 </button>
               </div>
-            )}
+            </div>
           </section>
         )}
+
+        {/* Robot Category Filter Pills */}
+        <nav
+          aria-label="Robot Category Filters"
+          data-testid="robot-category-filters"
+          className="flex flex-wrap gap-2"
+        >
+          {ROBOT_CATEGORY_FILTERS.map((f) => {
+            const active = selectedCategory === f.id;
+            const count = categoryCounts[f.id];
+            const pillLabel =
+              f.id === "all" ? `All (${count})` : `${f.label} (${count})`;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                data-testid={`category-filter-${f.id.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`}
+                onClick={() => setSelectedCategory(f.id)}
+                className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                  active
+                    ? "border-sky-500 bg-sky-600 text-white shadow-xs"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                {pillLabel}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Ranked Robot Cards List */}
+        <section aria-label="Evaluated Commercial Robots" className="space-y-4">
+          {filteredJobs.map((job, idx) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              rank={idx + 1}
+              viewMode={viewMode}
+              isTopRecommended={topRecommendedJob?.id === job.id}
+              isHiring={hiringJobId === job.id}
+              isAnyHiring={hiringJobId !== null}
+              onHire={(j) => void handleHireJob(j)}
+            />
+          ))}
+        </section>
       </div>
     </main>
   );

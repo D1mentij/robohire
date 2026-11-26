@@ -1,31 +1,36 @@
 import { BUSINESS_PRESETS, isAutoDetect } from "./businessPresets";
 import { detectBusiness, type BusinessKind } from "./businessTemplates";
 
-/** The template families the owner can pick/correct, with display names. `business_guess` of the model must be one of the ids. */
+/** Template families the owner can pick or correct after Vision AI Auto-detect. */
 export const FAMILY_OPTIONS: { family: BusinessKind; label: string }[] = [
-  { family: "cafe", label: "Café / Coffee shop" },
-  { family: "restaurant", label: "Restaurant / Bistro" },
+  { family: "cafe", label: "Tight Café / Bistro (~55 cm Aisles)" },
+  { family: "restaurant", label: "Restaurant / Food Hall" },
+  { family: "hotel", label: "Hotel / Resort (Multi-Floor)" },
+  { family: "office", label: "Office Tower / Coworking" },
+  { family: "clinic", label: "Clinic / Medical Center" },
+  { family: "retail", label: "Retail Store / Boutique" },
+  { family: "showroom", label: "Showroom / Car Dealership" },
+  { family: "mall", label: "Shopping Mall / Airport (Large 24/7)" },
+  { family: "terminal", label: "Airport / Transit Concourse" },
+  { family: "warehouse", label: "Warehouse / Distribution Center" },
+  { family: "factory", label: "Factory / Manufacturing Floor" },
+  { family: "gym", label: "Gym / Fitness Club" },
+  { family: "supermarket", label: "Supermarket / Hypermarket" },
   { family: "bar", label: "Bar / Lounge" },
-  { family: "hotel", label: "Hotel lobby / Reception" },
-  { family: "retail", label: "Retail store" },
-  { family: "supermarket", label: "Supermarket / Grocery" },
-  { family: "mall", label: "Shopping mall atrium" },
-  { family: "showroom", label: "Car dealership / Showroom" },
-  { family: "university", label: "University / Campus hall" },
-  { family: "event", label: "Conference / Expo venue" },
+  { family: "university", label: "University / Campus Hall" },
+  { family: "event", label: "Conference / Expo Venue" },
   { family: "museum", label: "Museum / Gallery" },
-  { family: "office", label: "Office / Coworking reception" },
   { family: "library", label: "Library" },
-  { family: "gym", label: "Gym / Fitness club" },
-  { family: "clinic", label: "Clinic / Dental reception" },
-  { family: "terminal", label: "Airport / Train terminal" },
-  { family: "generic", label: "Other / General space" },
+  { family: "generic", label: "Other / General Commercial Space" },
 ];
-export const FAMILIES: BusinessKind[] = FAMILY_OPTIONS.map((f) => f.family);
-export const familyLabel = (kind: string | null | undefined): string => FAMILY_OPTIONS.find((f) => f.family === kind)?.label ?? "Other / General space";
-export const isFamily = (v: unknown): v is BusinessKind => typeof v === "string" && (FAMILIES as string[]).includes(v);
 
-/** Maps the model's `business_guess` (a family id, or free text) to a family; null when unusable. */
+export const FAMILIES: BusinessKind[] = FAMILY_OPTIONS.map((f) => f.family);
+export const familyLabel = (kind: string | null | undefined): string =>
+  FAMILY_OPTIONS.find((f) => f.family === kind)?.label ??
+  "Other / General Commercial Space";
+export const isFamily = (v: unknown): v is BusinessKind =>
+  typeof v === "string" && (FAMILIES as string[]).includes(v);
+
 export function parseFamily(guess: unknown): BusinessKind | null {
   if (typeof guess !== "string" || !guess.trim()) return null;
   const g = guess.trim().toLowerCase();
@@ -36,16 +41,32 @@ export function parseFamily(guess: unknown): BusinessKind | null {
   return k === "generic" ? null : k;
 }
 
-const LIBRARY_ZONES = "entrance, service desk, book shelves, reading area, self-service return station";
-/** Short hint for the zones prompt: which zone types this business family usually has (null = no hint). */
+const EXTRA_ZONES: Partial<Record<BusinessKind, string>> = {
+  library: "entrance, service desk, book shelves, reading area, return station",
+  showroom: "entrance, vehicle/product display, customer lounge, sales desk, walkway",
+  supermarket: "entrance, weekly promo display, grocery aisles, checkout lanes, wide scrubbing corridor",
+  bar: "lounge entrance, bar counter, lounge booths, drinks board",
+  clinic: "clinic entrance, reception desk, patient waiting area, elevator/treatment corridor",
+  terminal: "terminal entrance, passenger info desk, departures board, wide concourse corridor, gate seating",
+  university: "entrance, info desk, lecture hall corridor, schedule board, student seating",
+  event: "venue entrance, registration desk, expo concourse, agenda board, networking lounge",
+  museum: "gallery entrance, ticket desk, exhibition highlights, gallery wing corridor, benches",
+};
+
 export function familyZonesHint(kind: BusinessKind): string | null {
   if (kind === "generic") return null;
-  if (kind === "library") return LIBRARY_ZONES;
-  return BUSINESS_PRESETS.find((p) => p.family === kind)?.expectedZones ?? null;
+  return (
+    BUSINESS_PRESETS.find((p) => p.family === kind)?.expectedZones ??
+    EXTRA_ZONES[kind] ??
+    null
+  );
 }
 
-/** Hint for ANY business text (preset label, custom EN/LV/RU text); null for auto-detect / unknown. */
 export function zonesHintFor(businessType: string | null | undefined): string | null {
   if (!businessType || isAutoDetect(businessType)) return null;
+  const exact = BUSINESS_PRESETS.find(
+    (p) => p.id === businessType || p.label.toLowerCase() === businessType.trim().toLowerCase(),
+  );
+  if (exact) return exact.expectedZones;
   return familyZonesHint(detectBusiness(businessType));
 }

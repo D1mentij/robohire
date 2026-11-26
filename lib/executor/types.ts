@@ -40,13 +40,13 @@ export interface LoadedSimulationData {
   scenario: Scenario;
   /** Business type label (used for floor material and UI badge) */
   businessType: string;
-  /** Matched job metadata (title, gross savings in €, etc.) */
+  /** Hired commercial robot job metadata (RaaS, Latvia staff cost, savings) */
   job: Job;
-  /** Active robot platform ("k1" primary humanoid or one of the 7 optional helper robots) */
+  /** Active commercial robot ID from the 15-robot catalog */
   robotType: RobotType;
-  /** Full robot shift plan (net savings in €, payback months, included job_ids) */
+  /** Deployment plan summary */
   plan: RobotPlan;
-  /** Sanitized steps for the full scenario via filterValidSteps */
+  /** Sanitized steps via filterValidSteps */
   steps: ScenarioStep[];
   source: "custom" | "mock";
 }
@@ -54,7 +54,6 @@ export interface LoadedSimulationData {
 export interface WalkTargetInfo {
   zone: Zone;
   stopPoint: Vec2XZ;
-  /** Waypoints to reach stopPoint (1 point if direct, 2 points if bypassing obstacle furniture) */
   waypoints: Vec2XZ[];
   lookAtAngle: number;
 }

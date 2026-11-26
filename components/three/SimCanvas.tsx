@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -11,10 +11,9 @@ import type {
   Vec2XZ,
   WalkTargetInfo,
 } from "@/lib/executor";
-import { getRobotMeta, isHelperRobot } from "@/lib/robots/catalog";
+import { getRobotSpec } from "@/lib/robots/catalog";
 import { Room3D } from "./Room3D";
-import { RobotModel } from "./RobotModel";
-import { HelperRobotModel } from "./HelperRobotModel";
+import { CommercialRobotModel } from "./CommercialRobotModel";
 
 const FLY_IN_DURATION_SECONDS = 1.65;
 
@@ -36,13 +35,13 @@ function FollowCameraController({
 
   const flyStartPos = useRef({
     x: roomCenter.x - 6.2,
-    y: 13.2,
+    y: 13.5,
     z: -9.8,
   });
   const flyEndPos = useRef({
     x: roomCenter.x - 2.2,
-    y: 7.2,
-    z: -4.0,
+    y: 7.4,
+    z: -4.2,
   });
 
   useFrame((state, delta) => {
@@ -52,7 +51,6 @@ function FollowCameraController({
     const dt = Math.min(Math.max(delta, 0), 0.1);
     const pose = poseRef.current;
 
-    // Initial smooth camera fly-in animation on entering the 3D space
     if (!flyInCompleteRef.current) {
       if (isInteractingRef.current) {
         flyInCompleteRef.current = true;
@@ -62,7 +60,6 @@ function FollowCameraController({
           1,
           flyInElapsedRef.current / FLY_IN_DURATION_SECONDS,
         );
-        // Cubic ease-out
         const eased = 1 - Math.pow(1 - progress, 3);
 
         const start = flyStartPos.current;
@@ -94,7 +91,6 @@ function FollowCameraController({
 
     if (!enabled) return;
 
-    // Blend robot position (65%) with room center overview (35%)
     const desiredX = pose.x * 0.65 + roomCenter.x * 0.35;
     const desiredY = 0.55;
     const desiredZ = pose.z * 0.65 + roomCenter.z * 0.35;
@@ -108,7 +104,6 @@ function FollowCameraController({
     controls.target.y += dy;
     controls.target.z += dz;
 
-    // Gently pan camera horizontally when presenter is not manually orbiting/zooming
     if (!isInteractingRef.current) {
       state.camera.position.x += dx * 0.55;
       state.camera.position.z += dz * 0.55;
@@ -124,7 +119,7 @@ function FollowCameraController({
       minPolarAngle={0.15}
       maxPolarAngle={Math.PI / 2 - 0.04}
       minDistance={3.5}
-      maxDistance={26}
+      maxDistance={32}
       enableDamping
       dampingFactor={0.08}
       onStart={() => {
@@ -154,12 +149,11 @@ export interface SimCanvasProps {
 export function SimCanvas({
   scene,
   businessType,
-  robotType = "k1",
+  robotType = "keenon_t8",
   activeZoneId,
   startPosition,
   currentTargetInfo,
   poseRef,
-  animation,
   isPointing,
   followCamera = true,
   onTick,
@@ -167,7 +161,7 @@ export function SimCanvas({
   const cx = scene.room.width / 2;
   const cz = scene.room.depth / 2;
   const [canvasReady, setCanvasReady] = useState(false);
-  const robotMeta = getRobotMeta(robotType);
+  const robotSpec = getRobotSpec(robotType);
 
   return (
     <div className="relative h-full w-full bg-slate-950">
@@ -178,7 +172,7 @@ export function SimCanvas({
         >
           <div className="h-8 w-8 animate-spin rounded-full border-3 border-sky-500 border-t-transparent" />
           <p className="font-mono text-xs font-semibold tracking-wide text-sky-300">
-            Loading 3D workspace &amp; {robotMeta.name} model…
+            Loading 3D workspace &amp; {robotSpec.name}…
           </p>
         </div>
       )}
@@ -188,16 +182,15 @@ export function SimCanvas({
         dpr={[1, 1.75]}
         onCreated={() => setCanvasReady(true)}
         camera={{
-          position: [cx - 6.2, 13.2, -9.8],
+          position: [cx - 6.2, 13.5, -9.8],
           fov: 45,
           near: 0.1,
-          far: 100,
+          far: 120,
         }}
       >
         <color attach="background" args={["#0c1220"]} />
-        <fog attach="fog" args={["#0c1220", 18, 36]} />
+        <fog attach="fog" args={["#0c1220", 20, 44]} />
 
-        {/* Warm architectural & window lighting with soft shadows */}
         <ambientLight color="#fff7ed" intensity={0.78} />
         <hemisphereLight
           args={["#fef3c7", "#1e293b", 0.72]}
@@ -205,17 +198,17 @@ export function SimCanvas({
         />
         <directionalLight
           color="#fffbeb"
-          position={[cx + 5, 11, -4]}
+          position={[cx + 5, 12, -4]}
           intensity={1.45}
           castShadow
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
           shadow-bias={-0.0004}
           shadow-radius={3}
-          shadow-camera-left={-10}
-          shadow-camera-right={10}
-          shadow-camera-top={10}
-          shadow-camera-bottom={-10}
+          shadow-camera-left={-12}
+          shadow-camera-right={12}
+          shadow-camera-top={12}
+          shadow-camera-bottom={-12}
         />
         <directionalLight
           color="#bae6fd"
@@ -228,7 +221,6 @@ export function SimCanvas({
           intensity={0.38}
         />
 
-        {/* Room floor, window wall, and procedural zone furniture */}
         <Room3D
           scene={scene}
           businessType={businessType}
@@ -237,26 +229,13 @@ export function SimCanvas({
           currentTargetInfo={currentTargetInfo}
         />
 
-        {/* Animated Robot Model: Booster K1 (primary) or Stylized Optional Helper Robot */}
-        {isHelperRobot(robotType) ? (
-          <HelperRobotModel
-            robotType={robotType}
-            scene={scene}
-            poseRef={poseRef}
-            startPosition={startPosition}
-            onTick={onTick}
-          />
-        ) : (
-          <Suspense fallback={null}>
-            <RobotModel
-              poseRef={poseRef}
-              startPosition={startPosition}
-              animation={animation}
-              isPointing={isPointing}
-              onTick={onTick}
-            />
-          </Suspense>
-        )}
+        <CommercialRobotModel
+          robotType={robotType}
+          poseRef={poseRef}
+          startPosition={startPosition}
+          isPointing={isPointing}
+          onTick={onTick}
+        />
 
         <FollowCameraController
           poseRef={poseRef}

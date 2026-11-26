@@ -3,27 +3,48 @@ import type { BusinessKind } from "./businessTemplates";
 import { ZONE_TYPES, zoneTypeOfId, type ZoneType } from "./zoneTypes";
 
 /**
- * Local-flow post-processing of the model's floor plan: human labels from zone type + business, minimum room size, an entrance,
- * ≥ 4 zones, and a simple grid when zones overlap or sit on one line. Pure functions; ids stay type-based (display, display_2).
+ * Local-flow post-processing of the model's floor plan: human labels from zone type + business,
+ * minimum room size, an entrance, >= 4 zones, and non-overlapping grid fallback.
  */
-
 const LABELS: Record<BusinessKind, Record<ZoneType, string>> = {
+  warehouse: {
+    entrance: "Inbound dock",
+    counter: "Dispatch counter",
+    seating: "Break area",
+    display: "KPI board",
+    waiting: "Outbound staging",
+    shelves: "Pallet racks",
+    desk: "Packing station",
+    corridor: "AMR corridor",
+    other: "Warehouse floor",
+  },
+  factory: {
+    entrance: "Receiving bay",
+    counter: "Tooling crib",
+    seating: "Operator break zone",
+    display: "Production board",
+    waiting: "Finished goods bay",
+    shelves: "Component racks",
+    desk: "QA inspection desk",
+    corridor: "Material lane",
+    other: "Assembly floor",
+  },
   showroom: { entrance: "Entrance", counter: "Sales desk", seating: "Customer lounge", display: "Car display", waiting: "Waiting area", shelves: "Brochure rack", desk: "Consultation desk", corridor: "Walkway", other: "Showroom floor" },
-  cafe: { entrance: "Entrance", counter: "Service counter", seating: "Seating area", display: "Menu board", waiting: "Queue area", shelves: "Shelves", desk: "Cash desk", corridor: "Walkway", other: "Café area" },
-  hotel: { entrance: "Entrance", counter: "Reception desk", seating: "Lobby lounge", display: "Info board", waiting: "Waiting area", shelves: "Brochure rack", desk: "Concierge desk", corridor: "Elevator corridor", other: "Lobby" },
+  cafe: { entrance: "Entrance", counter: "Service counter", seating: "Seating area", display: "Menu board", waiting: "Queue area", shelves: "Shelves", desk: "Cash desk", corridor: "Narrow aisle", other: "Café area" },
+  hotel: { entrance: "Entrance", counter: "Reception desk", seating: "Lobby lounge", display: "Info board", waiting: "Waiting area", shelves: "Luggage bay", desk: "Concierge desk", corridor: "Elevator corridor", other: "Lobby" },
   library: { entrance: "Entrance", counter: "Service desk", seating: "Reading area", display: "New arrivals", waiting: "Queue area", shelves: "Book shelves", desk: "Information desk", corridor: "Aisle", other: "Library hall" },
   retail: { entrance: "Entrance", counter: "Checkout", seating: "Rest area", display: "Promo display", waiting: "Queue area", shelves: "Product shelves", desk: "Customer service", corridor: "Aisle", other: "Shop floor" },
-  office: { entrance: "Entrance", counter: "Reception desk", seating: "Visitor seating", display: "Info screen", waiting: "Waiting area", shelves: "Storage", desk: "Front desk", corridor: "Corridor", other: "Office area" },
+  office: { entrance: "Entrance", counter: "Reception desk", seating: "Visitor seating", display: "Info screen", waiting: "Waiting area", shelves: "Mail & parcel rack", desk: "Front desk", corridor: "Elevator corridor", other: "Office area" },
   university: { entrance: "Entrance", counter: "Info desk", seating: "Student seating", display: "Event board", waiting: "Waiting area", shelves: "Notice shelves", desk: "Information desk", corridor: "Main corridor", other: "Lobby" },
-  gym: { entrance: "Club entrance", counter: "Check-in desk", seating: "Recovery lounge", display: "Class schedule board", waiting: "Waiting area", shelves: "Towel & drink rack", desk: "Membership desk", corridor: "Studio corridor", other: "Gym floor" },
+  gym: { entrance: "Club entrance", counter: "Check-in desk", seating: "Recovery lounge", display: "Class schedule board", waiting: "Waiting area", shelves: "Towel & drink rack", desk: "Membership desk", corridor: "Workout floor", other: "Gym floor" },
   event: { entrance: "Venue entrance", counter: "Registration counter", seating: "Networking lounge", display: "Agenda board", waiting: "Queue area", shelves: "Swag rack", desk: "Registration desk", corridor: "Auditorium entrance", other: "Expo hall" },
   museum: { entrance: "Gallery entrance", counter: "Ticket desk", seating: "Atrium benches", display: "Exhibition highlights", waiting: "Tour waiting area", shelves: "Catalogue rack", desk: "Information desk", corridor: "Gallery wing", other: "Exhibition hall" },
-  terminal: { entrance: "Terminal entrance", counter: "Check-in counter", seating: "Passenger seating", display: "Departures board", waiting: "Waiting seats", shelves: "Transit maps rack", desk: "Passenger info desk", corridor: "Gate corridor", other: "Concourse" },
-  restaurant: { entrance: "Main entrance", counter: "Service bar", seating: "Dining tables", display: "Specials board", waiting: "Waiting lounge", shelves: "Cutlery station", desk: "Host desk", corridor: "Restroom corridor", other: "Dining hall" },
-  bar: { entrance: "Lounge entrance", counter: "Bar counter", seating: "Lounge booths", display: "Drinks menu board", waiting: "Waiting nook", shelves: "Bottle shelves", desk: "Reservations desk", corridor: "Restroom corridor", other: "Lounge" },
+  terminal: { entrance: "Terminal entrance", counter: "Check-in counter", seating: "Passenger seating", display: "Departures board", waiting: "Waiting seats", shelves: "Transit maps rack", desk: "Passenger info desk", corridor: "Gate concourse", other: "Concourse" },
+  restaurant: { entrance: "Main entrance", counter: "Kitchen pass", seating: "Dining tables", display: "Specials board", waiting: "Waiting lounge", shelves: "Bussing station", desk: "Host desk", corridor: "Main aisle", other: "Dining hall" },
+  bar: { entrance: "Lounge entrance", counter: "Bar counter", seating: "Lounge booths", display: "Drinks menu board", waiting: "Waiting nook", shelves: "Bottle shelves", desk: "Reservations desk", corridor: "Walkway", other: "Lounge" },
   supermarket: { entrance: "Store entrance", counter: "Checkout lanes", seating: "Rest area", display: "Weekly offers display", waiting: "Checkout queue", shelves: "Grocery aisles", desk: "Customer service desk", corridor: "Main aisle", other: "Sales floor" },
-  mall: { entrance: "Atrium entrance", counter: "Guest services", seating: "Atrium seating", display: "Store directory board", waiting: "Queue area", shelves: "Pop-up stands", desk: "Mall info desk", corridor: "Central promenade", other: "Atrium" },
-  clinic: { entrance: "Clinic entrance", counter: "Reception counter", seating: "Waiting seats", display: "Patient info screen", waiting: "Patient waiting area", shelves: "Leaflet rack", desk: "Reception desk", corridor: "Treatment room hallway", other: "Clinic hall" },
+  mall: { entrance: "Atrium entrance", counter: "Guest services", seating: "Atrium seating", display: "Store directory board", waiting: "Queue area", shelves: "Retail kiosks", desk: "Mall info desk", corridor: "Central concourse", other: "Atrium" },
+  clinic: { entrance: "Clinic entrance", counter: "Reception counter", seating: "Waiting seats", display: "Patient info screen", waiting: "Patient waiting area", shelves: "Supply cabinet", desk: "Reception desk", corridor: "Elevator hallway", other: "Clinic hall" },
   generic: { entrance: "Entrance", counter: "Service counter", seating: "Seating area", display: "Display area", waiting: "Waiting area", shelves: "Shelves", desk: "Info desk", corridor: "Corridor", other: "Common area" },
 };
 
@@ -40,7 +61,6 @@ const BARE: Record<ZoneType, string[]> = {
   other: [],
 };
 
-/** A model label is "bare" when it only repeats the zone type ("Seating area", "waiting area") — then the code label is better. */
 export function isBareLabel(label: string, type: ZoneType): boolean {
   if (!label.trim() || label.length > 40) return true;
   const tokens = label.toLowerCase().split(/[^a-zà-žа-я0-9]+/).filter((t) => t && !FILLER.has(t) && !/^\d+$/.test(t));
@@ -51,7 +71,6 @@ export function isBareLabel(label: string, type: ZoneType): boolean {
 
 const cap = (s: string) => s.trim().replace(/\s+/g, " ").replace(/^./, (c) => c.toUpperCase());
 
-/** Human, unique labels: model label only when more specific than the bare type. Duplicates → "Car display 2". */
 export function relabelZones(scene: Scene, kind: BusinessKind): Scene {
   const used = new Map<string, number>();
   const zones = scene.zones.map((z) => {
@@ -64,7 +83,6 @@ export function relabelZones(scene: Scene, kind: BusinessKind): Scene {
   return { ...scene, zones };
 }
 
-/** Family corrected after Auto-detect: zone labels that were the old family's defaults become the new family's ("Car display 2" → "Promo display 2"). */
 export function switchFamilyLabels(scene: Scene, from: BusinessKind, to: BusinessKind): Scene {
   const zones = scene.zones.map((z) => {
     const type = zoneTypeOfId(z.id);
@@ -76,15 +94,16 @@ export function switchFamilyLabels(scene: Scene, from: BusinessKind, to: Busines
   return relabelZones({ ...scene, zones }, to);
 }
 
-/** Minimum room size per business (m): the K1 needs space to walk; small models often guess 3–5 m. */
 const MIN_ROOM: Record<BusinessKind, [number, number]> = {
-  showroom: [12, 9], hotel: [10, 8], cafe: [8, 6], library: [10, 8], retail: [8, 6], office: [6, 5], university: [12, 8],
-  gym: [10, 8], event: [12, 9], museum: [10, 8], terminal: [14, 9],
-  restaurant: [10, 8], bar: [9, 7], supermarket: [14, 10], mall: [14, 10], clinic: [8, 6], generic: [6, 5],
+  warehouse: [16, 12], factory: [16, 12],
+  showroom: [12, 9], hotel: [12, 9], cafe: [7, 5.5], library: [10, 8], retail: [10, 8], office: [10, 7], university: [12, 8],
+  gym: [12, 8], event: [14, 9], museum: [12, 9], terminal: [16, 11],
+  restaurant: [12, 9], bar: [9, 7], supermarket: [14, 10], mall: [18, 12], clinic: [10, 7], generic: [8, 6],
 };
 
-/** Zone types a business plausibly has, in the order we add missing ones. */
 const PLAUSIBLE: Record<BusinessKind, ZoneType[]> = {
+  warehouse: ["entrance", "shelves", "corridor", "desk", "waiting"],
+  factory: ["entrance", "corridor", "shelves", "desk", "waiting"],
   showroom: ["entrance", "display", "seating", "counter", "waiting", "desk"],
   hotel: ["entrance", "counter", "seating", "corridor", "display"],
   cafe: ["entrance", "counter", "seating", "display"],
@@ -116,7 +135,7 @@ const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
 export function hasOverlap(zones: Zone[]): boolean {
   return zones.some((a, i) => zones.slice(i + 1).some((b) => overlaps(a, b)));
 }
-/** ≥ 3 zones whose centres lie (almost) on one line along X or Z. */
+
 export function isCollinear(zones: Zone[]): boolean {
   return zones.length >= 3 && (spread(zones.map((z) => z.x)) < 0.8 || spread(zones.map((z) => z.z)) < 0.8);
 }
@@ -127,7 +146,6 @@ function uniqueId(type: ZoneType, zones: Zone[]): string {
   return id;
 }
 
-/** Zones evenly in a grid inside the room (entrance first = top-left cell, along the room edge). */
 export function gridLayout(room: Scene["room"], zones: Zone[]): Zone[] {
   const ordered = [...zones].sort((a, b) => Number(zoneTypeOfId(b.id) === "entrance") - Number(zoneTypeOfId(a.id) === "entrance"));
   const n = ordered.length;
@@ -143,7 +161,6 @@ export function gridLayout(room: Scene["room"], zones: Zone[]): Zone[] {
   }));
 }
 
-/** Entrance zone on the room edge facing the biggest free margin (the "open side"). */
 function entranceZone(scene: Scene, zones: Zone[], label: string): Zone {
   const { width: W, depth: D } = scene.room;
   const m = {
@@ -163,7 +180,6 @@ function entranceZone(scene: Scene, zones: Zone[], label: string): Zone {
   }
 }
 
-/** Room minimum, entrance, ≥ 4 zones, then a grid if anything overlaps or is collinear. Input zones must already be inside the room. */
 export function fixLayout(scene: Scene, kind: BusinessKind, minZones = 4): Scene {
   let { width, depth } = scene.room;
   let zones = scene.zones;
@@ -183,11 +199,11 @@ export function fixLayout(scene: Scene, kind: BusinessKind, minZones = 4): Scene
   }
   for (const t of PLAUSIBLE[kind]) {
     if (zones.length >= minZones) break;
-    if (has(t) && t !== "display" && t !== "seating") continue; // prefer a type that is missing; display/seating may repeat as a last resort
+    if (has(t) && t !== "display" && t !== "seating") continue;
     zones = [...zones, { id: uniqueId(t, zones), label: LABELS[kind][t], x: width / 2, z: depth / 2, w: 2, d: 1.5 }];
     changed = true;
   }
-  for (const t of ZONE_TYPES) { // still short (all plausible types present): fall back to any missing type
+  for (const t of ZONE_TYPES) {
     if (zones.length >= minZones) break;
     if (!has(t) && !zones.some((z) => zoneTypeOfId(z.id) === t)) {
       zones = [...zones, { id: uniqueId(t, zones), label: LABELS[kind][t], x: width / 2, z: depth / 2, w: 2, d: 1.5 }];
@@ -195,6 +211,5 @@ export function fixLayout(scene: Scene, kind: BusinessKind, minZones = 4): Scene
     }
   }
   if (changed || hasOverlap(zones) || isCollinear(zones)) zones = gridLayout(room, zones);
-  // keep labels unique after additions
   return relabelZones({ room, zones }, kind);
 }

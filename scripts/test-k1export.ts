@@ -102,7 +102,7 @@ assert.deepEqual(planK1Commands({ job_id: "e", steps: [] }, { room: { width: 1, 
   const shift = buildShiftFallback(plan, mockJobs.jobs, mockScene, "Café");
   const py = toBoosterScript(shift, mockScene, { businessType: "Café" });
   assert.match(py, /# ---- Shift start ----/);
-  assert.match(py, /# ---- Greet guests ----/);
+  assert.match(py, /# ---- Guide to tables ----/);
   assert.match(py, /Scenario: whole shift/);
   assert.equal(scriptFileName(shift), "robohire_k1_shift.py");
 }

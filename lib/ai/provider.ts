@@ -92,8 +92,8 @@ const geminiProvider: AiProvider = {
 // Ollama (local, default). Docs: https://docs.ollama.com/api (POST /api/chat, GET /api/tags),
 // structured outputs via the `format` field: https://docs.ollama.com/capabilities/structured-outputs
 // ---------------------------------------------------------------------------------------------
-export const DEFAULT_OLLAMA_MODEL = "qwen3-vl:4b-instruct"; // 3.3 GB, vision, no thinking mode; measured: valid 9/9, ~15 s warm (8B: ~24 s, 6.2 GB)
-export const DEFAULT_OLLAMA_FALLBACK_MODEL = "qwen3-vl:8b-instruct"; // 6.2 GB, better labels, slower
+export const DEFAULT_OLLAMA_MODEL = "qwen3-vl:8b-instruct"; // 6.2 GB local vision model
+export const DEFAULT_OLLAMA_FALLBACK_MODEL = "qwen3-vl:4b-instruct"; // 3.3 GB compact fallback
 const OLLAMA_TIMEOUT_MS = 90_000;
 
 export type ProviderName = "ollama" | "gemini";

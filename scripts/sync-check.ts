@@ -66,7 +66,7 @@ function envKeys(): { keys: string[]; provider: string; exists: boolean; model: 
   const example = parseEnv(path.join(root, ".env.example"));
   const keys = Object.keys(local).filter((k) => local[k] !== "").sort();
   const pick = (k: string, fallback: string) => process.env[k] || local[k] || example[k] || fallback;
-  return { keys, provider: pick("AI_PROVIDER", "ollama").toLowerCase(), exists: existsSync(file), model: pick("OLLAMA_MODEL", "qwen3-vl:4b-instruct") };
+  return { keys, provider: pick("AI_PROVIDER", "ollama").toLowerCase(), exists: existsSync(file), model: pick("OLLAMA_MODEL", "qwen3-vl:8b-instruct") };
 }
 
 async function ollamaInfo(requiredModel: string) {
