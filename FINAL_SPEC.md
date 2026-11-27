@@ -49,7 +49,7 @@ Must work offline on the laptop (npm run dev, localhost:3000). Demo mode (mocks)
 - [x] C2 Claude: K1 economics + K1 jobs (decision 4) and restore k1export usage in /report (depends: none; coordinate field names in HANDOFF.md)
 - [ ] G2 Gemini: /jobs cards show "Frees X–Y h/day", Rent row, Buy row, source badge; Best match card on top; collapse not-suitable; Partner view label; remove any "% cheaper than a human" text (depends: C1, C2)
 - [ ] G3 Gemini: /robot overlay shows robot name + model; checklist ticks for K1 and all archetypes; Present mode works
-- [ ] C3 Claude: /report "How we calculate" + sellers + Export for real K1; README "AI disclosure" section up to date
+- [x] C3 Claude: /report "How we calculate" + sellers + Export for real K1; README "AI disclosure" section up to date
 - [ ] C4 Claude: write docs/hacktribe.md — project page texts (Problem, Solution, What's done, Next steps; English, ≤ 150 words each) + a 5-min video script with timings
 - [ ] G4 Gemini: app/page.tsx landing — positioning line, 3 steps, "Try demo"
 - [ ] B1 Both: review the other's last commit (max 5 issues in REVIEW.md), fix own issues

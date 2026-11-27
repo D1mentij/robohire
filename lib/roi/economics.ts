@@ -287,5 +287,6 @@ export const HOW_WE_CALCULATE: readonly string[] = [
   "Monthly savings = hours freed per day × staff hourly cost (Latvia 2026 benchmark incl. 23.59% employer tax) × days open per week × 4.33.",
   "Rent: net per month = savings − distributor rent. No payback — you can stop renting.",
   "Buy: upkeep = 10% of price per year. Net per month = savings − upkeep. Payback = price ÷ net per month. 3-year ROI = (net × 36 − price) ÷ price.",
+  "Booster K1 EDU: greeter & guide, 1 / 1.5 / 2 h/day (adjusted for venue size), capped by one 80-min battery unless batteries are swapped. Buy only (from €9,000 incl. VAT = €7,500 ex VAT; no rent offer). No hands: it cannot carry, clean or take payments.",
   "Fit: Not Suitable if the space doesn't fit, or if renting loses money and buying doesn't pay back within 36 months; Partial if buy payback is 24–36 months.",
 ];

@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import { buildShiftFallback } from "@/lib/ai/shiftFallback";
+import { buildJobScenario } from "@/lib/ai/shiftFallback";
 import { scriptFileName, toBoosterScript } from "@/lib/k1export/toBoosterScript";
-import { filterValidSteps, isScenario, isScene, type JobsResult, type RobotPlan, type Scenario, type Scene } from "@/types/contracts";
+import { filterValidSteps, isScenario, isScene, type Job, type Scenario, type Scene } from "@/types/contracts";
 
 const noopSubscribe = () => () => {};
 const readHandoff = (): string => {
@@ -14,34 +14,32 @@ const readHandoff = (): string => {
   }
 };
 
-/** Last hired scenario (+ its scene) from the /jobs → /robot handoff, else the whole plan as a code-built shift. */
-function pickScenario(raw: string | null, scene: Scene, jobs: JobsResult, plan: RobotPlan, businessType: string): { scenario: Scenario; scene: Scene; source: string } {
+/** The hired K1 scenario (+ its scene) from the /jobs → /robot handoff, else the code-built K1 greeter routine. */
+function pickScenario(raw: string | null, scene: Scene, k1: Job): { scenario: Scenario; scene: Scene; source: string } {
   try {
     const [sc, sn] = (JSON.parse(raw ?? "[null,null]") as (string | null)[]).map((v) => (v ? JSON.parse(v) : null));
     const s: Scene = isScene(sn) && sn.zones.length > 0 ? sn : scene;
-    if (isScenario(sc)) {
+    if (isScenario(sc) && sc.job_id === k1.id) {
       const steps = filterValidSteps(sc.steps, s.zones.map((z) => z.id));
-      if (steps.length > 0) return { scenario: { ...sc, steps }, scene: s, source: sc.job_id === "shift" ? "your hired shift" : `your hired job "${sc.job_id}"` };
+      if (steps.length > 0) return { scenario: { ...sc, steps }, scene: s, source: "your hired K1 job" };
     }
   } catch {
     /* fall through */
   }
-  return { scenario: buildShiftFallback(plan, jobs.jobs, scene, businessType), scene, source: "the recommended plan (built-in shift routine)" };
+  return { scenario: buildJobScenario(k1, scene), scene, source: "the K1 greeter & guide job (built-in routine)" };
 }
 
-export function K1Export({ scene, jobs, plan, businessType }: { scene: Scene; jobs: JobsResult; plan: RobotPlan; businessType: string }) {
+export function K1Export({ scene, k1, businessType }: { scene: Scene; k1: Job; businessType: string }) {
   const raw = useSyncExternalStore(noopSubscribe, readHandoff, () => null);
   const { script, fileName, source, steps } = useMemo(() => {
-    const picked = pickScenario(raw, scene, jobs, plan, businessType);
-    const titles = plan.job_ids.map((id) => jobs.jobs.find((j) => j.id === id)?.title).filter(Boolean);
-    const what = picked.scenario.job_id === "shift" ? `whole shift: ${titles.join(", ") || "no plan jobs"}` : undefined;
+    const picked = pickScenario(raw, scene, k1);
     return {
-      script: toBoosterScript(picked.scenario, picked.scene, { businessType, what }),
+      script: toBoosterScript(picked.scenario, picked.scene, { businessType, what: k1.title }),
       fileName: scriptFileName(picked.scenario),
       source: picked.source,
       steps: picked.scenario.steps.length,
     };
-  }, [raw, scene, jobs, plan, businessType]);
+  }, [raw, scene, k1, businessType]);
 
   const download = () => {
     const url = URL.createObjectURL(new Blob([script], { type: "text/x-python;charset=utf-8" }));
@@ -57,7 +55,7 @@ export function K1Export({ scene, jobs, plan, businessType }: { scene: Scene; jo
   if (scene.zones.length === 0) return null;
   return (
     <section data-testid="k1-export">
-      <h2 className="mb-2 text-lg font-bold">Run on a real Booster K1</h2>
+      <h2 className="mb-2 text-lg font-bold">Export for real K1</h2>
       <p>
         The same {steps}-step scenario, exported from {source} as a Python script for the official Booster Robotics SDK
         (<code>booster_robotics_sdk_python</code>). Walking is open-loop (0.5 m/s, stops 0.5 m before each zone). Calls we could not verify

@@ -410,7 +410,18 @@ export default function ReportPage() {
           </table>
         </section>
 
-        <K1Export scene={scene} jobs={jobs} plan={plan} businessType={data.businessType} />
+        <K1Export scene={scene} k1={k1} businessType={data.businessType} />
+
+        <section data-testid="sources">
+          <h2 className="mb-2 text-lg font-bold">Sources &amp; where to see it in Latvia</h2>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs">
+            <li>Booster K1 EDU: {K1_SPEC.priceSource}; battery up to {K1_SPEC.batteryMinutes} min; no distributor rent offer.</li>
+            <li>Keenon T8: distributor quote €8,900 purchase / €370 per month rent. Keenon W3 €16,000 and T10 €12,000: Riga retail listings. Other robots: US list price converted (estimate).</li>
+            <li>Staff cost: waiter €9.24/h = CSB Latvia Q2 2026 €1,256 gross + 23.59% employer VSAOI. Other roles: estimates.</li>
+            <li>Latvian sellers / showrooms: {LATVIAN_SELLERS.join(" · ")}.</li>
+            <li>All prices verified 26.11.2026 — reference data, not a quote. Ask a seller for a real offer.</li>
+          </ul>
+        </section>
 
         <section>
           <h2 className="mb-2 text-lg font-bold">Floor Plan</h2>

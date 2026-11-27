@@ -542,3 +542,11 @@
 - CONTRACT CHANGE: none yet — PROPOSAL in HANDOFF.md (booster_k1 robot type, JobEconomics.rent_available).
 - Tested: npm test ✔, npm run demo:check READY ✔.
 - Next: C3 (/report "How we calculate" + sellers + README AI disclosure).
+
+## [2026-11-27] Person 1 / Claude Code — FINAL_SPEC C3
+- Done: /report "How we calculate" K1 line, "Sources & where to see it in Latvia" section, "Export for real K1" now always K1 (hired K1 scenario or built-in greeter routine via buildJobScenario); README AI disclosure + economics table rewritten to current model (qwen3-vl:4b default, hours-freed economics, verified prices).
+- Changed files: app/report/page.tsx, app/report/K1Export.tsx, lib/roi/economics.ts (HOW_WE_CALCULATE), README.md, e2e/demo-flow.spec.ts (report K1/sources/export checks).
+- AI-generated: all of the above by Claude Code (Claude Opus 5.5).
+- CONTRACT CHANGE: none.
+- Tested: npm test ✔, e2e demo-flow ✔, npm run demo:check READY ✔.
+- Next: C4 docs/hacktribe.md.

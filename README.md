@@ -97,24 +97,31 @@ Data contracts live in `types/contracts.ts`. A demo mode (`lib/ai/demo.ts`) keep
 
 ## AI usage disclosure
 
-**Written with AI coding assistants** (details per step in `PROGRESS.md`):
-- **Claude Code (Claude Sonnet 5.5 / Opus 5.5)**: project skeleton, shared contracts and mocks, upload screen and frame extraction, `/api/analyze`, `/api/jobs`, `/api/scenario`, the Gemini provider wrapper, prompts, post-processing and validation, the K1 capability profile, ROI code and tests, demo mode, this README.
-- **Antigravity (Gemini)**: the `/jobs` page, the `/robot` page, `components/three/*`, `lib/executor/*` (3D room, K1 stand-in, walking/gesture/speech executor). The `RobotExpressive.glb` model is the standard three.js example asset used as a K1 stand-in.
+**Written with AI coding assistants** (details per step in `PROGRESS.md`; agreed spec in `FINAL_SPEC.md`):
+- **Claude Code (Claude Sonnet 5.5 / Opus 5.5)**: project skeleton, shared contracts and mocks, upload screen and frame extraction, `/api/analyze`, `/api/jobs`, `/api/scenario`, `/api/shift`, AI provider wrappers, prompts, validation, the honest economics (`lib/roi/economics.ts`: hours freed per day, rent vs buy), the robot price/wage reference data (`src/data/robots.ts`), Booster K1 economics (`lib/roi/k1.ts`, `src/data/k1.ts`), the `/report` page, the real-K1 Python export (`lib/k1export`), tests, demo mode, this README.
+- **Antigravity (Gemini)**: the `/jobs` page, the `/robot` page, the landing page, `components/three/*`, `lib/executor/*` (3D room, robot models, walking/gesture executor, checklist). The `RobotExpressive.glb` model is the standard three.js example asset used as a K1 stand-in.
+- Price and wage figures were researched with AI help and then checked by hand on 26.11.2026 (sources listed on `/report`). They are reference data, not quotes.
 
-**Used at runtime** (a local Ollama vision model, default `qwen3-vl:8b-instruct`, or optionally Google Gemini via `@google/genai`; server-side): analysing video frames into a floor plan, tasks and each task's fit for the K1 (fit/score/why/limits only), and writing the whole-shift demo script (steps and robot speech). AI output is validated by code before use. The AI never produces money or hours figures.
+**Used at runtime** (server-side only): a local Ollama vision model, default `qwen3-vl:4b-instruct` (fallback `qwen3-vl:8b-instruct`), or optionally Google Gemini via `@google/genai`. The AI turns video frames into a floor plan, tasks and each task's fit (fit/score/why/limits), and can write the shift demo script. Code validates all AI output before using it. **The AI never produces money or hours figures**: those come only from the formulas below. The robot never speaks aloud; the simulation shows a checklist and captions.
 
-**K1 facts** come from the official [Booster K1 page](https://www.booster.tech/booster-k1/); items without a source are marked `"assumption": true` in `lib/ai/k1-profile.json`. The can/cannot lists are our interpretation.
+**K1 facts** come from the official [Booster K1 page](https://www.booster.tech/booster-k1/) and the generationrobots listing; items without a source are marked `"assumption": true` in `lib/ai/k1-profile.json`.
 
-### ROI assumptions (`lib/roi/config.ts`) — none are measured data
+### Economics (`lib/roi/economics.ts`, `lib/roi/k1.ts`)
+
+`savings/month = hours freed per day × role €/h × days open per week × 4.33`
+- **Rent:** net = savings − distributor rent (no RoboHire markup). No payback, because you can stop renting.
+- **Buy:** upkeep = 10% of price per year; net = savings − upkeep; payback = price ÷ net; 3-year ROI = (net × 36 − price) ÷ price.
+- Every figure is shown as low / expected / high.
 
 | Value | Setting | Label |
 | --- | --- | --- |
-| Days open per week | 6 | assumption |
-| Coverage of a task's hours (good / partial / no) | 0.8 / 0.4 / 0 | assumption |
-| Robot price | €8,000 (Booster publishes no price) | assumption |
-| Running cost (maintenance + electricity) | €60 / month | assumption |
-| Weeks per month | 4.33 | assumption |
-| Default staff cost (Latvian hospitality, incl. employer tax) | €8.5 / h | assumption |
-| Task frequency and duration | estimated by the AI from the video | AI estimate |
-
-`hours_per_week = frequency × minutes / 60 × 6`; `savings/month = max(0, hours × coverage × 4.33 × hourly cost − 60)`; `payback = price / savings`.
+| Hours freed per day | tray robot 2/3/4, greeter 1/1.5/2, courier 1.5/2.5/4, AMR 3/5/7 per shift; cleaners from floor area | assumption |
+| Booster K1 | greeter 1/1.5/2 h/day, capped by one 80-min battery unless swapped; buy only, €7,500 ex VAT (€9,000 incl. VAT) | price verified, hours assumption |
+| Waiter cost | €9.24/h (CSB Q2 2026 €1,256 gross + 23.59% VSAOI) | verified |
+| Other role costs | €7.72–€11.04/h | estimate |
+| Keenon T8 | €8,900 buy / €370 per month rent | distributor quote |
+| Keenon W3 / T10 | €16,000 / €12,000 | Riga retail |
+| Other robots | US list price converted; rent = 2.8% of price per month | estimate |
+| Upkeep when buying | 10% of price per year | assumption |
+| Days open | 6 per week (7 if ≥ 84 h/week) | assumption |
+| Partner view commissions | 15% of rent, 7% of sale | assumption (referral fee paid by distributor) |

@@ -57,6 +57,11 @@ test("landing → demo → plan → hire → robot checklist all ✓ → €/mon
   await expect(page.getByText(/Buy: €[\d,]+ ex VAT → payback/).first()).toBeVisible();
   await expect(page.getByText(/verified 26\.11\.2026, reference data, not a quote/i).first()).toBeVisible();
   await expect(page.getByTestId("how-we-calculate")).toContainText(/Payback = price/);
+  await expect(page.getByTestId("how-we-calculate")).toContainText(/Booster K1 EDU/);
+  await expect(page.getByTestId("k1-best-match")).toContainText(/RENT: no offer/);
+  await expect(page.getByTestId("sources")).toContainText(/Keen Robotic/);
+  await expect(page.getByTestId("k1-export")).toContainText(/booster_robotics_sdk_python/);
+  await expect(page.getByTestId("k1-download-py")).toBeVisible();
 
   expect(errors, `page errors: ${errors.join(" | ")}`).toEqual([]);
 });
