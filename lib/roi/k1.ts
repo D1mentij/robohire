@@ -82,7 +82,6 @@ export function buildK1Job(scene: Scene, opts: K1Options = {}): Job & { robot_id
   const days = opts.daysOpenPerWeek ?? DEFAULT_DAYS_OPEN_PER_WEEK;
   const pb = e.payback_months.expected;
   const fit = k1Fit(e);
-  const h = (n: number) => (Math.round(n * 10) / 10).toString();
   const eur = (n: number) => `€${Math.round(n).toLocaleString("en-US")}`;
   const battery = opts.batterySwaps ? "" : " (capped by one 80-min battery; spare batteries raise this)";
   return {
@@ -90,7 +89,7 @@ export function buildK1Job(scene: Scene, opts: K1Options = {}): Job & { robot_id
     title: `${K1_SPEC.name} — ${K1_SPEC.jobTitle}`,
     fit,
     score: fit === "good" ? 90 : fit === "partial" ? 75 : 40,
-    why: `Frees ${h(e.hours_freed_per_day.low)}–${h(e.hours_freed_per_day.high)} h/day of reception time${battery}: greets at the entrance, guides visitors to zones, points at information. Worth ${eur(e.savings_eur_month.expected)}/mo of staff time.`,
+    why: `Frees ${k1Headline(e).hours} h/day of reception time${battery}: greets at the entrance, guides visitors to zones, points at information. Worth ${k1Headline(e).savings}/mo of staff time.`,
     limits: `${K1_SPEC.limits} No rent offer — buy only (${eur(K1_SPEC.purchasePriceInclVatEur)} incl. VAT).`,
     hours_per_week: Math.round(e.hours_freed_per_day.expected * days * 10) / 10,
     savings_eur_month: Math.round(e.savings_eur_month.expected),
@@ -102,5 +101,25 @@ export function buildK1Job(scene: Scene, opts: K1Options = {}): Job & { robot_id
     purchase_price_eur: K1_SPEC.purchasePriceEur,
     human_monthly_cost_eur: Math.round(e.savings_eur_month.expected),
     economics: e,
+  };
+}
+
+/**
+ * K1 headline used on /upload, /jobs, /report and in the pitch deck: the LIKELY range = expected → best case
+ * (hours and €/mo), payback best → expected. Euros rounded to €10, payback to whole months (deck style).
+ * The conservative (low) case is shown next to it as a footnote, never hidden.
+ */
+export function k1Headline(e: JobEconomics) {
+  const h = (n: number) => (Math.round(n * 10) / 10).toString();
+  const e10 = (n: number) => `€${(Math.round(n / 10) * 10).toLocaleString("en-US")}`;
+  const mo = (n: number | null) => (n === null ? "never" : String(Math.round(n)));
+  const hf = e.hours_freed_per_day;
+  const s = e.savings_eur_month;
+  const pb = e.payback_months;
+  return {
+    hours: `${h(hf.expected)}–${h(hf.high)}`,
+    savings: `${e10(s.expected)}–${e10(s.high)}`,
+    payback: `${mo(pb.high)}–${mo(pb.expected)}`,
+    conservative: `conservative case ${h(hf.low)} h/day, ${e10(s.low)}/mo, payback ${mo(pb.low)} mo`,
   };
 }

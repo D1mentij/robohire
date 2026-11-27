@@ -10,7 +10,7 @@ import {
   type StoredAnalysis,
 } from "@/lib/ai/types";
 import { buildPlan } from "@/lib/roi/roi";
-import { buildK1Job } from "@/lib/roi/k1";
+import { buildK1Job, k1Headline } from "@/lib/roi/k1";
 import { K1_JOB_ID, K1_SPEC, LATVIAN_SELLERS } from "@/src/data/k1";
 import { K1Export } from "./K1Export";
 import { getRobotSpec, inferRobotType } from "@/lib/robots/catalog";
@@ -133,8 +133,8 @@ function RobotMoney({ j, scene }: { j: Job; scene: Scene }) {
           </span>
         </div>
         <div className="text-xs text-slate-600">
-          Hours freed: {h1(hf.low)}–{h1(hf.high)} h/day (expected {h1(hf.expected)}) ≈{" "}
-          {eur(e.savings_eur_month.low)}–{eur(e.savings_eur_month.high)}/mo of staff time
+          Hours freed: {h1(hf.expected)}–{h1(hf.high)} h/day likely (low {h1(hf.low)}) ≈{" "}
+          {eur(e.savings_eur_month.expected)}–{eur(e.savings_eur_month.high)}/mo of staff time
         </div>
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -302,12 +302,14 @@ export default function ReportPage() {
           <p>{k1.why}</p>
           {k1e && (
             <p className="mt-1 tabular-nums">
-              Frees <b>{h1(k1e.hours_freed_per_day.low)}–{h1(k1e.hours_freed_per_day.high)} h/day</b> ·
-              worth {eur(k1e.savings_eur_month.low)}–{eur(k1e.savings_eur_month.high)}/mo ·
-              RENT: no offer · BUY: {eur(K1_SPEC.purchasePriceInclVatEur)} incl. VAT ({eur(k1e.purchase_price_eur)} ex VAT)
-              + {eur(k1e.upkeep_eur_month)}/mo upkeep → payback{" "}
-              {months(k1e.payback_months.high)}–{months(k1e.payback_months.low)} mo
+              Frees <b>{k1Headline(k1e).hours} h/day</b> (one 80-min charge) ·
+              worth {k1Headline(k1e).savings}/mo at €{k1e.role_hourly_eur.toFixed(2)}/h ·
+              RENT: no offer · BUY: {eur(k1e.purchase_price_eur)} ex VAT ({eur(K1_SPEC.purchasePriceInclVatEur)} incl. VAT)
+              + {eur(k1e.upkeep_eur_month)}/mo upkeep → payback <b>{k1Headline(k1e).payback} mo</b> · fit: {k1.fit === "good" ? "Good" : k1.fit === "partial" ? "Partial" : "Not suitable"}
             </p>
+          )}
+          {k1e && (
+            <p className="text-xs text-slate-600">Likely range (expected → best case); {k1Headline(k1e).conservative}.</p>
           )}
           <p className="mt-1 text-xs text-amber-800">Limits: {k1.limits}</p>
           <p className="mt-1 text-xs text-slate-600">

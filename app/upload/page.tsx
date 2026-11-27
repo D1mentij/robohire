@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { k1Headline } from "@/lib/roi/k1";
 import { useRouter } from "next/navigation";
 import { startDemo } from "@/lib/ai/demo";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -845,14 +846,11 @@ export default function UploadPage() {
               {topRecommendedJob?.economics?.rent_available === false ? (
                 <>
                   Best match: <b>{topRecommendedJob.robot_name ?? topRecommendedJob.title}</b>{" "}
-                  — frees {topRecommendedJob.economics.hours_freed_per_day.low.toFixed(1)}–
-                  {topRecommendedJob.economics.hours_freed_per_day.high.toFixed(1)} h/day (€
-                  {topRecommendedJob.savings_eur_month.toLocaleString("en-US")}/mo of staff time). Rent: no offer —{" "}
+                  — frees {k1Headline(topRecommendedJob.economics).hours} h/day (
+                  {k1Headline(topRecommendedJob.economics).savings}/mo of staff time). Rent: no offer —{" "}
                   <b className="text-emerald-700 dark:text-emerald-400">
-                    buy €{topRecommendedJob.economics.purchase_price_eur.toLocaleString("en-US")} ex VAT
-                    {topRecommendedJob.payback_months !== null
-                      ? `, payback ~${Math.round(topRecommendedJob.payback_months)} mo`
-                      : ", does not pay back"}
+                    buy €{topRecommendedJob.economics.purchase_price_eur.toLocaleString("en-US")} ex VAT, payback{" "}
+                    {k1Headline(topRecommendedJob.economics).payback} mo
                   </b>
                 </>
               ) : topRecommendedJob ? (

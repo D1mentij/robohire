@@ -18,7 +18,7 @@ import {
   type Scene,
 } from "@/types/contracts";
 import { K1_ID, K1_SPEC } from "@/src/data/k1";
-import { buildK1Job } from "@/lib/roi/k1";
+import { buildK1Job, k1Headline } from "@/lib/roi/k1";
 import { daysOpenFromHours, operatingHoursPerDay } from "@/lib/roi/economics";
 import { buildPlan } from "@/lib/roi/roi";
 import {
@@ -480,7 +480,7 @@ function JobCard({
     : null;
   const hoursRangeText = econ
     ? formatHoursRange(
-        econ.hours_freed_per_day.low,
+        econ.hours_freed_per_day.expected, // likely range: expected → best case (same as the K1 card and the deck)
         econ.hours_freed_per_day.high,
       )
     : hoursFreed !== null
@@ -1227,23 +1227,9 @@ export default function JobsPage() {
   }
 
   const k1Style = FIT_STYLES[k1Job.fit];
-  const k1HoursRange = formatHoursRange(
-    k1Job.economics.hours_freed_per_day.low,
-    k1Job.economics.hours_freed_per_day.high,
-  );
-  const k1PaybackText = (() => {
-    const pbRange = k1Job.economics.payback_months;
-    if (pbRange.expected !== null) {
-      const hi = pbRange.high !== null ? Math.round(pbRange.high * 10) / 10 : null;
-      const lo = pbRange.low !== null ? Math.round(pbRange.low * 10) / 10 : null;
-      const exp = Math.round(pbRange.expected * 10) / 10;
-      if (hi !== null && lo !== null && hi !== lo) {
-        return `${hi}–${lo} months (~${exp} mo expected)`;
-      }
-      return `~${exp} months`;
-    }
-    return "no payback";
-  })();
+  const k1H = k1Headline(k1Job.economics);
+  const k1HoursRange = k1H.hours;
+  const k1PaybackText = `${k1H.payback} months (expected → best case; ${k1H.conservative})`;
   const k1SaleReferral = Math.round(K1_SPEC.purchasePriceEur * 0.07);
 
   const topAltSubtitle =
@@ -1522,8 +1508,8 @@ export default function JobsPage() {
                 <strong className="font-mono text-slate-900 dark:text-white">
                   {k1HoursRange} h/day
                 </strong>{" "}
-                (~€{k1Job.savings_eur_month.toLocaleString("en-US")}/mo of
-                reception staff time) ·{" "}
+                (one 80-min charge, {k1H.savings}/mo of reception staff time at €
+                {k1Job.economics.role_hourly_eur.toFixed(2)}/h) ·{" "}
                 <strong className="font-mono text-slate-800 dark:text-slate-200">
                   Rent: no offer — buy only
                 </strong>{" "}

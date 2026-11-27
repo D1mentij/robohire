@@ -104,14 +104,16 @@ Data contracts live in `types/contracts.ts`. A demo mode (`lib/ai/demo.ts`) keep
 
 **Used at runtime** (server-side only): a local Ollama vision model, default `qwen3-vl:4b-instruct` (fallback `qwen3-vl:8b-instruct`), or optionally Google Gemini via `@google/genai`. The AI turns video frames into a floor plan, tasks and each task's fit (fit/score/why/limits), and can write the shift demo script. Code validates all AI output before using it. **The AI never produces money or hours figures**: those come only from the formulas below. The robot never speaks aloud; the simulation shows a checklist and captions.
 
-**K1 facts** come from the official [Booster K1 page](https://www.booster.tech/booster-k1/) and the generationrobots listing; items without a source are marked `"assumption": true` in `lib/ai/k1-profile.json`.
+**K1 facts** come from the official [Booster K1 page](https://www.booster.tech/booster-k1/), the [K1 product manual](https://docs.booster.tech/docs/product-manual/k1/getting-started/overview/) and the generationrobots listing; values without a source are labelled as assumptions in `src/data/k1.ts` (for example the 55 cm minimum aisle, because Booster publishes no K1 width).
 
 ### Economics (`lib/roi/economics.ts`, `lib/roi/k1.ts`)
 
 `savings/month = hours freed per day × role €/h × days open per week × 4.33`
 - **Rent:** net = savings − distributor rent (no RoboHire markup). No payback, because you can stop renting.
 - **Buy:** upkeep = 10% of price per year; net = savings − upkeep; payback = price ÷ net; 3-year ROI = (net × 36 − price) ÷ price.
-- Every figure is shown as low / expected / high.
+- Every figure is computed as low / expected / high. Cards and the pitch show the **likely range = expected → best case**; the conservative (low) case stays visible next to it.
+- Demo venues (small, one 80-min charge, reception €9.93/h): **Booster K1 frees 1.1–1.3 h/day, €290–340/mo, payback 27–33 months at €7,500 ex VAT (€9,000 incl.), fit "Partial"** (conservative case 0.75 h/day, payback 57 months). Keenon T8 frees 2.3–3 h/day (conservative 1.5).
+- Price range of the 15-robot benchmark: Temi €4.1k → Gausium Scrubber 75P €87.4k (`src/data/robots.ts`).
 
 | Value | Setting | Label |
 | --- | --- | --- |
