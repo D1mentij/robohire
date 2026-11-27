@@ -4,7 +4,7 @@ import { planK1Commands, WALK_SPEED_MPS, STOP_BEFORE_EDGE_M, type K1Command } fr
 /*
  * Scenario + Scene → readable Python script for a real Booster K1, using the official Booster Robotics SDK.
  *
- * SDK facts used (checked 2026-11-23):
+ * SDK facts used (checked 2026-11-23, re-checked 2026-11-27: names match booster_gym deploy.py + b1_loco_client.hpp):
  *  - Python package `booster_robotics_sdk_python` (pip, Linux wheels); the GitHub repo itself ships the C++ SDK:
  *    https://github.com/BoosterRobotics/booster_robotics_sdk (README: "pip install booster_robotics_sdk_python --user")
  *  - Init: `ChannelFactory.Instance().Init(0, net_interface)`, `client = B1LocoClient()`, `client.Init()`
