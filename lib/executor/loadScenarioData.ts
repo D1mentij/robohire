@@ -234,7 +234,7 @@ export function loadSimulationData(
       job = matchedJob;
     } else if (
       scenario.job_id === K1_JOB_ID ||
-      scenario.job_id === "shift"
+      (scenario.job_id === "shift" && plan.job_ids.includes(K1_JOB_ID))
     ) {
       job = currentJobsResult.jobs.find((j) => isK1Job(j)) ?? buildK1Job(scene);
     }
@@ -251,7 +251,7 @@ export function loadSimulationData(
   const activeIsK1 =
     isK1Job(job) ||
     scenario.job_id === K1_JOB_ID ||
-    scenario.job_id === "shift";
+    (scenario.job_id === "shift" && plan.job_ids.includes(K1_JOB_ID));
   const fallbackRobotType: RobotType = activeIsK1
     ? "temi"
     : inferRobotType(job);

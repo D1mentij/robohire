@@ -478,6 +478,41 @@ function JobCard({
   const hoursFreed = econ
     ? Math.round(econ.hours_freed_per_day.expected * 10) / 10
     : null;
+  const hoursRangeText = econ
+    ? formatHoursRange(
+        econ.hours_freed_per_day.low,
+        econ.hours_freed_per_day.high,
+      )
+    : hoursFreed !== null
+      ? `${hoursFreed}`
+      : null;
+
+  const rentSource = econ?.rent_source ?? spec?.rentSource ?? "estimate";
+  const priceSource =
+    econ?.price_source ??
+    (jobIsK1 ? K1_SPEC.priceSource : (spec?.priceSource ?? ""));
+  const sourceBadgeText = jobIsK1
+    ? "verified 26.11.2026 · generationrobots"
+    : rentSource === "quote"
+      ? "verified quote · 26.11.2026"
+      : /riga|babystore/i.test(priceSource)
+        ? "Riga retail · est. rent"
+        : "US list conv. · estimate";
+
+  const buyPaybackText = (() => {
+    const pbRange = econ?.payback_months;
+    if (pbRange && pbRange.expected !== null) {
+      const hi = pbRange.high !== null ? Math.round(pbRange.high * 10) / 10 : null;
+      const lo = pbRange.low !== null ? Math.round(pbRange.low * 10) / 10 : null;
+      const exp = Math.round(pbRange.expected * 10) / 10;
+      if (hi !== null && lo !== null && hi !== lo) {
+        return `${hi}–${lo} mo (~${exp} mo expected)`;
+      }
+      return `~${exp} mo`;
+    }
+    return job.payback_months !== null ? `~${job.payback_months} mo` : "no payback";
+  })();
+
   const isCheaper = rentAvailable && netRent > 0;
   const pctBadgeText = !rentAvailable
     ? "Rent: no offer — buy only"
@@ -509,6 +544,12 @@ function JobCard({
               </span>
               <span className="rounded-full border border-slate-300/80 bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 vs {roleInfo.title}
+              </span>
+              <span
+                data-testid={`source-badge-${cardId}`}
+                className="rounded-full border border-slate-300/80 bg-slate-50 px-2.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400"
+              >
+                {sourceBadgeText}
               </span>
               {isTopAlternative && !isNotSuitable && (
                 <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-700 dark:text-sky-300">
@@ -585,34 +626,22 @@ function JobCard({
           />
         </div>
 
-        {/* Cost banner: distributor rent vs value of staff hours freed (not a whole shift) */}
-        <div className="rounded-xl border border-slate-200/90 bg-slate-50/90 p-4 dark:border-slate-800 dark:bg-slate-950/70">
+        {/* Honest economics rows: Frees X–Y h/day, Rent row, Buy row */}
+        <div className="space-y-2 rounded-xl border border-slate-200/90 bg-slate-50/90 p-4 text-sm dark:border-slate-800 dark:bg-slate-950/70">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Rent:{" "}
-                </span>
-                <strong className="font-mono text-base font-extrabold text-sky-700 dark:text-sky-300">
-                  {rentAvailable
-                    ? `€${clientRaaS.toLocaleString("en-US")}/mo`
-                    : "no offer"}
-                </strong>
-              </div>
-              <span className="text-xs font-bold text-slate-400">vs</span>
-              <div>
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Staff time freed:{" "}
-                </span>
-                <strong className="font-mono text-base font-extrabold text-slate-900 dark:text-white">
+            <div>
+              <span className="font-bold text-slate-900 dark:text-white">
+                Frees{" "}
+                {hoursRangeText !== null ? `${hoursRangeText} h/day` : "staff hours"}
+              </span>{" "}
+              <span className="text-xs text-slate-600 dark:text-slate-400">
+                (worth{" "}
+                <strong className="font-mono text-slate-900 dark:text-white">
                   €{humanCost.toLocaleString("en-US")}/mo
                 </strong>{" "}
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {hoursFreed !== null
-                    ? `(~${hoursFreed} h/day, ${shifts} ${shifts === 1 ? "shift" : "shifts"}, incl. 23.59% VSAOI)`
-                    : `(${shifts} ${shifts === 1 ? "shift" : "shifts"}, incl. 23.59% VSAOI)`}
-                </span>
-              </div>
+                of staff time · {shifts} {shifts === 1 ? "shift" : "shifts"}, incl.
+                23.59% VSAOI)
+              </span>
             </div>
 
             <span
@@ -627,6 +656,46 @@ function JobCard({
             >
               {pctBadgeText}
             </span>
+          </div>
+
+          <div className="grid gap-2 border-t border-slate-200/80 pt-2 text-xs sm:grid-cols-2 dark:border-slate-800">
+            <div>
+              <span className="font-semibold text-slate-500 dark:text-slate-400">
+                Rent:{" "}
+              </span>
+              {rentAvailable ? (
+                <span className="font-mono text-slate-900 dark:text-white">
+                  <strong>€{clientRaaS.toLocaleString("en-US")}/mo</strong>{" "}
+                  <span className="text-slate-500 dark:text-slate-400">
+                    ({rentSource})
+                  </span>{" "}
+                  →{" "}
+                  <strong
+                    className={
+                      isCheaper
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }
+                  >
+                    net {formatEur(netRent)}/mo
+                  </strong>
+                </span>
+              ) : (
+                <strong className="font-mono text-slate-700 dark:text-slate-300">
+                  no offer — buy only
+                </strong>
+              )}
+            </div>
+
+            <div>
+              <span className="font-semibold text-slate-500 dark:text-slate-400">
+                Buy:{" "}
+              </span>
+              <span className="font-mono text-slate-900 dark:text-white">
+                <strong>€{purchasePrice.toLocaleString("en-US")} ex VAT</strong> →
+                payback <strong>{buyPaybackText}</strong>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1162,6 +1231,19 @@ export default function JobsPage() {
     k1Job.economics.hours_freed_per_day.low,
     k1Job.economics.hours_freed_per_day.high,
   );
+  const k1PaybackText = (() => {
+    const pbRange = k1Job.economics.payback_months;
+    if (pbRange.expected !== null) {
+      const hi = pbRange.high !== null ? Math.round(pbRange.high * 10) / 10 : null;
+      const lo = pbRange.low !== null ? Math.round(pbRange.low * 10) / 10 : null;
+      const exp = Math.round(pbRange.expected * 10) / 10;
+      if (hi !== null && lo !== null && hi !== lo) {
+        return `${hi}–${lo} months (~${exp} mo expected)`;
+      }
+      return `~${exp} months`;
+    }
+    return "no payback";
+  })();
   const k1SaleReferral = Math.round(K1_SPEC.purchasePriceEur * 0.07);
 
   const topAltSubtitle =
@@ -1419,7 +1501,7 @@ export default function JobsPage() {
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-3 py-0.5 text-xs font-extrabold tracking-wide text-sky-700 dark:text-sky-300">
-                  ★ Primary Robot • Booster K1 EDU
+                  ★ Best match • Primary Robot: Booster K1 EDU
                 </span>
                 <span
                   className={`rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold ${k1Style.badgeClass}`}
@@ -1450,10 +1532,7 @@ export default function JobsPage() {
                   €{K1_SPEC.purchasePriceEur.toLocaleString("en-US")} ex VAT
                 </strong>{" "}
                 (€{K1_SPEC.purchasePriceInclVatEur.toLocaleString("en-US")} incl.
-                VAT)
-                {k1Job.payback_months !== null
-                  ? ` → payback ~${k1Job.payback_months} months`
-                  : " → no payback"}
+                VAT) → payback {k1PaybackText}
               </p>
             </div>
 

@@ -569,3 +569,10 @@
 - Known, not fixed (no new features): K1 savings use the reception benchmark €9.93/h and ignore the hourly-cost override from /upload (catalog robots apply it).
 - Tested: npm test ✔, npm run demo:check READY ✔.
 - Next: B1 re-review of Gemini's next commit, then B2.
+
+## [2026-11-27 13:47] Person 2 / Antigravity — G2 (/jobs Frees X–Y h/day, Rent/Buy rows, source badge) + Tick G2/G3/G4 + Resolve REVIEW item
+- Done: Completed G2 in `app/jobs/page.tsx` (`JobCard` shows `"Frees X–Y h/day"`, explicit Rent row with quote/estimate source & net €/mo, Buy row with ex-VAT price & payback range, and source badge; K1 top card shows `"★ Best match • Primary Robot: Booster K1 EDU"` + payback range matching `docs/hacktribe.md`; zero `"% cheaper"` text). Resolved the open `REVIEW.md` item in `lib/executor/loadScenarioData.ts` (`"shift"` treated as K1 only when `plan.job_ids.includes(K1_JOB_ID)`). Ticked G2, G3, and G4 in `FINAL_SPEC.md`.
+- Changed files: app/jobs/page.tsx, lib/executor/loadScenarioData.ts, REVIEW.md, FINAL_SPEC.md, HANDOFF.md, PROGRESS.md.
+- AI-generated: UI and loader edits above by Antigravity (Gemini).
+- CONTRACT CHANGE: None
+- Tested: `npm test` ✔, `npm run lint` ✔, `npm run demo:check` → `READY ✔`.
