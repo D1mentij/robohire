@@ -42,7 +42,9 @@ export interface LoadedSimulationData {
   businessType: string;
   /** Hired commercial robot job metadata (RaaS, Latvia staff cost, savings) */
   job: Job;
-  /** Active commercial robot ID from the 15-robot catalog */
+  /** True when the active simulation is the primary Booster K1 EDU humanoid */
+  isK1: boolean;
+  /** Active commercial robot ID when `isK1` is false */
   robotType: RobotType;
   /** Deployment plan summary */
   plan: RobotPlan;

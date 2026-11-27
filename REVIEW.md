@@ -6,6 +6,9 @@ Fixed items move to Resolved with the fixing commit hash.
 
 ## Open issues for Person 1 (Claude Code)
 
+- [ ] 2026-11-27 12:50 | app/upload/page.tsx:845-859 | bug | After C2 prepended `job_booster_k1` (`client_raas_eur: undefined`, `economics.rent_available: false`, `net_rent_eur_month.expected: 0`) to `jobs.jobs`, `/upload` summary picks K1 as `topRecommendedJob` (`jobs.find(j => j.fit !== "no")`) and renders `"€undefined/mo rent ... → net €0/month on rent"`. | Run Analyze on `/upload` → see the post-analysis summary line under the zones/tasks card. | Check `topRecommendedJob.id === K1_JOB_ID` or `topRecommendedJob.economics?.rent_available === false` and render `"Rent: no offer — buy €7,500 ex VAT, payback ~X mo"` instead of `client_raas_eur` / `net_rent_eur_month`. — reported by Person 2
+- [ ] 2026-11-27 12:50 | app/api/scenario/route.ts:35-38 | ux | `POST /api/scenario` with `job.id === "job_booster_k1"` calls `inferRobotType(b.job)`, mapping K1 to `pudu_kettybot_pro` whose template step says `"Check my front screen for special offers"` (K1 has no front screen). (`/jobs` and `/robot` already bypass this via `buildK1Scenario` in `lib/executor/loadScenarioData.ts`.) | `POST /api/scenario` with `{ job: buildK1Job(mockScene), scene: mockScene }`. | Branch on `b.job.id === K1_JOB_ID` in `app/api/scenario/route.ts` to use `buildK1Scenario(b.job, b.scene)` (or K1-appropriate steps without screen text). — reported by Person 2
+
 ## Open issues for Person 2 (Antigravity)
 
 ## Resolved

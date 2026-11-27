@@ -12,8 +12,10 @@ import type {
   WalkTargetInfo,
 } from "@/lib/executor";
 import { getRobotSpec } from "@/lib/robots/catalog";
+import { K1_SPEC } from "@/src/data/k1";
 import { Room3D } from "./Room3D";
 import { CommercialRobotModel } from "./CommercialRobotModel";
+import { RobotModel } from "./RobotModel";
 
 const FLY_IN_DURATION_SECONDS = 1.65;
 
@@ -135,6 +137,7 @@ function FollowCameraController({
 export interface SimCanvasProps {
   scene: Scene;
   businessType?: string;
+  isK1?: boolean;
   robotType?: RobotType;
   activeZoneId: string | null;
   startPosition: Vec2XZ;
@@ -149,11 +152,13 @@ export interface SimCanvasProps {
 export function SimCanvas({
   scene,
   businessType,
+  isK1 = false,
   robotType = "keenon_t8",
   activeZoneId,
   startPosition,
   currentTargetInfo,
   poseRef,
+  animation,
   isPointing,
   followCamera = true,
   onTick,
@@ -162,6 +167,7 @@ export function SimCanvas({
   const cz = scene.room.depth / 2;
   const [canvasReady, setCanvasReady] = useState(false);
   const robotSpec = getRobotSpec(robotType);
+  const loadingRobotName = isK1 ? K1_SPEC.name : robotSpec.name;
 
   return (
     <div className="relative h-full w-full bg-slate-950">
@@ -172,7 +178,7 @@ export function SimCanvas({
         >
           <div className="h-8 w-8 animate-spin rounded-full border-3 border-sky-500 border-t-transparent" />
           <p className="font-mono text-xs font-semibold tracking-wide text-sky-300">
-            Loading 3D workspace &amp; {robotSpec.name}…
+            Loading 3D workspace &amp; {loadingRobotName}…
           </p>
         </div>
       )}
@@ -229,13 +235,23 @@ export function SimCanvas({
           currentTargetInfo={currentTargetInfo}
         />
 
-        <CommercialRobotModel
-          robotType={robotType}
-          poseRef={poseRef}
-          startPosition={startPosition}
-          isPointing={isPointing}
-          onTick={onTick}
-        />
+        {isK1 ? (
+          <RobotModel
+            poseRef={poseRef}
+            startPosition={startPosition}
+            animation={animation}
+            isPointing={isPointing}
+            onTick={onTick}
+          />
+        ) : (
+          <CommercialRobotModel
+            robotType={robotType}
+            poseRef={poseRef}
+            startPosition={startPosition}
+            isPointing={isPointing}
+            onTick={onTick}
+          />
+        )}
 
         <FollowCameraController
           poseRef={poseRef}

@@ -14,8 +14,11 @@ import {
   type RobotPlan,
   type RobotType,
   type Scenario,
+  type ScenarioStep,
   type Scene,
 } from "@/types/contracts";
+import { K1_ID, K1_JOB_ID } from "@/src/data/k1";
+import { buildK1Job } from "@/lib/roi/k1";
 import { buildPlan } from "@/lib/roi/roi";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
 import { buildRobotScenario, inferRobotType } from "@/lib/robots/catalog";
@@ -33,10 +36,75 @@ export const JOBS_LIST_STORAGE_KEYS = [JOBS_STORAGE_KEY, "jobs"] as const;
 export const PLAN_STORAGE_KEYS = [PLAN_STORAGE_KEY, "plan"] as const;
 
 const DEFAULT_HOURLY_COST = 9.24;
-const DEFAULT_MOCK_PLAN: RobotPlan = buildPlan(
-  mockJobs.jobs,
-  DEFAULT_HOURLY_COST,
-);
+
+/**
+ * Detects Booster K1 EDU strictly by `job.id === K1_JOB_ID` (or `robot_id` / future `robot_type`),
+ * never passing K1 through `inferRobotType`.
+ */
+export function isK1Job(
+  job: Pick<Job, "id" | "robot_type"> | null | undefined,
+): boolean {
+  if (!job) return false;
+  if (job.id === K1_JOB_ID) return true;
+  const extraId = (job as { robot_id?: unknown }).robot_id;
+  if (extraId === K1_ID) return true;
+  if ((job.robot_type as string | undefined) === K1_ID) return true;
+  return false;
+}
+
+/**
+ * Builds an authentic Booster K1 EDU humanoid scenario (greeter & guide — walks,
+ * waves, points at info, guides visitors; no hands, no chest screen).
+ */
+export function buildK1Scenario(job: Job, scene: Scene): Scenario {
+  const zones = scene.zones;
+  const zoneIds = zones.map((z) => z.id);
+  const fallbackLabel = "Greet visitors";
+
+  if (zones.length === 0) {
+    return {
+      job_id: job.id,
+      steps: finalizeSteps([{ action: "wait", seconds: 2 }], fallbackLabel),
+    };
+  }
+
+  const pickZone = (re: RegExp, fallbackIdx = 0) =>
+    zones.find((z) => re.test(`${z.id} ${z.label}`)) ??
+    zones[fallbackIdx % zones.length];
+
+  const entry = pickZone(/entrance|door|foyer|lobby/i, 0);
+  const info = pickZone(/display|menu|board|promo|desk|counter|reception/i, 1);
+  const dest = pickZone(/seat|table|lounge|waiting|corridor|shelves/i, 2);
+
+  const rawSteps: ScenarioStep[] = [
+    { action: "walk_to", target: entry.id, label: "Greet at entrance" },
+    { action: "wave", label: "Greet at entrance" },
+    {
+      action: "say",
+      text: "Welcome! I can guide you inside.",
+      label: "Greet at entrance",
+    },
+    { action: "walk_to", target: info.id, label: "Point to info" },
+    { action: "point_to", target: info.id, label: "Point to info" },
+    {
+      action: "say",
+      text: "Key venue details are right here.",
+      label: "Point to info",
+    },
+    { action: "walk_to", target: dest.id, label: "Guide visitors" },
+    { action: "point_to", target: dest.id, label: "Guide visitors" },
+    {
+      action: "say",
+      text: "Right this way. Enjoy your visit!",
+      label: "Guide visitors",
+    },
+  ];
+
+  return {
+    job_id: job.id,
+    steps: finalizeSteps(filterValidSteps(rawSteps, zoneIds), fallbackLabel),
+  };
+}
 
 function tryParseJson(raw: string | null): unknown {
   if (!raw) return null;
@@ -94,7 +162,10 @@ export function loadSimulationData(
   const storedJobsRaw = readStorageKey(JOBS_LIST_STORAGE_KEYS);
   const currentJobsResult: JobsResult = isJobsResult(storedJobsRaw)
     ? storedJobsRaw
-    : mockJobs;
+    : {
+        business_type: mockJobs.business_type,
+        jobs: [buildK1Job(mockScene), ...mockJobs.jobs],
+      };
 
   const storedPlanRaw = readStorageKey(PLAN_STORAGE_KEYS);
   const plan: RobotPlan = isRobotPlan(storedPlanRaw)
@@ -145,12 +216,11 @@ export function loadSimulationData(
 
   let job: Job =
     validStoredJob ??
+    currentJobsResult.jobs.find((j) => isK1Job(j)) ??
     currentJobsResult.jobs.find((j) => j.id === plan.job_ids[0]) ??
     currentJobsResult.jobs.find((j) => j.fit !== "no") ??
     currentJobsResult.jobs[0] ??
-    mockJobs.jobs[0];
-
-  const robotType: RobotType = inferRobotType(job);
+    buildK1Job(scene);
 
   let scenario: Scenario;
   let hasCustomScenario = false;
@@ -162,27 +232,41 @@ export function loadSimulationData(
     );
     if (matchedJob) {
       job = matchedJob;
+    } else if (
+      scenario.job_id === K1_JOB_ID ||
+      scenario.job_id === "shift"
+    ) {
+      job = currentJobsResult.jobs.find((j) => isK1Job(j)) ?? buildK1Job(scene);
     }
+  } else if (isK1Job(job)) {
+    scenario = buildK1Scenario(job, scene);
+    hasCustomScenario = hasCustomScene || validStoredJob !== null;
   } else if (hasCustomScene || validStoredJob) {
-    scenario = buildRobotScenario(robotType, job, scene);
+    scenario = buildRobotScenario(inferRobotType(job), job, scene);
     hasCustomScenario = true;
   } else {
     scenario = mockScenario;
   }
 
+  const activeIsK1 =
+    isK1Job(job) ||
+    scenario.job_id === K1_JOB_ID ||
+    scenario.job_id === "shift";
+  const fallbackRobotType: RobotType = activeIsK1
+    ? "temi"
+    : inferRobotType(job);
+
   const zoneIds = scene.zones.map((z) => z.id);
   let steps = filterValidSteps(scenario.steps, zoneIds);
   if (steps.length === 0) {
-    if (hasCustomScene && scene.zones.length > 0) {
-      scenario = buildRobotScenario(robotType, job, scene);
+    if (scene.zones.length > 0) {
+      scenario = activeIsK1
+        ? buildK1Scenario(job, scene)
+        : buildRobotScenario(fallbackRobotType, job, scene);
       steps = scenario.steps;
     } else {
-      const mockZoneIds = mockScene.zones.map((z) => z.id);
-      scenario = mockScenario;
-      steps = finalizeSteps(
-        filterValidSteps(mockScenario.steps, mockZoneIds),
-        shortLabel(job.title),
-      );
+      scenario = buildK1Scenario(buildK1Job(mockScene), mockScene);
+      steps = scenario.steps;
       hasCustomScenario = false;
     }
   } else {
@@ -193,7 +277,6 @@ export function loadSimulationData(
   }
 
   const sanitizedScenario: Scenario = { ...scenario, steps };
-  const finalRobotType: RobotType = inferRobotType(job);
 
   const source: "custom" | "mock" =
     hasCustomScene || hasCustomScenario || isJobsResult(storedJobsRaw)
@@ -208,7 +291,8 @@ export function loadSimulationData(
     scenario: sanitizedScenario,
     businessType,
     job,
-    robotType: finalRobotType,
+    isK1: activeIsK1,
+    robotType: fallbackRobotType,
     plan,
     steps,
     source,
@@ -216,21 +300,18 @@ export function loadSimulationData(
 }
 
 export function loadDefaultMockSimulationData(): LoadedSimulationData {
-  const zoneIds = mockScene.zones.map((z) => z.id);
-  const job =
-    mockJobs.jobs.find((j) => j.id === mockScenario.job_id) ?? mockJobs.jobs[0];
-  const steps = finalizeSteps(
-    filterValidSteps(mockScenario.steps, zoneIds),
-    shortLabel(job.title),
-  );
+  const k1Job = buildK1Job(mockScene);
+  const scenario = buildK1Scenario(k1Job, mockScene);
+  const plan = buildPlan([k1Job, ...mockJobs.jobs], DEFAULT_HOURLY_COST);
   return {
     scene: mockScene,
-    scenario: { ...mockScenario, steps },
+    scenario,
     businessType: mockJobs.business_type,
-    job,
-    robotType: inferRobotType(job),
-    plan: DEFAULT_MOCK_PLAN,
-    steps,
+    job: k1Job,
+    isK1: true,
+    robotType: "temi",
+    plan,
+    steps: scenario.steps,
     source: "mock",
   };
 }

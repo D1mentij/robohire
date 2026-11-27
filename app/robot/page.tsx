@@ -7,9 +7,14 @@ import { getRobotDeploymentTag } from "@/components/three/CommercialRobotModel";
 import { useScenarioExecutor, useSimulationData } from "@/lib/executor";
 import { shortLabel } from "@/lib/ai/labels";
 import {
+  scriptFileName,
+  toBoosterScript,
+} from "@/lib/k1export/toBoosterScript";
+import {
   LATVIA_2026_LABOR_BENCHMARKS,
   getRobotSpec,
 } from "@/lib/robots/catalog";
+import { K1_ID, K1_SPEC } from "@/src/data/k1";
 import type { ScenarioStep, Zone } from "@/types/contracts";
 
 interface ShiftTaskGroup {
@@ -203,17 +208,63 @@ export default function RobotSimulationPage() {
     };
   }, []);
 
+  const isK1 = simData.isK1;
   const robotSpec = getRobotSpec(simData.robotType);
-  const deploymentTag = getRobotDeploymentTag(simData.robotType);
-  const overlayTitle = `${robotSpec.name} — ${deploymentTag}`;
+  const activeName = isK1 ? K1_SPEC.name : robotSpec.name;
+  const activeCategory = isK1 ? K1_SPEC.category : robotSpec.category;
+  const activeSpecsSummary = isK1
+    ? K1_SPEC.specsSummary
+    : robotSpec.specsSummary;
+  const activeAccentHex = isK1 ? "#38bdf8" : robotSpec.accentHex;
+  const activeBadgeClass = isK1
+    ? "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300"
+    : robotSpec.badgeClass;
+  const deploymentTag = isK1
+    ? "greeter & guide"
+    : getRobotDeploymentTag(simData.robotType);
+  const overlayTitle = `${activeName} — ${deploymentTag}`;
 
-  const roleInfo = LATVIA_2026_LABOR_BENCHMARKS[robotSpec.role];
+  const rentAvailable =
+    !isK1 &&
+    (simData.job.economics as { rent_available?: boolean } | undefined)
+      ?.rent_available !== false;
+
+  const roleInfo =
+    LATVIA_2026_LABOR_BENCHMARKS[isK1 ? K1_SPEC.role : robotSpec.role];
   const shifts = simData.job.shifts_count ?? 1;
-  const clientRaaS = simData.job.client_raas_eur ?? robotSpec.clientRaaSEur;
+  const clientRaaS = rentAvailable
+    ? (simData.job.client_raas_eur ?? robotSpec.clientRaaSEur)
+    : 0;
+  const purchasePriceEur = isK1
+    ? K1_SPEC.purchasePriceEur
+    : (simData.job.purchase_price_eur ?? robotSpec.purchasePriceEur);
   const humanCost =
     simData.job.human_monthly_cost_eur ?? roleInfo.employerMonthlyEur * shifts;
   const monthlySavings =
     simData.job.savings_eur_month || humanCost - clientRaaS;
+
+  const handleExportForRealK1 = useCallback(() => {
+    const py = toBoosterScript(simData.scenario, simData.scene, {
+      businessType: simData.businessType,
+      what: simData.job.title,
+    });
+    const fileName = scriptFileName(simData.scenario);
+    const url = URL.createObjectURL(
+      new Blob([py], { type: "text/x-python;charset=utf-8" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [
+    simData.scenario,
+    simData.scene,
+    simData.businessType,
+    simData.job.title,
+  ]);
 
   const taskGroups = useMemo(
     () =>
@@ -290,8 +341,8 @@ export default function RobotSimulationPage() {
               </h1>
               <span
                 data-testid="active-robot-badge"
-                data-robot-type={simData.robotType}
-                className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${robotSpec.badgeClass}`}
+                data-robot-type={isK1 ? K1_ID : simData.robotType}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${activeBadgeClass}`}
               >
                 {overlayTitle}
               </span>
@@ -303,9 +354,11 @@ export default function RobotSimulationPage() {
               Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
               {simData.scene.zones.length} zones •{" "}
               <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                €{clientRaaS.toLocaleString("en-US")}/mo rent (frees +€
-                {Math.max(0, monthlySavings).toLocaleString("en-US")}/mo of staff
-                time)
+                {rentAvailable
+                  ? `€${clientRaaS.toLocaleString("en-US")}/mo rent`
+                  : `Rent: no offer · Buy €${purchasePriceEur.toLocaleString("en-US")} ex VAT`}{" "}
+                (frees +€{Math.max(0, monthlySavings).toLocaleString("en-US")}
+                /mo of staff time)
               </span>
             </p>
           </div>
@@ -348,6 +401,17 @@ export default function RobotSimulationPage() {
               Follow Cam: {followCamera ? "ON" : "OFF"}
             </button>
 
+            {isK1 && (
+              <button
+                type="button"
+                data-testid="export-k1-btn"
+                onClick={handleExportForRealK1}
+                className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                Export for real K1 (.py)
+              </button>
+            )}
+
             <button
               type="button"
               data-testid="present-mode-btn"
@@ -379,14 +443,14 @@ export default function RobotSimulationPage() {
             <span
               aria-hidden="true"
               className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: robotSpec.accentHex }}
+              style={{ backgroundColor: activeAccentHex }}
             />
             <div className="min-w-0">
               <div className="text-sm font-extrabold tracking-tight text-white">
                 {overlayTitle}
               </div>
               <div className="font-mono text-[11px] text-slate-300">
-                {robotSpec.category} • {simData.businessType}
+                {activeCategory} • {simData.businessType}
               </div>
             </div>
           </div>
@@ -414,6 +478,7 @@ export default function RobotSimulationPage() {
           <SimCanvas
             scene={simData.scene}
             businessType={simData.businessType}
+            isK1={isK1}
             robotType={simData.robotType}
             activeZoneId={executor.activeZoneId}
             startPosition={executor.startPosition}
@@ -431,7 +496,7 @@ export default function RobotSimulationPage() {
               data-testid="active-status-caption"
               className="pointer-events-none absolute bottom-6 left-1/2 z-20 max-w-md -translate-x-1/2 rounded-2xl border border-sky-400/50 bg-slate-900/90 px-4 py-2.5 text-center text-sm font-semibold text-sky-100 shadow-xl backdrop-blur-md"
             >
-              <span className="mr-1.5 text-sky-400">{robotSpec.name}:</span>
+              <span className="mr-1.5 text-sky-400">{activeName}:</span>
               {executor.activeCaption}
             </div>
           )}
@@ -486,13 +551,18 @@ export default function RobotSimulationPage() {
                     <span>
                       Rent:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        €{clientRaaS.toLocaleString("en-US")}/mo
+                        {rentAvailable
+                          ? `€${clientRaaS.toLocaleString("en-US")}/mo`
+                          : "no offer — buy only"}
                       </strong>
                     </span>
                     <span>
                       Purchase:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
-                        €{robotSpec.purchasePriceEur.toLocaleString("en-US")}
+                        €{purchasePriceEur.toLocaleString("en-US")} ex VAT
+                        {isK1
+                          ? ` (€${K1_SPEC.purchasePriceInclVatEur.toLocaleString("en-US")} incl. VAT)`
+                          : ""}
                       </strong>
                     </span>
                   </div>
@@ -505,6 +575,16 @@ export default function RobotSimulationPage() {
                   >
                     ← Back to Robots
                   </Link>
+                  {isK1 && (
+                    <button
+                      type="button"
+                      data-testid="export-k1-completed-btn"
+                      onClick={handleExportForRealK1}
+                      className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      Export for real K1 (.py)
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={executor.replay}
@@ -526,10 +606,10 @@ export default function RobotSimulationPage() {
           <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
             <div>
               <h2 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                {robotSpec.name}
+                {activeName}
               </h2>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {deploymentTag} • {robotSpec.specsSummary}
+                {deploymentTag} • {activeSpecsSummary}
               </p>
             </div>
             <span

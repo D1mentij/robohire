@@ -17,6 +17,9 @@ import {
   type Scenario,
   type Scene,
 } from "@/types/contracts";
+import { K1_ID, K1_SPEC } from "@/src/data/k1";
+import { buildK1Job } from "@/lib/roi/k1";
+import { daysOpenFromHours, operatingHoursPerDay } from "@/lib/roi/economics";
 import { buildPlan } from "@/lib/roi/roi";
 import {
   ANALYSIS_STORAGE_KEY,
@@ -39,7 +42,11 @@ import {
   shiftsFromHours,
   type CategoryFilterId,
 } from "@/lib/robots/catalog";
-import { clearHandoffStorage } from "@/lib/executor";
+import {
+  buildK1Scenario,
+  clearHandoffStorage,
+  isK1Job,
+} from "@/lib/executor/loadScenarioData";
 
 const SCENARIO_TIMEOUT_MS = 20_000;
 const SAVED_CUSTOM_ANALYSIS_KEY = "robohire:savedCustomAnalysis";
@@ -79,8 +86,15 @@ function parseSavedCustomAnalysis(raw: string | null): SavedCustomAnalysis | nul
   return null;
 }
 
+function hasRentOffer(job: Job): boolean {
+  if (isK1Job(job)) return false;
+  const flag = (job.economics as { rent_available?: boolean } | undefined)
+    ?.rent_available;
+  return flag !== false;
+}
+
 /**
- * Determines whether a commercial robot belongs to the categories relevant
+ * Determines whether a specialised commercial robot belongs to the categories relevant
  * to the selected business type (e.g., café → HoReCa Delivery + Reception + compact cleaning).
  */
 function isRobotRelevantForVenue(
@@ -393,11 +407,17 @@ function formatEur(n: number): string {
   return n < 0 ? `-€${abs}` : `€${abs}`;
 }
 
+function formatHoursRange(low: number, high: number): string {
+  const l = Math.round(low * 10) / 10;
+  const h = Math.round(high * 10) / 10;
+  return l === h ? `${l}` : `${l}–${h}`;
+}
+
 interface JobCardProps {
   job: Job;
   rank: number;
   viewMode: ViewMode;
-  isBestMatch: boolean;
+  isTopAlternative: boolean;
   isHiring: boolean;
   isAnyHiring: boolean;
   onSimulate: (job: Job) => void;
@@ -407,7 +427,7 @@ function JobCard({
   job,
   rank,
   viewMode,
-  isBestMatch,
+  isTopAlternative,
   isHiring,
   isAnyHiring,
   onSimulate,
@@ -415,34 +435,55 @@ function JobCard({
   const style = FIT_STYLES[job.fit];
   const isNotSuitable = job.fit === "no";
   const canSimulate = job.fit === "good" || job.fit === "partial";
-  const robotType = inferRobotType(job);
-  const spec = getRobotSpec(robotType);
-  const roleInfo = LATVIA_2026_LABOR_BENCHMARKS[spec.role];
+  const jobIsK1 = isK1Job(job);
+  const rentAvailable = hasRentOffer(job);
 
-  const clientRaaS = job.client_raas_eur ?? spec.clientRaaSEur;
-  const baseRaaS = job.base_raas_eur ?? spec.baseRaaSEur;
-  const monthlyComm = job.monthly_commission_eur ?? spec.monthlyCommissionEur;
-  const purchasePrice = job.purchase_price_eur ?? spec.purchasePriceEur;
-  const saleComm = job.sale_commission_eur ?? spec.saleCommissionEur;
+  // Never pass K1 through inferRobotType
+  const spec = jobIsK1 ? null : getRobotSpec(inferRobotType(job));
+  const cardId = jobIsK1 ? K1_ID : spec!.id;
+  const cardName = jobIsK1 ? K1_SPEC.name : spec!.name;
+  const cardCategory = jobIsK1 ? K1_SPEC.category : spec!.category;
+  const cardBadgeClass = jobIsK1
+    ? "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-300"
+    : spec!.badgeClass;
+  const roleInfo =
+    LATVIA_2026_LABOR_BENCHMARKS[jobIsK1 ? K1_SPEC.role : spec!.role];
+
+  const clientRaaS = rentAvailable
+    ? (job.client_raas_eur ?? spec?.clientRaaSEur ?? 0)
+    : 0;
+  const baseRaaS = rentAvailable
+    ? (job.base_raas_eur ?? spec?.baseRaaSEur ?? 0)
+    : 0;
+  const monthlyComm = rentAvailable
+    ? (job.monthly_commission_eur ?? spec?.monthlyCommissionEur ?? 0)
+    : 0;
+  const purchasePrice =
+    job.purchase_price_eur ??
+    (jobIsK1 ? K1_SPEC.purchasePriceEur : spec!.purchasePriceEur);
+  const saleComm =
+    job.sale_commission_eur ??
+    (jobIsK1 ? Math.round(purchasePrice * 0.07) : spec!.saleCommissionEur);
   const shifts = job.shifts_count ?? 1;
   const humanCost =
     job.human_monthly_cost_eur ?? roleInfo.employerMonthlyEur * shifts;
   const monthlySavings = job.savings_eur_month;
-  const savingsPct =
-    job.savings_pct ??
-    Math.round(((humanCost - clientRaaS) / Math.max(1, humanCost)) * 1000) / 10;
 
   const econ = job.economics;
-  const netRent = econ
-    ? Math.round(econ.net_rent_eur_month.expected)
-    : humanCost - clientRaaS;
+  const netRent = rentAvailable
+    ? econ
+      ? Math.round(econ.net_rent_eur_month.expected)
+      : humanCost - clientRaaS
+    : 0;
   const hoursFreed = econ
     ? Math.round(econ.hours_freed_per_day.expected * 10) / 10
     : null;
-  const isCheaper = econ ? netRent > 0 : savingsPct > 0;
-  const pctBadgeText = isCheaper
-    ? `Rent net +€${netRent.toLocaleString("en-US")}/mo`
-    : `Rent loses €${Math.abs(netRent).toLocaleString("en-US")}/mo`;
+  const isCheaper = rentAvailable && netRent > 0;
+  const pctBadgeText = !rentAvailable
+    ? "Rent: no offer — buy only"
+    : isCheaper
+      ? `Rent net +€${netRent.toLocaleString("en-US")}/mo`
+      : `Rent loses €${Math.abs(netRent).toLocaleString("en-US")}/mo`;
 
   const deploymentSubtitle = job.title.includes(" — ")
     ? job.title.split(" — ").slice(1).join(" — ")
@@ -450,9 +491,9 @@ function JobCard({
 
   return (
     <article
-      data-testid={`job-card-${spec.id}`}
+      data-testid={`job-card-${cardId}`}
       data-fit={job.fit}
-      data-robot-type={spec.id}
+      data-robot-type={cardId}
       className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
@@ -461,17 +502,17 @@ function JobCard({
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                data-testid={`robot-category-${spec.id}`}
-                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${spec.badgeClass}`}
+                data-testid={`robot-category-${cardId}`}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${cardBadgeClass}`}
               >
-                {spec.category}
+                {cardCategory}
               </span>
               <span className="rounded-full border border-slate-300/80 bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 vs {roleInfo.title}
               </span>
-              {isBestMatch && !isNotSuitable && (
+              {isTopAlternative && !isNotSuitable && (
                 <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-700 dark:text-sky-300">
-                  ★ Best match
+                  ★ Best specialised fit
                 </span>
               )}
             </div>
@@ -487,7 +528,7 @@ function JobCard({
                     : "text-slate-900 dark:text-white"
                 }`}
               >
-                {spec.name}
+                {cardName}
               </h2>
             </div>
             <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
@@ -497,7 +538,7 @@ function JobCard({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <span
-              data-testid={`fit-badge-${spec.id}`}
+              data-testid={`fit-badge-${cardId}`}
               className={`rounded-full border px-3 py-1 text-xs font-bold tracking-wide ${style.badgeClass}`}
             >
               {style.label}
@@ -519,7 +560,7 @@ function JobCard({
             {canSimulate && (
               <button
                 type="button"
-                data-testid={`preview-3d-btn-${spec.id}`}
+                data-testid={`preview-3d-btn-${cardId}`}
                 disabled={isAnyHiring}
                 onClick={() => onSimulate(job)}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -553,7 +594,9 @@ function JobCard({
                   Rent:{" "}
                 </span>
                 <strong className="font-mono text-base font-extrabold text-sky-700 dark:text-sky-300">
-                  €{clientRaaS.toLocaleString("en-US")}/mo
+                  {rentAvailable
+                    ? `€${clientRaaS.toLocaleString("en-US")}/mo`
+                    : "no offer"}
                 </strong>
               </div>
               <span className="text-xs font-bold text-slate-400">vs</span>
@@ -573,11 +616,13 @@ function JobCard({
             </div>
 
             <span
-              data-testid={`savings-pct-badge-${spec.id}`}
+              data-testid={`savings-pct-badge-${cardId}`}
               className={`rounded-full border px-3 py-1 font-mono text-xs font-extrabold ${
-                isCheaper
-                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                  : "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                !rentAvailable
+                  ? "border-slate-400/50 bg-slate-500/15 text-slate-700 dark:text-slate-300"
+                  : isCheaper
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300"
               }`}
             >
               {pctBadgeText}
@@ -585,10 +630,10 @@ function JobCard({
           </div>
         </div>
 
-        {/* Broker / Partner View Intermediary Economics Drawer */}
+        {/* Partner View Intermediary Economics Drawer */}
         {viewMode === "broker" && (
           <div
-            data-testid={`broker-metrics-${spec.id}`}
+            data-testid={`broker-metrics-${cardId}`}
             className="grid gap-2.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3.5 sm:grid-cols-3 dark:border-indigo-400/30 dark:bg-indigo-950/40"
           >
             <div>
@@ -596,7 +641,9 @@ function JobCard({
                 Distributor Rent
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-slate-900 dark:text-white">
-                €{baseRaaS.toLocaleString("en-US")}/mo
+                {rentAvailable
+                  ? `€${baseRaaS.toLocaleString("en-US")}/mo`
+                  : "no offer"}
               </div>
             </div>
             <div>
@@ -604,7 +651,9 @@ function JobCard({
                 15% Referral Fee (assumption: paid by distributor)
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
-                +€{monthlyComm.toLocaleString("en-US")}/mo
+                {rentAvailable
+                  ? `+€${monthlyComm.toLocaleString("en-US")}/mo`
+                  : "—"}
               </div>
             </div>
             <div>
@@ -663,7 +712,7 @@ function JobCard({
 
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Purchase Price
+            Purchase Price (ex VAT)
           </dt>
           <dd className="mt-0.5 font-mono text-base font-bold text-slate-900 dark:text-slate-100">
             €{purchasePrice.toLocaleString("en-US")}
@@ -675,7 +724,7 @@ function JobCard({
             Min Aisle / Buy Payback
           </dt>
           <dd className="mt-0.5 font-mono text-sm font-bold text-slate-900 dark:text-slate-100">
-            {spec.minAisleCm} cm ·{" "}
+            {jobIsK1 ? "~55" : spec!.minAisleCm} cm ·{" "}
             {job.payback_months !== null
               ? `${job.payback_months} mo`
               : "no payback"}
@@ -727,25 +776,34 @@ export default function JobsPage() {
     return snapshot.hoursPerWeek;
   }, [localShiftOverride, snapshot.hoursPerWeek]);
 
-  const evaluatedJobs = useMemo(
-    () =>
-      evaluateCatalogForSpace({
-        scene: snapshot.scene,
-        businessType: snapshot.businessType,
-        hoursPerWeek: effectiveHoursForEval,
-        hourlyCost: snapshot.hourlyCost,
-        shiftsOverride: activeShifts,
-        baselineHourlyCost: snapshot.baselineHourlyCost,
-      }),
-    [
-      snapshot.scene,
-      snapshot.businessType,
-      effectiveHoursForEval,
-      snapshot.hourlyCost,
-      activeShifts,
-      snapshot.baselineHourlyCost,
-    ],
-  );
+  // Booster K1 EDU is ALWAYS prepended first alongside the 15 specialised commercial robots (FINAL_SPEC decision 1)
+  const { k1Job, catalogJobs, evaluatedJobs } = useMemo(() => {
+    const hpw = effectiveHoursForEval > 0 ? effectiveHoursForEval : 60;
+    const primaryK1 = buildK1Job(snapshot.scene, {
+      daysOpenPerWeek: daysOpenFromHours(hpw),
+      openingHoursPerDay: operatingHoursPerDay(hpw, 1),
+    });
+    const specialized = evaluateCatalogForSpace({
+      scene: snapshot.scene,
+      businessType: snapshot.businessType,
+      hoursPerWeek: effectiveHoursForEval,
+      hourlyCost: snapshot.hourlyCost,
+      shiftsOverride: activeShifts,
+      baselineHourlyCost: snapshot.baselineHourlyCost,
+    });
+    return {
+      k1Job: primaryK1,
+      catalogJobs: specialized,
+      evaluatedJobs: [primaryK1, ...specialized],
+    };
+  }, [
+    snapshot.scene,
+    snapshot.businessType,
+    effectiveHoursForEval,
+    snapshot.hourlyCost,
+    activeShifts,
+    snapshot.baselineHourlyCost,
+  ]);
 
   const venueFamily = useMemo(
     () =>
@@ -763,7 +821,7 @@ export default function JobsPage() {
 
   const relevantRobotIds = useMemo(() => {
     const ids = new Set<RobotType>();
-    for (const j of evaluatedJobs) {
+    for (const j of catalogJobs) {
       const rType = inferRobotType(j);
       const spec = getRobotSpec(rType);
       if (
@@ -778,7 +836,7 @@ export default function JobsPage() {
       }
     }
     return ids;
-  }, [evaluatedJobs, venueFamily, spaceProfile.isLargeVenue]);
+  }, [catalogJobs, venueFamily, spaceProfile.isLargeVenue]);
 
   const computedPlan = useMemo(
     () =>
@@ -786,7 +844,7 @@ export default function JobsPage() {
     [evaluatedJobs, snapshot.hourlyCost, effectiveHoursForEval],
   );
 
-  // Keep sessionStorage robohire:jobs & robohire:plan synced with live shift toggles
+  // Keep sessionStorage robohire:jobs (with K1 first) & robohire:plan synced with live shift toggles
   useEffect(() => {
     try {
       const jobsPayload: JobsResult = {
@@ -816,7 +874,7 @@ export default function JobsPage() {
 
   const categoryCounts = useMemo(() => {
     const map: Record<CategoryFilterId, number> = {
-      all: evaluatedJobs.length,
+      all: catalogJobs.length,
       "HoReCa Delivery": 0,
       "Greeting & Retail": 0,
       "Hotel & Office Delivery": 0,
@@ -825,28 +883,27 @@ export default function JobsPage() {
       "Warehouse & Factory AMR": 0,
       "General Service & Reception": 0,
     };
-    for (const j of evaluatedJobs) {
+    for (const j of catalogJobs) {
       const spec = getRobotSpec(inferRobotType(j));
       map[spec.category] += 1;
     }
     return map;
-  }, [evaluatedJobs]);
+  }, [catalogJobs]);
 
   const relevantFittingCount = useMemo(
     () =>
-      evaluatedJobs.filter(
+      catalogJobs.filter(
         (j) => j.fit !== "no" && relevantRobotIds.has(inferRobotType(j)),
       ).length,
-    [evaluatedJobs, relevantRobotIds],
+    [catalogJobs, relevantRobotIds],
   );
 
   const { visibleFittingJobs, collapsedNotSuitableJobs } = useMemo(() => {
     if (selectedCategory === "venue") {
-      const fitting = evaluatedJobs.filter(
+      const fitting = catalogJobs.filter(
         (j) => j.fit !== "no" && relevantRobotIds.has(inferRobotType(j)),
       );
-      // Put venue-relevant misfits (e.g. BellaBot 70 cm in a 55 cm café) first so the spatial "why" is obvious
-      const notSuitable = evaluatedJobs
+      const notSuitable = catalogJobs
         .filter((j) => j.fit === "no")
         .sort((a, b) => {
           const aRel = relevantRobotIds.has(inferRobotType(a)) ? 1 : 0;
@@ -862,23 +919,23 @@ export default function JobsPage() {
 
     if (selectedCategory === "all") {
       return {
-        visibleFittingJobs: evaluatedJobs.filter((j) => j.fit !== "no"),
-        collapsedNotSuitableJobs: evaluatedJobs.filter((j) => j.fit === "no"),
+        visibleFittingJobs: catalogJobs.filter((j) => j.fit !== "no"),
+        collapsedNotSuitableJobs: catalogJobs.filter((j) => j.fit === "no"),
       };
     }
 
-    const inCat = evaluatedJobs.filter(
+    const inCat = catalogJobs.filter(
       (j) => getRobotSpec(inferRobotType(j)).category === selectedCategory,
     );
     return {
       visibleFittingJobs: inCat.filter((j) => j.fit !== "no"),
       collapsedNotSuitableJobs: inCat.filter((j) => j.fit === "no"),
     };
-  }, [evaluatedJobs, relevantRobotIds, selectedCategory]);
+  }, [catalogJobs, relevantRobotIds, selectedCategory]);
 
-  // Best match card on top: highest score among `fit === "good"` (venue-relevant first)
-  const bestMatchJob = useMemo(() => {
-    const relevantGood = evaluatedJobs
+  // Top specialised commercial alternative (for honest side-by-side comparison below K1)
+  const topAlternativeJob = useMemo(() => {
+    const relevantGood = catalogJobs
       .filter((j) => j.fit === "good" && relevantRobotIds.has(inferRobotType(j)))
       .sort(
         (a, b) =>
@@ -886,17 +943,17 @@ export default function JobsPage() {
       );
     if (relevantGood.length > 0) return relevantGood[0];
 
-    const anyGood = evaluatedJobs
-      .filter((j) => j.fit === "good")
+    const anyFitting = catalogJobs
+      .filter((j) => j.fit !== "no" && relevantRobotIds.has(inferRobotType(j)))
       .sort(
         (a, b) =>
           b.score - a.score || b.savings_eur_month - a.savings_eur_month,
       );
-    return anyGood[0] ?? null;
-  }, [evaluatedJobs, relevantRobotIds]);
+    return anyFitting[0] ?? null;
+  }, [catalogJobs, relevantRobotIds]);
 
-  const bestSpec = bestMatchJob
-    ? getRobotSpec(inferRobotType(bestMatchJob))
+  const topAltSpec = topAlternativeJob
+    ? getRobotSpec(inferRobotType(topAlternativeJob))
     : null;
 
   function handleSelectPreset(preset: BusinessPreset) {
@@ -931,13 +988,19 @@ export default function JobsPage() {
         preset.label,
         preset.family,
       );
-      const nextJobs = evaluateCatalogForSpace({
+      const hpw = preset.defaultHoursPerWeek > 0 ? preset.defaultHoursPerWeek : 60;
+      const presetK1 = buildK1Job(preset.demoScene, {
+        daysOpenPerWeek: daysOpenFromHours(hpw),
+        openingHoursPerDay: operatingHoursPerDay(hpw, 1),
+      });
+      const nextCatalog = evaluateCatalogForSpace({
         scene: preset.demoScene,
         businessType: preset.label,
         hoursPerWeek: preset.defaultHoursPerWeek,
         hourlyCost: preset.defaultHourlyCost,
         baselineHourlyCost: preset.defaultHourlyCost,
       });
+      const nextJobs: Job[] = [presetK1, ...nextCatalog];
       const jobsResult: JobsResult = {
         business_type: preset.label,
         jobs: nextJobs,
@@ -1055,31 +1118,35 @@ export default function JobsPage() {
 
     try {
       clearHandoffStorage();
-      const robotType = inferRobotType(job);
       let scenario: Scenario | null = null;
 
-      try {
-        const { scenario: candidate } = await getOrCreateScenario(
-          job,
-          snapshot.scene,
-          {
-            businessType: snapshot.businessType,
-            timeoutMs: SCENARIO_TIMEOUT_MS,
-          },
-        );
-        const validSteps = filterValidSteps(
-          candidate.steps,
-          snapshot.scene.zones.map((z) => z.id),
-        );
-        if (validSteps.length > 0) {
-          scenario = { job_id: candidate.job_id, steps: validSteps };
+      if (isK1Job(job)) {
+        scenario = buildK1Scenario(job, snapshot.scene);
+      } else {
+        const robotType = inferRobotType(job);
+        try {
+          const { scenario: candidate } = await getOrCreateScenario(
+            job,
+            snapshot.scene,
+            {
+              businessType: snapshot.businessType,
+              timeoutMs: SCENARIO_TIMEOUT_MS,
+            },
+          );
+          const validSteps = filterValidSteps(
+            candidate.steps,
+            snapshot.scene.zones.map((z) => z.id),
+          );
+          if (validSteps.length > 0) {
+            scenario = { job_id: candidate.job_id, steps: validSteps };
+          }
+        } catch {
+          // Fallback to archetype scenario builder
         }
-      } catch {
-        // Fallback to archetype scenario builder
-      }
 
-      if (!scenario) {
-        scenario = buildRobotScenario(robotType, job, snapshot.scene);
+        if (!scenario) {
+          scenario = buildRobotScenario(robotType, job, snapshot.scene);
+        }
       }
 
       persistHandoff(snapshot.scene, scenario, job);
@@ -1090,10 +1157,24 @@ export default function JobsPage() {
     }
   }
 
-  const bestDeploymentSubtitle =
-    bestMatchJob && bestMatchJob.title.includes(" — ")
-      ? bestMatchJob.title.split(" — ").slice(1).join(" — ")
-      : (bestMatchJob?.title ?? "");
+  const k1Style = FIT_STYLES[k1Job.fit];
+  const k1HoursRange = formatHoursRange(
+    k1Job.economics.hours_freed_per_day.low,
+    k1Job.economics.hours_freed_per_day.high,
+  );
+  const k1SaleReferral = Math.round(K1_SPEC.purchasePriceEur * 0.07);
+
+  const topAltSubtitle =
+    topAlternativeJob && topAlternativeJob.title.includes(" — ")
+      ? topAlternativeJob.title.split(" — ").slice(1).join(" — ")
+      : (topAlternativeJob?.title ?? "");
+  const topAltNetRent =
+    topAlternativeJob && topAltSpec
+      ? Math.round(
+          topAlternativeJob.economics?.net_rent_eur_month.expected ??
+            topAlternativeJob.savings_eur_month - topAltSpec.rentEurMonth,
+        )
+      : null;
 
   return (
     <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
@@ -1105,13 +1186,13 @@ export default function JobsPage() {
               Step 2 of 3 • {snapshot.businessType}
             </span>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              Commercial Robots: Rent vs Buy
+              Booster K1 Audit &amp; Specialised Alternatives
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
               Each robot frees a few staff hours per day — not a whole shift. We
               value those hours at verified 2026 Latvia employer cost (gross
-              wage + 23.59% VSAOI) and compare with distributor rent or
-              purchase.
+              wage + 23.59% VSAOI) and compare Booster K1 EDU honestly against
+              15 specialised commercial robots.
             </p>
           </div>
 
@@ -1151,19 +1232,19 @@ export default function JobsPage() {
                       : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
                   }`}
                 >
-                  Broker / Partner View
+                  Partner View
                 </button>
               </div>
             </div>
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {viewMode === "broker"
-                ? "Showing referral fees (assumption: paid by distributor)"
-                : "Showing client rent (no markup) & staff hours freed"}
+                ? "Partner view — referral fee paid by distributor (assumption)"
+                : "Showing client prices (no markup) & staff hours freed"}
             </span>
           </div>
         </div>
 
-        {/* Broker / Partner View Summary Banner */}
+        {/* Partner View Summary Banner */}
         {viewMode === "broker" && (
           <section
             data-testid="broker-summary-banner"
@@ -1172,40 +1253,39 @@ export default function JobsPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-3 py-0.5 text-xs font-bold text-indigo-800 dark:text-indigo-200">
-                  RoboHire Partner Model — assumption: referral fee paid by
-                  distributor
+                  Partner view — referral fee paid by distributor (assumption)
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
                   15% of Monthly Rent • 7% of Sale Price (referral)
                 </h2>
                 <p className="text-xs text-slate-700 dark:text-slate-300">
-                  US list prices converted at <code>1 EUR = 1.096 USD</code>. The
-                  client pays the distributor&apos;s rent with no markup; the
-                  referral fee is an assumption, paid by the distributor.
+                  The client pays the distributor&apos;s price with no markup;
+                  referral fees are an assumption paid by the distributor.
+                  Booster K1 EDU has no rent offer (7% hardware sale referral
+                  only).
                 </p>
               </div>
 
-              {bestSpec && bestMatchJob && (
-                <div className="flex flex-wrap gap-3">
-                  <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
-                    <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      Best Match ({bestSpec.shortName}) Referral Fee
-                    </div>
-                    <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
-                      +€{bestSpec.monthlyCommissionEur}/mo recurring
-                    </div>
+              <div className="flex flex-wrap gap-3">
+                <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
+                  <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    Booster K1 EDU Sale Referral (7%)
                   </div>
-                  <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
-                    <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      Or 7% Direct Sale Fee
-                    </div>
-                    <div className="font-mono text-base font-extrabold text-indigo-700 dark:text-indigo-300">
-                      +€{bestSpec.saleCommissionEur.toLocaleString("en-US")}{" "}
-                      once
-                    </div>
+                  <div className="font-mono text-base font-extrabold text-indigo-700 dark:text-indigo-300">
+                    +€{k1SaleReferral.toLocaleString("en-US")} once
                   </div>
                 </div>
-              )}
+                {topAltSpec && (
+                  <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
+                    <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      Top Alt ({topAltSpec.shortName}) Rent Referral
+                    </div>
+                    <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
+                      +€{topAltSpec.monthlyCommissionEur}/mo
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         )}
@@ -1328,143 +1408,166 @@ export default function JobsPage() {
           </div>
         </section>
 
-        {/* One "Best match" Card on Top (highest score, fit === "good") with a single "Hire" button */}
-        {bestMatchJob && bestSpec && (
-          <section
-            data-testid="robot-plan-panel"
-            aria-label="Best match robot"
-            className="rounded-2xl border-2 border-emerald-500/60 bg-white p-6 shadow-lg transition-colors dark:border-emerald-500/50 dark:bg-slate-900"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-0.5 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
-                    ★ Best match
-                  </span>
-                  <span
-                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${bestSpec.badgeClass}`}
-                  >
-                    {bestSpec.category}
-                  </span>
-                  <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                    Suitable · {bestMatchJob.score}/100
-                  </span>
-                </div>
-
-                <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  {bestSpec.name} — {bestDeploymentSubtitle}
-                </h2>
-
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Frees{" "}
-                  {bestMatchJob.economics
-                    ? `~${Math.round(bestMatchJob.economics.hours_freed_per_day.expected * 10) / 10} h/day`
-                    : "staff hours"}{" "}
-                  (€{bestMatchJob.savings_eur_month.toLocaleString("en-US")}/mo
-                  of staff time vs €{bestSpec.rentEurMonth.toLocaleString("en-US")}
-                  /mo rent) → rent net{" "}
-                  <strong className="font-mono text-emerald-700 dark:text-emerald-400">
-                    €
-                    {Math.round(
-                      bestMatchJob.economics?.net_rent_eur_month.expected ??
-                        bestMatchJob.savings_eur_month - bestSpec.rentEurMonth,
-                    ).toLocaleString("en-US")}
-                    /mo
-                  </strong>
-                  {bestMatchJob.payback_months !== null
-                    ? `; buy payback ~${bestMatchJob.payback_months} months`
-                    : ""}{" "}
-                  ({activeShifts} {activeShifts === 1 ? "shift" : "shifts"}).
-                </p>
-              </div>
-
-              <button
-                type="button"
-                data-testid="hire-plan-btn"
-                disabled={hiringJobId !== null}
-                onClick={() => void handleHireJob(bestMatchJob)}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-7 py-3 text-base font-extrabold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
-              >
-                {hiringJobId === bestMatchJob.id && (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  />
-                )}
-                <span>
-                  {hiringJobId === bestMatchJob.id ? "Hiring…" : "Hire"}
-                </span>
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 border-t border-slate-200/80 pt-4 text-sm sm:grid-cols-2 dark:border-slate-800">
-              <div>
-                <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                  Why it fits:{" "}
-                </span>
-                <span className="text-slate-700 dark:text-slate-300">
-                  {bestMatchJob.why}
-                </span>
-              </div>
-              <div>
-                <span className="font-bold text-amber-700 dark:text-amber-400">
-                  Key limit:{" "}
-                </span>
-                <span className="text-slate-700 dark:text-slate-300">
-                  {bestMatchJob.limits}
-                </span>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Robot Category Filter Pills (default: Relevant for venue) */}
-        <nav
-          aria-label="Robot Category Filters"
-          data-testid="robot-category-filters"
-          className="flex flex-wrap gap-2"
+        {/* PRIMARY CARD #1: Booster K1 EDU (always first — FINAL_SPEC decision 1 & 4) */}
+        <section
+          data-testid="robot-plan-panel"
+          data-robot-id={K1_ID}
+          aria-label="Primary robot: Booster K1 EDU"
+          className="rounded-2xl border-2 border-sky-500/60 bg-white p-6 shadow-lg transition-colors dark:border-sky-400/50 dark:bg-slate-900"
         >
-          <button
-            type="button"
-            data-testid="category-filter-venue"
-            onClick={() => setSelectedCategory("venue")}
-            className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
-              selectedCategory === "venue"
-                ? "border-sky-500 bg-sky-600 text-white shadow-xs"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-            }`}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-3 py-0.5 text-xs font-extrabold tracking-wide text-sky-700 dark:text-sky-300">
+                  ★ Primary Robot • Booster K1 EDU
+                </span>
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold ${k1Style.badgeClass}`}
+                >
+                  {k1Style.label} · {k1Job.score}/100
+                </span>
+                <span className="rounded-full border border-slate-300/80 bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  verified 26.11.2026 · generationrobots.com
+                </span>
+              </div>
+
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                {K1_SPEC.name} — {K1_SPEC.jobTitle}
+              </h2>
+
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Frees{" "}
+                <strong className="font-mono text-slate-900 dark:text-white">
+                  {k1HoursRange} h/day
+                </strong>{" "}
+                (~€{k1Job.savings_eur_month.toLocaleString("en-US")}/mo of
+                reception staff time) ·{" "}
+                <strong className="font-mono text-slate-800 dark:text-slate-200">
+                  Rent: no offer — buy only
+                </strong>{" "}
+                · Buy{" "}
+                <strong className="font-mono text-slate-900 dark:text-white">
+                  €{K1_SPEC.purchasePriceEur.toLocaleString("en-US")} ex VAT
+                </strong>{" "}
+                (€{K1_SPEC.purchasePriceInclVatEur.toLocaleString("en-US")} incl.
+                VAT)
+                {k1Job.payback_months !== null
+                  ? ` → payback ~${k1Job.payback_months} months`
+                  : " → no payback"}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              data-testid="hire-plan-btn"
+              disabled={hiringJobId !== null}
+              onClick={() => void handleHireJob(k1Job)}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-7 py-3 text-base font-extrabold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+            >
+              {hiringJobId === k1Job.id && (
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                />
+              )}
+              <span>
+                {hiringJobId === k1Job.id ? "Hiring…" : "Hire this K1"}
+              </span>
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 border-t border-slate-200/80 pt-4 text-sm sm:grid-cols-2 dark:border-slate-800">
+            <div>
+              <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                Where K1 fits:{" "}
+              </span>
+              <span className="text-slate-700 dark:text-slate-300">
+                {k1Job.why}
+              </span>
+            </div>
+            <div>
+              <span className="font-bold text-amber-700 dark:text-amber-400">
+                Honest limits:{" "}
+              </span>
+              <span className="text-slate-700 dark:text-slate-300">
+                {k1Job.limits}
+              </span>
+            </div>
+          </div>
+
+          {topAlternativeJob && topAltSpec && topAltNetRent !== null && (
+            <div className="mt-3 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3.5 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+              <strong className="font-semibold text-slate-900 dark:text-white">
+                Best specialised alternative below:
+              </strong>{" "}
+              {topAltSpec.name} ({topAltSubtitle}) —{" "}
+              {topAltNetRent > 0
+                ? `rent net €${topAltNetRent.toLocaleString("en-US")}/mo`
+                : `buy payback ${topAlternativeJob.payback_months ?? "—"} mo`}
+              .
+            </div>
+          )}
+        </section>
+
+        {/* Specialised Alternatives Section Heading + Category Filter Pills */}
+        <div className="space-y-3 pt-2">
+          <div>
+            <h2 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              Specialised alternatives — honest comparison
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              15 real commercial tray waiters, greeter screens, cabinet
+              couriers, scrubbers, and AMRs benchmarked on the same venue.
+            </p>
+          </div>
+
+          <nav
+            aria-label="Robot Category Filters"
+            data-testid="robot-category-filters"
+            className="flex flex-wrap gap-2"
           >
-            Relevant for venue ({relevantFittingCount})
-          </button>
+            <button
+              type="button"
+              data-testid="category-filter-venue"
+              onClick={() => setSelectedCategory("venue")}
+              className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                selectedCategory === "venue"
+                  ? "border-sky-500 bg-sky-600 text-white shadow-xs"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              Relevant for venue ({relevantFittingCount})
+            </button>
 
-          {ROBOT_CATEGORY_FILTERS.map((f) => {
-            const active = selectedCategory === f.id;
-            const count = categoryCounts[f.id];
-            const pillLabel =
-              f.id === "all" ? `All (${count})` : `${f.label} (${count})`;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                data-testid={`category-filter-${f.id.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`}
-                onClick={() => setSelectedCategory(f.id)}
-                className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
-                  active
-                    ? "border-sky-500 bg-sky-600 text-white shadow-xs"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                }`}
-              >
-                {pillLabel}
-              </button>
-            );
-          })}
-        </nav>
+            {ROBOT_CATEGORY_FILTERS.map((f) => {
+              const active = selectedCategory === f.id;
+              const count = categoryCounts[f.id];
+              const pillLabel =
+                f.id === "all" ? `All (${count})` : `${f.label} (${count})`;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  data-testid={`category-filter-${f.id.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`}
+                  onClick={() => setSelectedCategory(f.id)}
+                  className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                    active
+                      ? "border-sky-500 bg-sky-600 text-white shadow-xs"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {pillLabel}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
-        {/* Ranked Relevant Fitting Robots List */}
+        {/* Ranked Relevant Fitting Specialised Robots List */}
         <section aria-label="Evaluated Commercial Robots" className="space-y-4">
           {visibleFittingJobs.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-              No suitable robots in this category for{" "}
+              No suitable specialised robots in this category for{" "}
               <strong className="font-semibold text-slate-900 dark:text-white">
                 {snapshot.businessType}
               </strong>
@@ -1478,7 +1581,7 @@ export default function JobsPage() {
                 job={job}
                 rank={idx + 1}
                 viewMode={viewMode}
-                isBestMatch={bestMatchJob?.id === job.id}
+                isTopAlternative={topAlternativeJob?.id === job.id}
                 isHiring={hiringJobId === job.id}
                 isAnyHiring={hiringJobId !== null}
                 onSimulate={(j) => void handleHireJob(j)}
@@ -1522,7 +1625,7 @@ export default function JobsPage() {
                     job={job}
                     rank={visibleFittingJobs.length + idx + 1}
                     viewMode={viewMode}
-                    isBestMatch={false}
+                    isTopAlternative={false}
                     isHiring={hiringJobId === job.id}
                     isAnyHiring={hiringJobId !== null}
                     onSimulate={(j) => void handleHireJob(j)}

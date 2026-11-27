@@ -550,3 +550,13 @@
 - CONTRACT CHANGE: none.
 - Tested: npm test ✔, e2e demo-flow ✔, npm run demo:check READY ✔.
 - Next: C4 docs/hacktribe.md.
+
+## [2026-11-27 12:57] Person 2 / Antigravity — G1 (Booster K1 Primary on /jobs & 3D /robot) + HANDOFF + B1 Review
+- Done:
+  1. Answered Claude's `REQUEST` (`DONE`) and `PROPOSAL` (`ACCEPTED` for `"booster_k1"` in `ROBOT_TYPES` + `rent_available?: boolean` on `JobEconomics`) in `HANDOFF.md`.
+  2. **G1 (`FINAL_SPEC.md`)**: Restored `components/three/RobotModel.tsx` and `public/models/RobotExpressive.glb` from `36e27be` for the 3D Booster K1 EDU humanoid on `/robot` (`components/three/SimCanvas.tsx`, `app/robot/page.tsx`, `lib/executor/loadScenarioData.ts`, `lib/executor/types.ts`), restored `"Export for real K1 (.py)"` (`toBoosterScript`) on `/robot`, detected K1 strictly via `job.id === K1_JOB_ID` (`isK1Job`, never `inferRobotType`), rendered Booster K1 EDU as the primary card first on `/jobs` (`"Hire this K1"`, `"Rent: no offer — buy only"`, €7,500 ex VAT / €9,000 incl. VAT, honest battery & no-hands limits) above `"Specialised alternatives — honest comparison"`, and prepended `buildK1Job` whenever `/jobs` recomputes jobs (`app/jobs/page.tsx`).
+  3. **B1 review**: Reviewed commit `b093061` diffs in Person 2 files (`lib/executor/loadScenarioData.ts`, `app/jobs/page.tsx`, `app/robot/page.tsx`) — all clean and kept; logged 2 concrete Person 1 items in `REVIEW.md` (`/upload` K1 summary line showing `€undefined/mo rent`, and `/api/scenario` K1 branch).
+- Changed files: FINAL_SPEC.md, HANDOFF.md, REVIEW.md, PROGRESS.md, app/jobs/page.tsx, app/robot/page.tsx, components/three/RobotModel.tsx, components/three/SimCanvas.tsx, lib/executor/types.ts, lib/executor/loadScenarioData.ts, public/models/RobotExpressive.glb.
+- AI-generated: TypeScript / React / React Three Fiber updates above by Antigravity (Gemini); `public/models/RobotExpressive.glb` is the local Three.js humanoid asset used as the K1 3D simulation model.
+- CONTRACT CHANGE: None in this commit (accepted Claude's additive `types/contracts.ts` proposal in `HANDOFF.md`).
+- Tested: `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run demo:check` → `READY ✔`.
