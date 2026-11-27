@@ -15,7 +15,7 @@ import {
   type HoursFreedOptions,
 } from "./economics";
 
-/** JobEconomics plus the K1-only flag (proposed as optional contract field). */
+/** JobEconomics with rent_available pinned to false (no rent offer). */
 export type K1Economics = JobEconomics & { rent_available: false };
 
 export interface K1Options extends HoursFreedOptions {

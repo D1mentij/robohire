@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { generateScenario } from "@/lib/ai/scenario";
 import { buildRobotScenario, inferRobotType } from "@/lib/robots/catalog";
 import { isJob, isScene } from "@/types/contracts";
+import { buildJobScenario } from "@/lib/ai/shiftFallback";
+import { K1_JOB_ID } from "@/src/data/k1";
 
 const fail = (error: string, status: number) =>
   NextResponse.json({ error }, { status });
@@ -30,6 +32,11 @@ export async function POST(req: Request) {
     if (out.ok)
       return NextResponse.json({ scenario: out.scenario, source: "ai" });
     console.warn(`[scenario] AI failed, using archetype template: ${out.error}`);
+  }
+
+  // Booster K1 EDU: greeter/guide routine (no screen, no hands) — same as the /report export.
+  if (b.job.id === K1_JOB_ID) {
+    return NextResponse.json({ scenario: buildJobScenario(b.job, b.scene), source: "code" });
   }
 
   const robotType = inferRobotType(b.job);

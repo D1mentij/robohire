@@ -842,7 +842,20 @@ export default function UploadPage() {
         {jobs && jobs.jobs.length > 0 && (
           <section className="space-y-3 rounded-2xl border border-emerald-500/40 bg-white p-5 shadow-sm dark:border-emerald-500/30 dark:bg-slate-900">
             <p className="text-sm text-slate-800 dark:text-slate-200">
-              {topRecommendedJob ? (
+              {topRecommendedJob?.economics?.rent_available === false ? (
+                <>
+                  Best match: <b>{topRecommendedJob.robot_name ?? topRecommendedJob.title}</b>{" "}
+                  — frees {topRecommendedJob.economics.hours_freed_per_day.low.toFixed(1)}–
+                  {topRecommendedJob.economics.hours_freed_per_day.high.toFixed(1)} h/day (€
+                  {topRecommendedJob.savings_eur_month.toLocaleString("en-US")}/mo of staff time). Rent: no offer —{" "}
+                  <b className="text-emerald-700 dark:text-emerald-400">
+                    buy €{topRecommendedJob.economics.purchase_price_eur.toLocaleString("en-US")} ex VAT
+                    {topRecommendedJob.payback_months !== null
+                      ? `, payback ~${Math.round(topRecommendedJob.payback_months)} mo`
+                      : ", does not pay back"}
+                  </b>
+                </>
+              ) : topRecommendedJob ? (
                 <>
                   Top match: <b>{topRecommendedJob.robot_name ?? topRecommendedJob.title}</b>{" "}
                   (€{topRecommendedJob.client_raas_eur}/mo rent vs €

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import { buildJobScenario } from "@/lib/ai/shiftFallback";
+import { buildK1Scenario } from "@/lib/executor/loadScenarioData";
 import { scriptFileName, toBoosterScript } from "@/lib/k1export/toBoosterScript";
 import { filterValidSteps, isScenario, isScene, type Job, type Scenario, type Scene } from "@/types/contracts";
 
@@ -26,7 +26,7 @@ function pickScenario(raw: string | null, scene: Scene, k1: Job): { scenario: Sc
   } catch {
     /* fall through */
   }
-  return { scenario: buildJobScenario(k1, scene), scene, source: "the K1 greeter & guide job (built-in routine)" };
+  return { scenario: buildK1Scenario(k1, scene), scene, source: "the K1 greeter & guide job (same routine as the 3D simulation)" };
 }
 
 export function K1Export({ scene, k1, businessType }: { scene: Scene; k1: Job; businessType: string }) {

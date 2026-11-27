@@ -92,6 +92,8 @@ export interface JobEconomics {
   savings_eur_month: EconRange;
   rent_eur_month: number;
   rent_source: "quote" | "estimate";
+  /** false = no rent offer for this robot (Booster K1): buy only, net rent shown as "no offer". */
+  rent_available?: boolean;
   net_rent_eur_month: EconRange;
   purchase_price_eur: number;
   price_source: string;

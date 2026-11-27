@@ -50,7 +50,7 @@ Must work offline on the laptop (npm run dev, localhost:3000). Demo mode (mocks)
 - [ ] G2 Gemini: /jobs cards show "Frees X–Y h/day", Rent row, Buy row, source badge; Best match card on top; collapse not-suitable; Partner view label; remove any "% cheaper than a human" text (depends: C1, C2)
 - [ ] G3 Gemini: /robot overlay shows robot name + model; checklist ticks for K1 and all archetypes; Present mode works
 - [x] C3 Claude: /report "How we calculate" + sellers + Export for real K1; README "AI disclosure" section up to date
-- [ ] C4 Claude: write docs/hacktribe.md — project page texts (Problem, Solution, What's done, Next steps; English, ≤ 150 words each) + a 5-min video script with timings
+- [x] C4 Claude: write docs/hacktribe.md — project page texts (Problem, Solution, What's done, Next steps; English, ≤ 150 words each) + a 5-min video script with timings
 - [ ] G4 Gemini: app/page.tsx landing — positioning line, 3 steps, "Try demo"
 - [ ] B1 Both: review the other's last commit (max 5 issues in REVIEW.md), fix own issues
 - [ ] B2 Both: npm test + npm run e2e + npm run demo:check READY on both laptops; write result in HANDOFF.md → when all boxes are checked, the agent who finishes last writes "FINAL READY" in HANDOFF.md

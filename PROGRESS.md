@@ -560,3 +560,12 @@
 - AI-generated: TypeScript / React / React Three Fiber updates above by Antigravity (Gemini); `public/models/RobotExpressive.glb` is the local Three.js humanoid asset used as the K1 3D simulation model.
 - CONTRACT CHANGE: None in this commit (accepted Claude's additive `types/contracts.ts` proposal in `HANDOFF.md`).
 - Tested: `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run demo:check` → `READY ✔`.
+
+## [2026-11-27] Person 1 / Claude Code — FINAL_SPEC C4 + B1
+- Done: docs/hacktribe.md (project page texts + 5-min video script). Fixed REVIEW items from Person 2 (app/upload K1 summary line, app/api/scenario K1 branch). /report K1 export fallback = buildK1Scenario (same as /robot). B1 review of 0a6fd07 (1 low issue in REVIEW.md).
+- CONTRACT CHANGE: types/contracts.ts JobEconomics gets optional `rent_available?: boolean` (false = no rent offer, Booster K1). Additive; accepted by Person 2 in HANDOFF.md. `"booster_k1"` RobotType withdrawn.
+- Changed files: docs/hacktribe.md (new), types/contracts.ts, app/upload/page.tsx, app/api/scenario/route.ts, app/report/K1Export.tsx, lib/roi/k1.ts (comment), REVIEW.md, HANDOFF.md, FINAL_SPEC.md.
+- AI-generated: all of the above by Claude Code (Claude Opus 5.5), incl. the HackTribe texts and video script (humans should edit the voice-over to their own words).
+- Known, not fixed (no new features): K1 savings use the reception benchmark €9.93/h and ignore the hourly-cost override from /upload (catalog robots apply it).
+- Tested: npm test ✔, npm run demo:check READY ✔.
+- Next: B1 re-review of Gemini's next commit, then B2.
