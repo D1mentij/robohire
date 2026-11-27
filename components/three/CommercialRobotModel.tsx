@@ -8,6 +8,42 @@ import type { RobotPose, Vec2XZ } from "@/lib/executor";
 import { getRobotSpec } from "@/lib/robots/catalog";
 import { LabelSprite } from "./LabelSprite";
 
+const ROBOT_ROLE_TAG_BY_ID: Partial<Record<RobotType, string>> = {
+  keenon_t8: "table delivery",
+  pudu_bellabot: "table delivery",
+  keenon_t10: "banquet delivery",
+  bear_servi: "table delivery & bussing",
+  pudu_kettybot_pro: "greeting & escort",
+  temi: "reception & wayfinding",
+  pudu_flashbot: "enclosed parcel courier",
+  keenon_w3: "enclosed hotel courier",
+  lionsbot_r3_vac: "compact floor cleaning",
+  pudu_cc1: "commercial floor scrubbing",
+  pudu_cc1_pro: "large-venue scrubbing",
+  avidbots_neo_2: "industrial floor scrubbing",
+  gausium_scrubber_75p: "heavy floor scrubbing",
+  pudu_t300: "pallet & material AMR",
+  mir250: "corridor AMR transport",
+};
+
+export function getRobotDeploymentTag(robotType: RobotType): string {
+  const byId = ROBOT_ROLE_TAG_BY_ID[robotType];
+  if (byId) return byId;
+  const spec = getRobotSpec(robotType);
+  switch (spec.archetype) {
+    case "tray_waiter":
+      return "table delivery";
+    case "greeter_screen":
+      return "greeting & reception";
+    case "enclosed_cabinet":
+      return "enclosed courier";
+    case "floor_scrubber":
+      return "floor cleaning";
+    case "warehouse_amr":
+      return "warehouse AMR";
+  }
+}
+
 export interface CommercialRobotModelProps {
   robotType: RobotType;
   poseRef: React.MutableRefObject<RobotPose>;
@@ -611,14 +647,14 @@ export function CommercialRobotModel({
         </group>
       )}
 
-      {/* Floating commercial robot identifier badge */}
+      {/* Floating commercial robot name + model & role badge */}
       <LabelSprite
-        title={spec.shortName}
-        subtitle={`€${spec.clientRaaSEur}/mo RaaS`}
+        title={spec.name}
+        subtitle={getRobotDeploymentTag(robotType)}
         position={[0, labelHeight, 0]}
         accentColor={spec.accentHex}
         bgColor="rgba(15, 23, 42, 0.94)"
-        scale={[1.7, 0.58, 1]}
+        scale={[2.05, 0.64, 1]}
       />
     </group>
   );

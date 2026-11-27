@@ -55,22 +55,24 @@ export function LabelSprite({
     ctx.arc(pad + 34, subtitle ? pad + 54 : pad + h / 2, 10, 0, Math.PI * 2);
     ctx.fill();
 
-    // Title text
+    // Title text (auto-shrinks slightly for long model names)
     ctx.fillStyle = "#f8fafc";
-    ctx.font = "bold 40px system-ui, -apple-system, sans-serif";
+    const titleFontPx = title.length > 18 ? 31 : title.length > 14 ? 35 : 40;
+    ctx.font = `bold ${titleFontPx}px system-ui, -apple-system, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(
       title,
       canvas.width / 2 + 10,
       subtitle ? pad + 54 : pad + h / 2,
+      w - 76,
     );
 
     // Subtitle text
     if (subtitle) {
       ctx.fillStyle = "#cbd5e1";
-      ctx.font = "600 28px ui-monospace, SFMono-Regular, monospace";
-      ctx.fillText(subtitle, canvas.width / 2, pad + 114);
+      ctx.font = "600 25px ui-monospace, SFMono-Regular, monospace";
+      ctx.fillText(subtitle, canvas.width / 2, pad + 114, w - 40);
     }
 
     const tex = new THREE.CanvasTexture(canvas);

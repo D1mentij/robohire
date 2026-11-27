@@ -11,7 +11,9 @@ import {
   type Fit,
   type Job,
   type JobsResult,
+  type RobotCategory,
   type RobotPlan,
+  type RobotType,
   type Scenario,
   type Scene,
 } from "@/types/contracts";
@@ -23,11 +25,13 @@ import {
   type StoredAnalysis,
 } from "@/lib/ai/types";
 import { BUSINESS_PRESETS, findPreset, type BusinessPreset } from "@/lib/ai/businessPresets";
+import { detectBusiness, type BusinessKind } from "@/lib/ai/businessTemplates";
 import { tasksFromZones } from "@/lib/ai/zoneTasks";
 import { getOrCreateScenario } from "@/lib/ai/scenarioCache";
 import {
   LATVIA_2026_LABOR_BENCHMARKS,
   ROBOT_CATEGORY_FILTERS,
+  analyzeSpaceProfile,
   buildRobotScenario,
   evaluateCatalogForSpace,
   getRobotSpec,
@@ -41,6 +45,7 @@ const SCENARIO_TIMEOUT_MS = 20_000;
 const SAVED_CUSTOM_ANALYSIS_KEY = "robohire:savedCustomAnalysis";
 
 type ViewMode = "client" | "broker";
+type SelectedFilterId = "venue" | CategoryFilterId;
 
 interface SavedCustomAnalysis {
   businessType: string;
@@ -74,6 +79,103 @@ function parseSavedCustomAnalysis(raw: string | null): SavedCustomAnalysis | nul
   return null;
 }
 
+/**
+ * Determines whether a commercial robot belongs to the categories relevant
+ * to the selected business type (e.g., café → HoReCa Delivery + Reception + compact cleaning).
+ */
+function isRobotRelevantForVenue(
+  robotId: RobotType,
+  category: RobotCategory,
+  family: BusinessKind,
+  isLargeVenue: boolean,
+): boolean {
+  const isCompactCleaning =
+    robotId === "lionsbot_r3_vac" || robotId === "pudu_cc1";
+  const isReception =
+    category === "Greeting & Retail" ||
+    category === "General Service & Reception";
+
+  switch (family) {
+    case "cafe":
+    case "bar":
+      return (
+        category === "HoReCa Delivery" || isReception || isCompactCleaning
+      );
+
+    case "restaurant":
+      return (
+        category === "HoReCa Delivery" ||
+        isReception ||
+        isCompactCleaning ||
+        (isLargeVenue && robotId === "pudu_cc1_pro")
+      );
+
+    case "hotel":
+      return (
+        category === "Hotel & Office Delivery" ||
+        isReception ||
+        category === "Commercial Cleaning"
+      );
+
+    case "office":
+    case "clinic":
+      return (
+        category === "Hotel & Office Delivery" ||
+        isReception ||
+        isCompactCleaning ||
+        (isLargeVenue && robotId === "pudu_cc1_pro")
+      );
+
+    case "retail":
+    case "showroom":
+      return (
+        isReception ||
+        isCompactCleaning ||
+        (isLargeVenue && robotId === "pudu_cc1_pro")
+      );
+
+    case "supermarket":
+      return (
+        category === "Greeting & Retail" ||
+        category === "Commercial Cleaning" ||
+        category === "Industrial Cleaning" ||
+        robotId === "pudu_t300"
+      );
+
+    case "mall":
+    case "terminal":
+    case "event":
+    case "university":
+    case "museum":
+      return (
+        isReception ||
+        category === "Commercial Cleaning" ||
+        category === "Industrial Cleaning"
+      );
+
+    case "warehouse":
+    case "factory":
+      return (
+        category === "Warehouse & Factory AMR" ||
+        category === "Industrial Cleaning" ||
+        robotId === "pudu_cc1_pro" ||
+        robotId === "lionsbot_r3_vac"
+      );
+
+    case "gym":
+    case "library":
+      return category === "General Service & Reception" || isCompactCleaning;
+
+    case "generic":
+      return (
+        category === "HoReCa Delivery" ||
+        isReception ||
+        category === "Hotel & Office Delivery" ||
+        category === "Commercial Cleaning"
+      );
+  }
+}
+
 interface FitStyle {
   label: "Suitable" | "Partial" | "Not Suitable";
   badgeClass: string;
@@ -104,7 +206,7 @@ const FIT_STYLES: Record<Fit, FitStyle> = {
       "border-slate-400/40 bg-slate-500/15 text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400",
     scoreBarClass: "bg-slate-400 dark:bg-slate-600",
     cardClass:
-      "border-slate-300/70 bg-slate-100/70 opacity-65 grayscale-[30%] dark:border-slate-800 dark:bg-slate-900/40",
+      "border-slate-300/70 bg-slate-100/70 opacity-75 grayscale-[25%] dark:border-slate-800 dark:bg-slate-900/40",
   },
 };
 
@@ -295,24 +397,24 @@ interface JobCardProps {
   job: Job;
   rank: number;
   viewMode: ViewMode;
-  isTopRecommended: boolean;
+  isBestMatch: boolean;
   isHiring: boolean;
   isAnyHiring: boolean;
-  onHire: (job: Job) => void;
+  onSimulate: (job: Job) => void;
 }
 
 function JobCard({
   job,
   rank,
   viewMode,
-  isTopRecommended,
+  isBestMatch,
   isHiring,
   isAnyHiring,
-  onHire,
+  onSimulate,
 }: JobCardProps) {
   const style = FIT_STYLES[job.fit];
   const isNotSuitable = job.fit === "no";
-  const canHire = job.fit === "good" || job.fit === "partial";
+  const canSimulate = job.fit === "good" || job.fit === "partial";
   const robotType = inferRobotType(job);
   const spec = getRobotSpec(robotType);
   const roleInfo = LATVIA_2026_LABOR_BENCHMARKS[spec.role];
@@ -354,7 +456,7 @@ function JobCard({
       className={`flex flex-col justify-between rounded-2xl border p-6 transition-colors ${style.cardClass}`}
     >
       <div className="space-y-4">
-        {/* Card Header: Badges, Robot Name, Score & Hire CTA */}
+        {/* Card Header: Badges, Robot Name, Score & Optional 3D Preview */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
@@ -367,9 +469,9 @@ function JobCard({
               <span className="rounded-full border border-slate-300/80 bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 vs {roleInfo.title}
               </span>
-              {isTopRecommended && !isNotSuitable && (
+              {isBestMatch && !isNotSuitable && (
                 <span className="rounded-full border border-sky-500/50 bg-sky-500/15 px-2.5 py-0.5 text-[11px] font-extrabold text-sky-700 dark:text-sky-300">
-                  ★ Top ROI Pick
+                  ★ Best match
                 </span>
               )}
             </div>
@@ -414,21 +516,21 @@ function JobCard({
               <span className="text-xs text-slate-400">/100</span>
             </div>
 
-            {canHire && (
+            {canSimulate && (
               <button
                 type="button"
-                data-testid={`hire-job-btn-${spec.id}`}
+                data-testid={`preview-3d-btn-${spec.id}`}
                 disabled={isAnyHiring}
-                onClick={() => onHire(job)}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-sky-400/60 bg-sky-600 px-4 py-1.5 text-xs font-bold text-white shadow-2xs transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+                onClick={() => onSimulate(job)}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 active:scale-95 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 {isHiring && (
                   <span
                     aria-hidden="true"
-                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent"
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
                   />
                 )}
-                <span>{isHiring ? "Hiring…" : "Hire"}</span>
+                <span>{isHiring ? "Loading 3D…" : "Simulate 3D →"}</span>
               </button>
             )}
           </div>
@@ -520,7 +622,7 @@ function JobCard({
         <div className="grid gap-3 pt-0.5 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Why it fits
+              {isNotSuitable ? "Intended use" : "Why it fits"}
             </div>
             <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
               {job.why}
@@ -529,7 +631,9 @@ function JobCard({
 
           <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-950/50">
             <div className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Physical / Economic Limitations
+              {isNotSuitable
+                ? "Why it doesn't fit this venue"
+                : "Physical / Economic Limitations"}
             </div>
             <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
               {job.limits}
@@ -538,7 +642,7 @@ function JobCard({
         </div>
       </div>
 
-      {/* Metrics Footer: Monthly Savings, Purchase Price, Min Aisle / Specs */}
+      {/* Metrics Footer */}
       <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -572,7 +676,9 @@ function JobCard({
           </dt>
           <dd className="mt-0.5 font-mono text-sm font-bold text-slate-900 dark:text-slate-100">
             {spec.minAisleCm} cm ·{" "}
-            {job.payback_months !== null ? `${job.payback_months} mo` : "no payback"}
+            {job.payback_months !== null
+              ? `${job.payback_months} mo`
+              : "no payback"}
           </dd>
         </div>
       </dl>
@@ -591,7 +697,9 @@ export default function JobsPage() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("client");
   const [selectedCategory, setSelectedCategory] =
-    useState<CategoryFilterId>("all");
+    useState<SelectedFilterId>("venue");
+  const [showNotSuitable, setShowNotSuitable] = useState<boolean>(false);
+
   const shiftScopeKey = `${pathname}|${snapshot.businessType}|${snapshot.hoursPerWeek}|${snapshot.storedShiftsOverride ?? "auto"}`;
   const [localShiftState, setLocalShiftState] = useState<{
     scopeKey: string;
@@ -638,6 +746,39 @@ export default function JobsPage() {
       snapshot.baselineHourlyCost,
     ],
   );
+
+  const venueFamily = useMemo(
+    () =>
+      detectBusiness(
+        snapshot.businessType,
+        snapshot.scene.zones.map((z) => z.label),
+      ),
+    [snapshot.businessType, snapshot.scene.zones],
+  );
+
+  const spaceProfile = useMemo(
+    () => analyzeSpaceProfile(snapshot.scene, snapshot.businessType),
+    [snapshot.scene, snapshot.businessType],
+  );
+
+  const relevantRobotIds = useMemo(() => {
+    const ids = new Set<RobotType>();
+    for (const j of evaluatedJobs) {
+      const rType = inferRobotType(j);
+      const spec = getRobotSpec(rType);
+      if (
+        isRobotRelevantForVenue(
+          rType,
+          spec.category,
+          venueFamily,
+          spaceProfile.isLargeVenue,
+        )
+      ) {
+        ids.add(rType);
+      }
+    }
+    return ids;
+  }, [evaluatedJobs, venueFamily, spaceProfile.isLargeVenue]);
 
   const computedPlan = useMemo(
     () =>
@@ -691,27 +832,77 @@ export default function JobsPage() {
     return map;
   }, [evaluatedJobs]);
 
-  const filteredJobs = useMemo(() => {
-    if (selectedCategory === "all") return evaluatedJobs;
-    return evaluatedJobs.filter(
-      (j) => getRobotSpec(inferRobotType(j)).category === selectedCategory,
-    );
-  }, [evaluatedJobs, selectedCategory]);
-
-  const topRecommendedJob = useMemo(
+  const relevantFittingCount = useMemo(
     () =>
-      evaluatedJobs.find((j) => j.fit !== "no" && j.savings_eur_month > 0) ??
-      null,
-    [evaluatedJobs],
+      evaluatedJobs.filter(
+        (j) => j.fit !== "no" && relevantRobotIds.has(inferRobotType(j)),
+      ).length,
+    [evaluatedJobs, relevantRobotIds],
   );
 
-  const topSpec = topRecommendedJob
-    ? getRobotSpec(inferRobotType(topRecommendedJob))
+  const { visibleFittingJobs, collapsedNotSuitableJobs } = useMemo(() => {
+    if (selectedCategory === "venue") {
+      const fitting = evaluatedJobs.filter(
+        (j) => j.fit !== "no" && relevantRobotIds.has(inferRobotType(j)),
+      );
+      // Put venue-relevant misfits (e.g. BellaBot 70 cm in a 55 cm café) first so the spatial "why" is obvious
+      const notSuitable = evaluatedJobs
+        .filter((j) => j.fit === "no")
+        .sort((a, b) => {
+          const aRel = relevantRobotIds.has(inferRobotType(a)) ? 1 : 0;
+          const bRel = relevantRobotIds.has(inferRobotType(b)) ? 1 : 0;
+          if (bRel !== aRel) return bRel - aRel;
+          return b.score - a.score;
+        });
+      return {
+        visibleFittingJobs: fitting,
+        collapsedNotSuitableJobs: notSuitable,
+      };
+    }
+
+    if (selectedCategory === "all") {
+      return {
+        visibleFittingJobs: evaluatedJobs.filter((j) => j.fit !== "no"),
+        collapsedNotSuitableJobs: evaluatedJobs.filter((j) => j.fit === "no"),
+      };
+    }
+
+    const inCat = evaluatedJobs.filter(
+      (j) => getRobotSpec(inferRobotType(j)).category === selectedCategory,
+    );
+    return {
+      visibleFittingJobs: inCat.filter((j) => j.fit !== "no"),
+      collapsedNotSuitableJobs: inCat.filter((j) => j.fit === "no"),
+    };
+  }, [evaluatedJobs, relevantRobotIds, selectedCategory]);
+
+  // Best match card on top: highest score among `fit === "good"` (venue-relevant first)
+  const bestMatchJob = useMemo(() => {
+    const relevantGood = evaluatedJobs
+      .filter((j) => j.fit === "good" && relevantRobotIds.has(inferRobotType(j)))
+      .sort(
+        (a, b) =>
+          b.score - a.score || b.savings_eur_month - a.savings_eur_month,
+      );
+    if (relevantGood.length > 0) return relevantGood[0];
+
+    const anyGood = evaluatedJobs
+      .filter((j) => j.fit === "good")
+      .sort(
+        (a, b) =>
+          b.score - a.score || b.savings_eur_month - a.savings_eur_month,
+      );
+    return anyGood[0] ?? null;
+  }, [evaluatedJobs, relevantRobotIds]);
+
+  const bestSpec = bestMatchJob
+    ? getRobotSpec(inferRobotType(bestMatchJob))
     : null;
 
   function handleSelectPreset(preset: BusinessPreset) {
     if (hiringJobId !== null) return;
-    setSelectedCategory("all");
+    setSelectedCategory("venue");
+    setShowNotSuitable(false);
     setLocalShiftState(null);
 
     try {
@@ -777,9 +968,10 @@ export default function JobsPage() {
         JSON.stringify(jobsResult),
       );
       window.sessionStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(nextPlan));
-      const sceneJson = JSON.stringify(preset.demoScene);
-      window.sessionStorage.setItem("robohire:scene", sceneJson);
-      window.localStorage.setItem("robohire:scene", sceneJson);
+      window.sessionStorage.setItem(
+        "robohire:scene",
+        JSON.stringify(preset.demoScene),
+      );
       window.dispatchEvent(new Event("robohire:storage"));
     } catch {
       // Ignore storage errors
@@ -788,6 +980,8 @@ export default function JobsPage() {
 
   function handleRestoreCustomAnalysis() {
     if (hiringJobId !== null || !snapshot.savedCustomAnalysis) return;
+    setSelectedCategory("venue");
+    setShowNotSuitable(false);
     setLocalShiftState(null);
     try {
       const saved = snapshot.savedCustomAnalysis;
@@ -801,7 +995,6 @@ export default function JobsPage() {
       }
       if (saved.rawScene) {
         window.sessionStorage.setItem("robohire:scene", saved.rawScene);
-        window.localStorage.setItem("robohire:scene", saved.rawScene);
       }
       window.sessionStorage.removeItem(SAVED_CUSTOM_ANALYSIS_KEY);
       window.dispatchEvent(new Event("robohire:storage"));
@@ -848,10 +1041,6 @@ export default function JobsPage() {
       window.sessionStorage.setItem("robohire:job", jobJson);
       window.sessionStorage.setItem(PLAN_STORAGE_KEY, planJson);
       window.sessionStorage.setItem(JOBS_STORAGE_KEY, jobsJson);
-
-      window.localStorage.setItem("robohire:scene", sceneJson);
-      window.localStorage.setItem("robohire:scenario", scenarioJson);
-      window.localStorage.setItem("robohire:job", jobJson);
 
       window.dispatchEvent(new Event("robohire:storage"));
     } catch {
@@ -901,60 +1090,70 @@ export default function JobsPage() {
     }
   }
 
-  const suitableCount = evaluatedJobs.filter((j) => j.fit === "good").length;
-  const partialCount = evaluatedJobs.filter((j) => j.fit === "partial").length;
-  const notSuitableCount = evaluatedJobs.filter((j) => j.fit === "no").length;
+  const bestDeploymentSubtitle =
+    bestMatchJob && bestMatchJob.title.includes(" — ")
+      ? bestMatchJob.title.split(" — ").slice(1).join(" — ")
+      : (bestMatchJob?.title ?? "");
 
   return (
     <main className="flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-6">
-        {/* Page Header + Client View vs Broker / Partner View Toggle */}
+        {/* Page Header + Business Report Link + Client / Partner View Toggle */}
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-800">
           <div className="max-w-2xl">
             <span className="inline-block rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-0.5 font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
               Step 2 of 3 • {snapshot.businessType}
             </span>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              15-Robot Commercial Catalog: Rent vs Buy
+              Commercial Robots: Rent vs Buy
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Each robot frees a few staff hours per day — not a whole shift.
-              We value those hours at verified 2026 Latvia employer cost (gross
-              wage + 23.59% VSAOI) and compare with distributor rent or purchase.
+              Each robot frees a few staff hours per day — not a whole shift. We
+              value those hours at verified 2026 Latvia employer cost (gross
+              wage + 23.59% VSAOI) and compare with distributor rent or
+              purchase.
             </p>
           </div>
 
-          {/* Client View vs Broker / Partner View Segmented Toggle */}
           <div className="flex flex-col items-end gap-2">
-            <div
-              role="group"
-              aria-label="Pricing View Mode"
-              className="inline-flex rounded-xl border border-slate-300 bg-slate-100 p-1 shadow-2xs dark:border-slate-700 dark:bg-slate-900"
-            >
-              <button
-                type="button"
-                data-testid="view-mode-client"
-                onClick={() => setViewMode("client")}
-                className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
-                  viewMode === "client"
-                    ? "bg-sky-600 text-white shadow-xs"
-                    : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-                }`}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/report"
+                data-testid="download-report-btn"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                Client View
-              </button>
-              <button
-                type="button"
-                data-testid="view-mode-broker"
-                onClick={() => setViewMode("broker")}
-                className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
-                  viewMode === "broker"
-                    ? "bg-indigo-600 text-white shadow-xs"
-                    : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-                }`}
+                Business report →
+              </Link>
+              <div
+                role="group"
+                aria-label="Pricing View Mode"
+                className="inline-flex rounded-xl border border-slate-300 bg-slate-100 p-1 shadow-2xs dark:border-slate-700 dark:bg-slate-900"
               >
-                Broker / Partner View
-              </button>
+                <button
+                  type="button"
+                  data-testid="view-mode-client"
+                  onClick={() => setViewMode("client")}
+                  className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+                    viewMode === "client"
+                      ? "bg-sky-600 text-white shadow-xs"
+                      : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                  }`}
+                >
+                  Client View
+                </button>
+                <button
+                  type="button"
+                  data-testid="view-mode-broker"
+                  onClick={() => setViewMode("broker")}
+                  className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
+                    viewMode === "broker"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                  }`}
+                >
+                  Broker / Partner View
+                </button>
+              </div>
             </div>
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {viewMode === "broker"
@@ -973,7 +1172,8 @@ export default function JobsPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-3 py-0.5 text-xs font-bold text-indigo-800 dark:text-indigo-200">
-                  RoboHire Partner Model — assumption: referral fee paid by distributor
+                  RoboHire Partner Model — assumption: referral fee paid by
+                  distributor
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
                   15% of Monthly Rent • 7% of Sale Price (referral)
@@ -985,14 +1185,14 @@ export default function JobsPage() {
                 </p>
               </div>
 
-              {topSpec && topRecommendedJob && (
+              {bestSpec && bestMatchJob && (
                 <div className="flex flex-wrap gap-3">
                   <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
                     <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      Top Deal ({topSpec.shortName}) Referral Fee
+                      Best Match ({bestSpec.shortName}) Referral Fee
                     </div>
                     <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
-                      +€{topSpec.monthlyCommissionEur}/mo recurring
+                      +€{bestSpec.monthlyCommissionEur}/mo recurring
                     </div>
                   </div>
                   <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
@@ -1000,7 +1200,8 @@ export default function JobsPage() {
                       Or 7% Direct Sale Fee
                     </div>
                     <div className="font-mono text-base font-extrabold text-indigo-700 dark:text-indigo-300">
-                      +€{topSpec.saleCommissionEur.toLocaleString("en-US")} once
+                      +€{bestSpec.saleCommissionEur.toLocaleString("en-US")}{" "}
+                      once
                     </div>
                   </div>
                 </div>
@@ -1127,87 +1328,115 @@ export default function JobsPage() {
           </div>
         </section>
 
-        {/* Top Recommended Robot Summary Panel */}
-        {topRecommendedJob && topSpec && (
+        {/* One "Best match" Card on Top (highest score, fit === "good") with a single "Hire" button */}
+        {bestMatchJob && bestSpec && (
           <section
             data-testid="robot-plan-panel"
-            className="rounded-2xl border-2 border-sky-500/50 bg-white p-5 shadow-md transition-colors dark:border-sky-500/40 dark:bg-slate-900"
+            aria-label="Best match robot"
+            className="rounded-2xl border-2 border-emerald-500/60 bg-white p-6 shadow-lg transition-colors dark:border-emerald-500/50 dark:bg-slate-900"
           >
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="space-y-1">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300">
-                    Best Match for {snapshot.businessType}
+                  <span className="rounded-full border border-emerald-500/50 bg-emerald-500/15 px-3 py-0.5 text-xs font-extrabold tracking-wide text-emerald-700 dark:text-emerald-300">
+                    ★ Best match
                   </span>
-                  <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                    {suitableCount} Suitable · {partialCount} Partial ·{" "}
-                    {notSuitableCount} Not Suitable
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${bestSpec.badgeClass}`}
+                  >
+                    {bestSpec.category}
+                  </span>
+                  <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    Suitable · {bestMatchJob.score}/100
                   </span>
                 </div>
+
                 <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  Recommended: {topSpec.name} — €{topSpec.rentEurMonth}/mo rent
+                  {bestSpec.name} — {bestDeploymentSubtitle}
                 </h2>
+
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                   Frees{" "}
-                  {topRecommendedJob.economics
-                    ? `~${Math.round(topRecommendedJob.economics.hours_freed_per_day.expected * 10) / 10} h/day`
+                  {bestMatchJob.economics
+                    ? `~${Math.round(bestMatchJob.economics.hours_freed_per_day.expected * 10) / 10} h/day`
                     : "staff hours"}{" "}
-                  (€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
-                  /mo of staff time) → rent net{" "}
+                  (€{bestMatchJob.savings_eur_month.toLocaleString("en-US")}/mo
+                  of staff time vs €{bestSpec.rentEurMonth.toLocaleString("en-US")}
+                  /mo rent) → rent net{" "}
                   <strong className="font-mono text-emerald-700 dark:text-emerald-400">
                     €
                     {Math.round(
-                      topRecommendedJob.economics?.net_rent_eur_month.expected ??
-                        topRecommendedJob.savings_eur_month -
-                          topSpec.rentEurMonth,
+                      bestMatchJob.economics?.net_rent_eur_month.expected ??
+                        bestMatchJob.savings_eur_month - bestSpec.rentEurMonth,
                     ).toLocaleString("en-US")}
                     /mo
                   </strong>
-                  {topRecommendedJob.payback_months !== null
-                    ? `; buy payback ~${topRecommendedJob.payback_months} months`
+                  {bestMatchJob.payback_months !== null
+                    ? `; buy payback ~${bestMatchJob.payback_months} months`
                     : ""}{" "}
                   ({activeShifts} {activeShifts === 1 ? "shift" : "shifts"}).
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Link
-                  href="/report"
-                  data-testid="download-report-btn"
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                >
-                  Business report
-                </Link>
-                <button
-                  type="button"
-                  data-testid="hire-plan-btn"
-                  disabled={hiringJobId !== null}
-                  onClick={() => void handleHireJob(topRecommendedJob)}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {hiringJobId === topRecommendedJob.id && (
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                    />
-                  )}
-                  <span>
-                    {hiringJobId === topRecommendedJob.id
-                      ? "Hiring…"
-                      : `Hire ${topSpec.shortName} in 3D →`}
-                  </span>
-                </button>
+              <button
+                type="button"
+                data-testid="hire-plan-btn"
+                disabled={hiringJobId !== null}
+                onClick={() => void handleHireJob(bestMatchJob)}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-sky-400/60 bg-sky-600 px-7 py-3 text-base font-extrabold text-white shadow-md transition hover:bg-sky-500 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+              >
+                {hiringJobId === bestMatchJob.id && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  />
+                )}
+                <span>
+                  {hiringJobId === bestMatchJob.id ? "Hiring…" : "Hire"}
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 border-t border-slate-200/80 pt-4 text-sm sm:grid-cols-2 dark:border-slate-800">
+              <div>
+                <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                  Why it fits:{" "}
+                </span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {bestMatchJob.why}
+                </span>
+              </div>
+              <div>
+                <span className="font-bold text-amber-700 dark:text-amber-400">
+                  Key limit:{" "}
+                </span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {bestMatchJob.limits}
+                </span>
               </div>
             </div>
           </section>
         )}
 
-        {/* Robot Category Filter Pills */}
+        {/* Robot Category Filter Pills (default: Relevant for venue) */}
         <nav
           aria-label="Robot Category Filters"
           data-testid="robot-category-filters"
           className="flex flex-wrap gap-2"
         >
+          <button
+            type="button"
+            data-testid="category-filter-venue"
+            onClick={() => setSelectedCategory("venue")}
+            className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+              selectedCategory === "venue"
+                ? "border-sky-500 bg-sky-600 text-white shadow-xs"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+            }`}
+          >
+            Relevant for venue ({relevantFittingCount})
+          </button>
+
           {ROBOT_CATEGORY_FILTERS.map((f) => {
             const active = selectedCategory === f.id;
             const count = categoryCounts[f.id];
@@ -1231,21 +1460,78 @@ export default function JobsPage() {
           })}
         </nav>
 
-        {/* Ranked Robot Cards List */}
+        {/* Ranked Relevant Fitting Robots List */}
         <section aria-label="Evaluated Commercial Robots" className="space-y-4">
-          {filteredJobs.map((job, idx) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              rank={idx + 1}
-              viewMode={viewMode}
-              isTopRecommended={topRecommendedJob?.id === job.id}
-              isHiring={hiringJobId === job.id}
-              isAnyHiring={hiringJobId !== null}
-              onHire={(j) => void handleHireJob(j)}
-            />
-          ))}
+          {visibleFittingJobs.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+              No suitable robots in this category for{" "}
+              <strong className="font-semibold text-slate-900 dark:text-white">
+                {snapshot.businessType}
+              </strong>
+              . Open the section below to see why robots in this category do not
+              fit.
+            </div>
+          ) : (
+            visibleFittingJobs.map((job, idx) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                rank={idx + 1}
+                viewMode={viewMode}
+                isBestMatch={bestMatchJob?.id === job.id}
+                isHiring={hiringJobId === job.id}
+                isAnyHiring={hiringJobId !== null}
+                onSimulate={(j) => void handleHireJob(j)}
+              />
+            ))
+          )}
         </section>
+
+        {/* Collapsed "Not suitable" Section */}
+        {collapsedNotSuitableJobs.length > 0 && (
+          <section
+            data-testid="not-suitable-section"
+            className="rounded-2xl border border-slate-300/80 bg-slate-100/70 p-4 dark:border-slate-800 dark:bg-slate-900/50"
+          >
+            <button
+              type="button"
+              data-testid="toggle-not-suitable-btn"
+              aria-expanded={showNotSuitable}
+              onClick={() => setShowNotSuitable((v) => !v)}
+              className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-2 py-1.5 text-left text-sm font-bold text-slate-700 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+            >
+              <span>
+                Show robots that don&apos;t fit this venue (why)
+                <span className="ml-2 rounded-full border border-slate-300 bg-white px-2.5 py-0.5 font-mono text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {collapsedNotSuitableJobs.length}
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="font-mono text-xs font-semibold text-slate-500 dark:text-slate-400"
+              >
+                {showNotSuitable ? "▲ Hide" : "▼ Show"}
+              </span>
+            </button>
+
+            {showNotSuitable && (
+              <div className="mt-4 space-y-4">
+                {collapsedNotSuitableJobs.map((job, idx) => (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    rank={visibleFittingJobs.length + idx + 1}
+                    viewMode={viewMode}
+                    isBestMatch={false}
+                    isHiring={hiringJobId === job.id}
+                    isAnyHiring={hiringJobId !== null}
+                    onSimulate={(j) => void handleHireJob(j)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </main>
   );
