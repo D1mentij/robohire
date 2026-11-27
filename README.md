@@ -128,4 +128,4 @@ Full disclosure (all tools, what the team did, pre-existing vs hackathon work): 
 | Other robots | US list price converted; rent = 2.8% of price per month | estimate |
 | Upkeep when buying | 10% of price per year | assumption |
 | Days open | 6 per week (7 if ≥ 84 h/week) | assumption |
-| Partner view commissions | 15% of rent, 7% of sale | assumption (referral fee paid by distributor) |
+| Partner view commissions | 8% of rent, 5% of sale | assumption (referral fee paid by distributor) |

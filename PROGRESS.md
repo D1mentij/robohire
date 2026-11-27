@@ -584,3 +584,4 @@
 - STEP 4: docs/AI_DISCLOSURE.md (tools, team work, pre-existing 20–23.11 vs hackathon 24–28.11 from git log); README links it.
 - STEP 5–6: docs/hacktribe.md rewritten: Problem / Solution / What's done (works vs simulated) / Goal & next steps / Ask (K1 pilot at RTU AI Studio), video script ≤5:00 in deck order with screens + recording checklist.
 - STEP 7: npm test ✔, build ✔, demo:check READY ✔; browser check: café example K1 card = deck numbers, /robot + /report show Safety & navigation check and the not-yet-run note. Script + DEMO_DAY use the café example (hotel = 7 days → €340–400). FINAL_SPEC board ticked, FINAL READY.
+- Deck alignment: partner referral 8% of rent / 5% of sale (BROKER_* in src/data/robots.ts, UI + README + spec); hacktribe: K1 1.1–1.3 h/day, T8 2.3–3 h/day in the demo café, team names filled in.

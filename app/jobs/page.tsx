@@ -18,6 +18,7 @@ import {
   type Scene,
 } from "@/types/contracts";
 import { K1_ID, K1_SPEC } from "@/src/data/k1";
+import { BROKER_SALE_COMMISSION_RATE } from "@/src/data/robots";
 import { buildK1Job, k1Headline } from "@/lib/roi/k1";
 import { daysOpenFromHours, operatingHoursPerDay } from "@/lib/roi/economics";
 import { buildPlan } from "@/lib/roi/roi";
@@ -463,7 +464,7 @@ function JobCard({
     (jobIsK1 ? K1_SPEC.purchasePriceEur : spec!.purchasePriceEur);
   const saleComm =
     job.sale_commission_eur ??
-    (jobIsK1 ? Math.round(purchasePrice * 0.07) : spec!.saleCommissionEur);
+    (jobIsK1 ? Math.round(purchasePrice * BROKER_SALE_COMMISSION_RATE) : spec!.saleCommissionEur);
   const shifts = job.shifts_count ?? 1;
   const humanCost =
     job.human_monthly_cost_eur ?? roleInfo.employerMonthlyEur * shifts;
@@ -717,7 +718,7 @@ function JobCard({
             </div>
             <div>
               <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
-                15% Referral Fee (assumption: paid by distributor)
+                8% Referral Fee (assumption: paid by distributor)
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
                 {rentAvailable
@@ -727,7 +728,7 @@ function JobCard({
             </div>
             <div>
               <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
-                7% Sale Referral (assumption: paid by distributor)
+                5% Sale Referral (assumption: paid by distributor)
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-indigo-700 dark:text-indigo-200">
                 +€{saleComm.toLocaleString("en-US")} one-time
@@ -1230,7 +1231,7 @@ export default function JobsPage() {
   const k1H = k1Headline(k1Job.economics);
   const k1HoursRange = k1H.hours;
   const k1PaybackText = `${k1H.payback} months (expected → best case; ${k1H.conservative})`;
-  const k1SaleReferral = Math.round(K1_SPEC.purchasePriceEur * 0.07);
+  const k1SaleReferral = Math.round(K1_SPEC.purchasePriceEur * BROKER_SALE_COMMISSION_RATE);
 
   const topAltSubtitle =
     topAlternativeJob && topAlternativeJob.title.includes(" — ")
@@ -1324,12 +1325,12 @@ export default function JobsPage() {
                   Partner view — referral fee paid by distributor (assumption)
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  15% of Monthly Rent • 7% of Sale Price (referral)
+                  8% of Monthly Rent • 5% of Sale Price (referral)
                 </h2>
                 <p className="text-xs text-slate-700 dark:text-slate-300">
                   The client pays the distributor&apos;s price with no markup;
                   referral fees are an assumption paid by the distributor.
-                  Booster K1 EDU has no rent offer (7% hardware sale referral
+                  Booster K1 EDU has no rent offer (5% hardware sale referral
                   only).
                 </p>
               </div>
@@ -1337,7 +1338,7 @@ export default function JobsPage() {
               <div className="flex flex-wrap gap-3">
                 <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
                   <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                    Booster K1 EDU Sale Referral (7%)
+                    Booster K1 EDU Sale Referral (5%)
                   </div>
                   <div className="font-mono text-base font-extrabold text-indigo-700 dark:text-indigo-300">
                     +€{k1SaleReferral.toLocaleString("en-US")} once

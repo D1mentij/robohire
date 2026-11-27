@@ -36,7 +36,7 @@ export type JobsOutcome =
 /**
  * Evaluates all 15 real commercial robots against the analyzed space, Latvia 2026
  * full employer labor costs (gross + 23.59% VSAOI), multi-shift schedule, and
- * +15% RoboHire RaaS brokerage margin.
+ * +8% RoboHire RaaS brokerage margin.
  */
 export function buildJobs(input: JobsInput): JobsOutcome {
   const { heuristicCount } = completeRatings(input.tasks, input.ratings);

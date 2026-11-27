@@ -14,12 +14,12 @@ import type {
  * - All others: US list price converted at 1 EUR = 1.096 USD.
  * - Rent: distributor quote where we have one, else estimate = 2.8% of price / month.
  * Client economics use rentEurMonth with NO markup. Broker/Partner view only:
- * monthly commission = 15% of rent, sale commission = 7% of price
+ * monthly commission = 8% of rent, sale commission = 5% of price
  * (assumption: referral fee paid by distributor).
  */
 export const USD_PER_EUR = 1.09644;
-export const BROKER_RAAS_MARKUP = 0.15;
-export const BROKER_SALE_COMMISSION_RATE = 0.07;
+export const BROKER_RAAS_MARKUP = 0.08;
+export const BROKER_SALE_COMMISSION_RATE = 0.05;
 export const LATVIA_EMPLOYER_VSAOI_RATE = 0.2359; // 23.59% employer social tax
 
 export interface LatviaLaborBenchmark {
@@ -118,9 +118,9 @@ export interface CommercialRobotSpec {
   baseRaaSEur: number;
   /** Client monthly price = rentEurMonth (no markup since 2026-11-27). */
   clientRaaSEur: number;
-  /** Broker view only — assumption: referral fee paid by distributor (15% of rent). */
+  /** Broker view only — assumption: referral fee paid by distributor (8% of rent). */
   monthlyCommissionEur: number;
-  /** Broker view only — assumption: referral fee paid by distributor (7% of price). */
+  /** Broker view only — assumption: referral fee paid by distributor (5% of price). */
   saleCommissionEur: number;
   minAisleCm: number;
   payloadKg?: number;

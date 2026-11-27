@@ -35,7 +35,7 @@ assert.match(ROBOTS_BY_ID.keenon_w3.priceSource, /babystore\.lv.*VAT status unco
 assert.equal(ROBOTS_BY_ID.mir250.purchasePriceEur, 44284);
 for (const r of ROBOTS_CATALOG_LIST) {
   assert.equal(r.verifiedOn, "2026-11-26");
-  // client price = rent, NO +15% markup
+  // client price = rent, NO +8% markup
   assert.equal(r.clientRaaSEur, r.rentEurMonth, `${r.id}: client rent must have no markup`);
   if (r.id !== "keenon_t8") {
     assert.equal(r.rentSource, "estimate");
