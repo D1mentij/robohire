@@ -52,8 +52,17 @@ Must work offline on the laptop (npm run dev, localhost:3000). Demo mode (mocks)
 - [x] C3 Claude: /report "How we calculate" + sellers + Export for real K1; README "AI disclosure" section up to date
 - [x] C4 Claude: write docs/hacktribe.md — project page texts (Problem, Solution, What's done, Next steps; English, ≤ 150 words each) + a 5-min video script with timings
 - [x] G4 Gemini: app/page.tsx landing — positioning line, 3 steps, "Try demo"
-- [ ] B1 Both: review the other's last commit (max 5 issues in REVIEW.md), fix own issues
-- [ ] B2 Both: npm test + npm run e2e + npm run demo:check READY on both laptops; write result in HANDOFF.md → when all boxes are checked, the agent who finishes last writes "FINAL READY" in HANDOFF.md
+- [x] B1 Both: review the other's last commit (max 5 issues in REVIEW.md), fix own issues — Gemini side taken over by Claude (27.11); G2 commit reviewed, no open REVIEW items
+- [x] B2 Both: npm test + npm run e2e + npm run demo:check READY — done on this laptop by Claude (27.11); second laptop: dropped (scope) — humans run `npm run demo:check` there before recording
+- [x] F1 Claude (taken over from Gemini): Safety & navigation check on /robot, 3D zone labels and /report
+- [x] F2 Claude: numbers match the final deck (K1 1–1.3 h/day, €290–340/mo, payback 27–33 mo, Partial; T8 2–3 h/day; benchmark €4.1k → €87.4k)
+- [x] F3 Claude: Python export compiles, SDK names re-checked, "Not yet run on a physical K1" note
+- [x] F4 Claude: docs/AI_DISCLOSURE.md
+- [x] F5 Claude: docs/hacktribe.md final texts + Ask + video script + recording checklist
+
+Note 27.11: Antigravity/Gemini is out; Claude Code is the only agent and owns all files. Section 5 ownership and the HANDOFF protocol no longer apply.
+
+## FINAL READY — 27.11.2026 (Claude Code): npm test ✔, npm run build ✔, npm run demo:check READY ✔. Humans: paste docs/hacktribe.md texts, upload docs/AI_DISCLOSURE.md, record the video from the script in docs/hacktribe.md.
 
 ## 7. Agent loop (run this EVERY time a human says "next")
 1. git pull --rebase.
