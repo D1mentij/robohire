@@ -97,6 +97,8 @@ Data contracts live in `types/contracts.ts`. A demo mode (`lib/ai/demo.ts`) keep
 
 ## AI usage disclosure
 
+Full disclosure (all tools, what the team did, pre-existing vs hackathon work): [docs/AI_DISCLOSURE.md](docs/AI_DISCLOSURE.md).
+
 **Written with AI coding assistants** (details per step in `PROGRESS.md`; agreed spec in `FINAL_SPEC.md`):
 - **Claude Code (Claude Sonnet 5.5 / Opus 5.5)**: project skeleton, shared contracts and mocks, upload screen and frame extraction, `/api/analyze`, `/api/jobs`, `/api/scenario`, `/api/shift`, AI provider wrappers, prompts, validation, the honest economics (`lib/roi/economics.ts`: hours freed per day, rent vs buy), the robot price/wage reference data (`src/data/robots.ts`), Booster K1 economics (`lib/roi/k1.ts`, `src/data/k1.ts`), the `/report` page, the real-K1 Python export (`lib/k1export`), tests, demo mode, this README.
 - **Antigravity (Gemini)**: the `/jobs` page, the `/robot` page, the landing page, `components/three/*`, `lib/executor/*` (3D room, robot models, walking/gesture executor, checklist). The `RobotExpressive.glb` model is the standard three.js example asset used as a K1 stand-in.
