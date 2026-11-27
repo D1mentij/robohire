@@ -6,6 +6,7 @@ import { toBoosterScript, scriptFileName } from "../lib/k1export/toBoosterScript
 import { buildShiftFallback } from "../lib/ai/shiftFallback";
 import { buildPlan } from "../lib/roi/roi";
 import { mockJobs } from "../mocks";
+import { checkK1Route, isCrowdedZone } from "../lib/k1export/safety";
 
 const near = (a: number, b: number, eps = 0.051) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
 const kinds = (c: K1Command[]) => c.map((x) => x.kind);
@@ -105,5 +106,33 @@ assert.deepEqual(planK1Commands({ job_id: "e", steps: [] }, { room: { width: 1, 
   assert.match(py, /# ---- Guide to tables ----/);
   assert.match(py, /Scenario: whole shift/);
   assert.equal(scriptFileName(shift), "robohire_k1_shift.py");
+}
+// safety & navigation check (route-based aisle width, level changes, crowded zones)
+{
+  const scn = {
+    room: { width: 6, depth: 4 },
+    zones: [
+      { id: "entrance", label: "Entrance", x: 0.5, z: 2, w: 1, d: 1 },
+      { id: "desk", label: "Info desk", x: 5.5, z: 2, w: 1, d: 1 },
+      { id: "shelves", label: "Shelves", x: 3, z: 1, w: 2, d: 1.6 }, // z 0.2..1.8
+      { id: "seating", label: "Sofas", x: 3, z: 3, w: 2, d: 1.6 }, // z 2.2..3.8 → 40 cm gap at z=2
+      { id: "corridor", label: "Elevator hall", x: 5.5, z: 3.5, w: 1, d: 1 },
+    ],
+  };
+  const route: Scenario = { job_id: "s", steps: [{ action: "walk_to", target: "entrance" }, { action: "walk_to", target: "desk" }] };
+  const c = checkK1Route(route, scn, 55);
+  assert.equal(c.aisle.status, "fail");
+  assert.equal(c.aisle.narrowest?.widthCm, 40);
+  assert.deepEqual(c.routeCrossings, []);
+  assert.ok(c.levelChanges.some((l) => l.zone === "Elevator hall"));
+  assert.ok(c.levelChanges.some((l) => l.zone === "Entrance"));
+  assert.deepEqual(c.crowded.map((z) => z.id), ["entrance"]);
+  assert.equal(checkK1Route(route, scn, 35).aisle.status, "ok");
+  assert.ok(isCrowdedZone({ id: "x", label: "Queue area", x: 0, z: 0, w: 1, d: 1 }));
+  // café mock: the demo route is checked and passes
+  assert.notEqual(checkK1Route(mockScenarioForSafety(), mockScene).aisle.narrowest, null);
+}
+function mockScenarioForSafety(): Scenario {
+  return { job_id: "m", steps: [{ action: "walk_to", target: "entrance" }, { action: "walk_to", target: "counter" }] };
 }
 console.log("test:k1export OK");

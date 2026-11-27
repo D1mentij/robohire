@@ -576,3 +576,6 @@
 - AI-generated: UI and loader edits above by Antigravity (Gemini).
 - CONTRACT CHANGE: None
 - Tested: `npm test` ✔, `npm run lint` ✔, `npm run demo:check` → `READY ✔`.
+
+## [2026-11-27] Claude Code (sole agent from now on) — final steps
+- STEP 1 Safety & navigation: new lib/k1export/safety.ts (`checkK1Route`: free width across the K1 walking line vs K1 minimum, route crossing zones, steps/elevators/doors flagged, crowded zones = slow / pause), components/SafetyCheckPanel.tsx shown on /robot (K1 sidebar) and /report (above the export); 3D zone labels of crowded zones say "slow / pause zone". K1_SPEC.minAisleCm = 55 is labelled an ASSUMPTION (Booster publishes no K1 width); hardware safety cited from docs.booster.tech (DAMP mode + soft e-stop; obstacle avoidance not stated). Tests in scripts/test-k1export.ts. AI-generated: all by Claude Code.

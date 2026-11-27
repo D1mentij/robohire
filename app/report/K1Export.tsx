@@ -2,6 +2,7 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 import { buildK1Scenario } from "@/lib/executor/loadScenarioData";
+import { SafetyCheckPanel } from "@/components/SafetyCheckPanel";
 import { scriptFileName, toBoosterScript } from "@/lib/k1export/toBoosterScript";
 import { filterValidSteps, isScenario, isScene, type Job, type Scenario, type Scene } from "@/types/contracts";
 
@@ -31,13 +32,15 @@ function pickScenario(raw: string | null, scene: Scene, k1: Job): { scenario: Sc
 
 export function K1Export({ scene, k1, businessType }: { scene: Scene; k1: Job; businessType: string }) {
   const raw = useSyncExternalStore(noopSubscribe, readHandoff, () => null);
-  const { script, fileName, source, steps } = useMemo(() => {
+  const { script, fileName, source, steps, scenario, scn } = useMemo(() => {
     const picked = pickScenario(raw, scene, k1);
     return {
       script: toBoosterScript(picked.scenario, picked.scene, { businessType, what: k1.title }),
       fileName: scriptFileName(picked.scenario),
       source: picked.source,
       steps: picked.scenario.steps.length,
+      scenario: picked.scenario,
+      scn: picked.scene,
     };
   }, [raw, scene, k1, businessType]);
 
@@ -54,6 +57,8 @@ export function K1Export({ scene, k1, businessType }: { scene: Scene; k1: Job; b
 
   if (scene.zones.length === 0) return null;
   return (
+    <>
+    <SafetyCheckPanel scenario={scenario} scene={scn} />
     <section data-testid="k1-export">
       <h2 className="mb-2 text-lg font-bold">Export for real K1</h2>
       <p>
@@ -68,7 +73,9 @@ export function K1Export({ scene, k1, businessType }: { scene: Scene; k1: Job; b
         </button>
         <span className="font-mono text-xs text-slate-600">{fileName}</span>
       </div>
+      <p data-testid="k1-not-run-note" className="mt-1 text-xs text-slate-600">Not yet run on a physical K1 — next step at RTU AI Studio.</p>
       <pre className="no-print mt-2 max-h-80 overflow-auto rounded border border-slate-300 bg-slate-50 p-3 font-mono text-[11px] leading-snug text-slate-800">{script}</pre>
     </section>
+    </>
   );
 }

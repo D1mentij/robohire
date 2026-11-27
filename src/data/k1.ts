@@ -21,6 +21,16 @@ export const K1_SPEC = {
   /** No distributor rent offer for K1 — buy only. */
   rentAvailable: false,
   batteryMinutes: 80,
+  /**
+   * Planning minimum for aisle width. ASSUMPTION: Booster publishes height 0.95 m and weight ~19.5 kg but no width,
+   * so we use the narrowest robot class in our catalog (55 cm, Keenon T8). Measure the K1 and the aisle on site.
+   */
+  minAisleCm: 55,
+  minAisleSource: "assumption — Booster publishes no K1 width; we use the narrowest catalog class (55 cm)",
+  /** Hardware safety as stated by Booster (checked 2026-11-27). Obstacle avoidance is NOT stated there. */
+  safetyDocUrl: "https://docs.booster.tech/docs/product-manual/k1/getting-started/overview/",
+  safetyDocSummary:
+    "Booster docs: switches to DAMP mode when it enters an uncontrollable state; soft emergency stop from joystick, app or back-panel buttons. Obstacle avoidance is not stated.",
   specsSummary:
     "Humanoid, ~95 cm, walks and gestures, battery up to 80 min, Booster SDK (Python/ROS2). No hands.",
   /** Honest limits — always shown. */

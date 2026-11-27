@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SafetyCheckPanel } from "@/components/SafetyCheckPanel";
 import Link from "next/link";
 import { SimCanvas } from "@/components/three/SimCanvas";
 import { getRobotDeploymentTag } from "@/components/three/CommercialRobotModel";
@@ -411,6 +412,11 @@ export default function RobotSimulationPage() {
                 Export for real K1 (.py)
               </button>
             )}
+            {isK1 && (
+              <span data-testid="k1-not-run-note" className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                Not yet run on a physical K1 — next step at RTU AI Studio.
+              </span>
+            )}
 
             <button
               type="button"
@@ -704,6 +710,11 @@ export default function RobotSimulationPage() {
             />
             <span className="truncate">{currentActionText}</span>
           </div>
+          {isK1 && (
+            <div className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-800 dark:border-slate-800 dark:bg-slate-950/90 dark:text-slate-200">
+              <SafetyCheckPanel scenario={simData.scenario} scene={simData.scene} compact />
+            </div>
+          )}
         </aside>
       </div>
     </main>

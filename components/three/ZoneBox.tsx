@@ -5,6 +5,7 @@ import { Edges } from "@react-three/drei";
 import type { Zone } from "@/types/contracts";
 import { classifyZoneFurniture, type ZoneFurnitureKind } from "@/lib/executor";
 import { LabelSprite } from "./LabelSprite";
+import { isCrowdedZone } from "@/lib/k1export/safety";
 
 const ZONE_COLOR_MAP: Record<
   ZoneFurnitureKind,
@@ -490,6 +491,7 @@ export interface ZoneBoxProps {
 export function ZoneBox({ zone, isActive }: ZoneBoxProps) {
   const kind = useMemo(() => classifyZoneFurniture(zone), [zone]);
   const theme = ZONE_COLOR_MAP[kind];
+  const crowded = useMemo(() => isCrowdedZone(zone), [zone]);
 
   const labelY =
     kind === "entrance" || kind === "menu" || kind === "shelves"
@@ -530,7 +532,7 @@ export function ZoneBox({ zone, isActive }: ZoneBoxProps) {
       {/* Native Three.js billboard label sprite above zone */}
       <LabelSprite
         title={zone.label}
-        subtitle={`${zone.w}m × ${zone.d}m`}
+        subtitle={crowded ? `${zone.w}m × ${zone.d}m · slow / pause zone` : `${zone.w}m × ${zone.d}m`}
         position={[0, labelY, 0]}
         accentColor={theme.edge}
         bgColor={theme.bg}

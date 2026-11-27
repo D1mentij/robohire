@@ -793,7 +793,7 @@ function JobCard({
             Min Aisle / Buy Payback
           </dt>
           <dd className="mt-0.5 font-mono text-sm font-bold text-slate-900 dark:text-slate-100">
-            {jobIsK1 ? "~55" : spec!.minAisleCm} cm ·{" "}
+            {jobIsK1 ? `~${K1_SPEC.minAisleCm}` : spec!.minAisleCm} cm ·{" "}
             {job.payback_months !== null
               ? `${job.payback_months} mo`
               : "no payback"}
