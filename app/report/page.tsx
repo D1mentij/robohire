@@ -10,6 +10,9 @@ import {
   type StoredAnalysis,
 } from "@/lib/ai/types";
 import { buildPlan } from "@/lib/roi/roi";
+import { buildK1Job } from "@/lib/roi/k1";
+import { K1_JOB_ID, K1_SPEC, LATVIAN_SELLERS } from "@/src/data/k1";
+import { K1Export } from "./K1Export";
 import { getRobotSpec, inferRobotType } from "@/lib/robots/catalog";
 import { computeRobotEconomics, HOW_WE_CALCULATE } from "@/lib/roi/economics";
 import {
@@ -236,7 +239,11 @@ export default function ReportPage() {
         Loading report…
       </main>
     );
-  const { jobs, plan, scene } = data;
+  const { plan, scene } = data;
+  // Booster K1 EDU = primary robot; the 15 catalog robots are specialised alternatives.
+  const k1 = data.jobs.jobs.find((j) => j.id === K1_JOB_ID) ?? buildK1Job(scene);
+  const k1e = k1.economics;
+  const jobs: JobsResult = { ...data.jobs, jobs: data.jobs.jobs.filter((j) => j.id !== K1_JOB_ID) };
   const topJob = jobs.jobs.find((j) => j.fit !== "no" && j.savings_eur_month > 0);
   const topSpec = topJob ? getRobotSpec(inferRobotType(topJob)) : null;
   const date = new Date().toLocaleDateString("en-GB", {
@@ -290,9 +297,28 @@ export default function ReportPage() {
           </p>
         </header>
 
+        <section data-testid="k1-best-match" className="rounded border-2 border-slate-900 p-3">
+          <h2 className="mb-1 text-lg font-bold">Best match: {K1_SPEC.name} as your next employee</h2>
+          <p>{k1.why}</p>
+          {k1e && (
+            <p className="mt-1 tabular-nums">
+              Frees <b>{h1(k1e.hours_freed_per_day.low)}–{h1(k1e.hours_freed_per_day.high)} h/day</b> ·
+              worth {eur(k1e.savings_eur_month.low)}–{eur(k1e.savings_eur_month.high)}/mo ·
+              RENT: no offer · BUY: {eur(K1_SPEC.purchasePriceInclVatEur)} incl. VAT ({eur(k1e.purchase_price_eur)} ex VAT)
+              + {eur(k1e.upkeep_eur_month)}/mo upkeep → payback{" "}
+              {months(k1e.payback_months.high)}–{months(k1e.payback_months.low)} mo
+            </p>
+          )}
+          <p className="mt-1 text-xs text-amber-800">Limits: {k1.limits}</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Price: {K1_SPEC.priceSource}, verified 26.11.2026 — reference data, not a quote. Latvian sellers:{" "}
+            {LATVIAN_SELLERS.join(", ")}.
+          </p>
+        </section>
+
         <section>
           <h2 className="mb-2 text-lg font-bold">
-            Top Recommended Deployment
+            Specialised alternative — honest comparison
             {topSpec ? `: ${topSpec.name}` : ""}
           </h2>
           {!topJob ? (
@@ -383,6 +409,8 @@ export default function ReportPage() {
             </tbody>
           </table>
         </section>
+
+        <K1Export scene={scene} jobs={jobs} plan={plan} businessType={data.businessType} />
 
         <section>
           <h2 className="mb-2 text-lg font-bold">Floor Plan</h2>

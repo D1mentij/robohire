@@ -78,7 +78,7 @@ assert.equal(
     hourlyCost: 9.24,
   });
   assert.ok(out.ok && isJobsResult(out.jobs) && isRobotPlan(out.plan));
-  assert.equal(out.jobs.jobs.length, 15, "buildJobs returns all 15 commercial robots");
+  assert.equal(out.jobs.jobs.length, 16, "buildJobs returns Booster K1 + all 15 commercial robots");
 }
 
 // 5. Prompts check spatial cues without legacy Booster K1 mentions
@@ -115,7 +115,7 @@ assert.equal(inferFromHints(["pallet racks and loading dock"]), "warehouse");
       hoursPerWeek: p.defaultHoursPerWeek,
       hourlyCost: p.defaultHourlyCost,
     });
-    assert.equal(demo.jobs.jobs.length, 15);
+    assert.equal(demo.jobs.jobs.length, 16);
     assert.ok(isJobsResult(demo.jobs) && isRobotPlan(demo.plan));
   }
   assert.equal(findPreset("warehouse")?.family, "warehouse");

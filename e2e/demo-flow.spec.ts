@@ -125,7 +125,8 @@ test("API: /api/scenario is code-built, /api/jobs needs no AI, /api/analyze says
   const jobs = await request.post("/api/jobs", { data: { tasks, scene: mockScene, businessType: "Café", hoursPerWeek: 60, hourlyCost: 8.5 } });
   const jobsJson = await jobs.json();
   expect(jobsJson.ok).toBe(true);
-  expect(jobsJson.jobs.jobs[0].fit).toBe("good"); // heuristic rating, no AI
+  expect(jobsJson.jobs.jobs[0].id).toBe("job_booster_k1"); // Booster K1 EDU is always the primary card
+  expect(jobsJson.jobs.jobs[1].fit).toBe("good"); // best specialised alternative, heuristic rating, no AI
 
   const an = await request.post("/api/analyze", {
     data: { businessType: "Café", hoursPerWeek: 60, hourlyCost: 8.5, frames: ["data:image/jpeg;base64,/9j/4AAQ"] },

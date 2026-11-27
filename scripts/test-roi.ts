@@ -19,6 +19,9 @@ import {
 import { evaluateCatalogForSpace } from "../lib/robots/catalog";
 import { BUSINESS_PRESETS } from "../lib/ai/businessPresets";
 import type { Job } from "../types/contracts";
+import { computeK1Economics, buildK1Job, k1HoursFreed } from "../lib/roi/k1";
+import { K1_SPEC, K1_JOB_ID } from "../src/data/k1";
+import { buildJobs } from "../lib/ai/jobs";
 
 // 1. Catalog + verified prices (2026-11-26)
 assert.equal(ROBOTS_CATALOG_LIST.length, 15, "Catalog must contain exactly 15 robots");
@@ -179,3 +182,32 @@ const job = (id: string, fit: Job["fit"], hours: number, gross: number): Job => 
 }
 
 console.log("roi tests passed");
+
+// ---- Booster K1 EDU (FINAL_SPEC decision 4) ----
+{
+  const scene = { room: { width: 10, depth: 8 }, zones: [{ id: "entrance", label: "Entrance", x: 0, z: 0, w: 2, d: 2 }] };
+  assert.equal(K1_SPEC.purchasePriceEur, 7500);
+  assert.equal(K1_SPEC.purchasePriceInclVatEur, 9000);
+  // greeter 1/1.5/2 h/day, venue factor 1 → battery cap 80 min
+  const capped = k1HoursFreed(scene, { venueFactor: 1 });
+  assert.equal(capped.low, 1);
+  assert.ok(Math.abs(capped.expected - 80 / 60) < 1e-9 && Math.abs(capped.high - 80 / 60) < 1e-9);
+  const swaps = k1HoursFreed(scene, { venueFactor: 1, batterySwaps: true });
+  assert.deepEqual(swaps, { low: 1, expected: 1.5, high: 2 });
+  const e = computeK1Economics(scene, { venueFactor: 1, batterySwaps: true, daysOpenPerWeek: 6 });
+  assert.equal(e.rent_available, false);
+  assert.equal(e.rent_eur_month, 0);
+  assert.deepEqual(e.net_rent_eur_month, { low: 0, expected: 0, high: 0 });
+  assert.equal(e.upkeep_eur_month, 62.5);
+  // 1.5 h × €9.93 × 6 × 4.33 ≈ €387; payback 7500 / (387 − 62.5) ≈ 23.1 mo
+  assert.ok(Math.abs(e.savings_eur_month.expected - 387) < 1, `K1 savings ${e.savings_eur_month.expected}`);
+  assert.ok(Math.abs((e.payback_months.expected ?? 0) - 23.1) < 0.2);
+  const job = buildK1Job(scene);
+  assert.equal(job.id, K1_JOB_ID);
+  assert.match(job.limits, /No hands/);
+  assert.match(job.limits, /buy only/);
+  const out = buildJobs({ tasks: [], scene, businessType: "Café", hoursPerWeek: 60, hourlyCost: 9.24 });
+  assert.ok(out.ok && out.jobs.jobs[0].id === K1_JOB_ID, "K1 job must be first");
+  assert.ok(out.ok && out.jobs.jobs.length === 16, "K1 + 15 specialised");
+  console.log("✓ Booster K1 economics + K1 job first");
+}

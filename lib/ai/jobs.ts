@@ -7,6 +7,8 @@ import {
 } from "@/types/contracts";
 import { buildPlan } from "@/lib/roi/roi";
 import { evaluateCatalogForSpace } from "@/lib/robots/catalog";
+import { buildK1Job } from "@/lib/roi/k1";
+import { daysOpenFromHours, operatingHoursPerDay } from "@/lib/roi/economics";
 import { findPreset } from "./businessPresets";
 import type { Rating, Task } from "./types";
 import { completeRatings } from "./ratings";
@@ -51,7 +53,13 @@ export function buildJobs(input: JobsInput): JobsOutcome {
     baselineHourlyCost: baselineHourly,
   });
 
-  const result: JobsResult = { business_type: input.businessType, jobs };
+  // Booster K1 EDU is the PRIMARY robot: always first (FINAL_SPEC decision 1).
+  const hpw = input.hoursPerWeek > 0 ? input.hoursPerWeek : 60;
+  const k1 = buildK1Job(input.scene, {
+    daysOpenPerWeek: daysOpenFromHours(hpw),
+    openingHoursPerDay: operatingHoursPerDay(hpw, 1),
+  });
+  const result: JobsResult = { business_type: input.businessType, jobs: [k1, ...jobs] };
   if (!isJobsResult(result)) {
     return { ok: false, error: "Result failed JobsResult validation" };
   }
