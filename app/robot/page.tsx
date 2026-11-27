@@ -299,8 +299,8 @@ export default function RobotSimulationPage() {
               Room: {simData.scene.room.width}m × {simData.scene.room.depth}m •{" "}
               {simData.scene.zones.length} zones •{" "}
               <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                €{clientRaaS}/mo RaaS (saves +€
-                {Math.max(0, monthlySavings).toLocaleString("en-US")}/mo)
+                €{clientRaaS}/mo rent (frees +€
+                {Math.max(0, monthlySavings).toLocaleString("en-US")}/mo of staff time)
               </span>
             </p>
           </div>
@@ -442,7 +442,7 @@ export default function RobotSimulationPage() {
                 <div className="mt-3 space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Monthly Savings vs Latvia Staff
+                      Staff Time Freed (value / month)
                     </span>
                     <span className="font-mono text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
                       +€{Math.max(0, monthlySavings).toLocaleString("en-US")}/mo
@@ -450,7 +450,7 @@ export default function RobotSimulationPage() {
                   </div>
                   <div className="flex items-center justify-between border-t border-emerald-500/20 pt-1.5 text-xs text-slate-600 dark:text-slate-300">
                     <span>
-                      Client RaaS:{" "}
+                      Rent:{" "}
                       <strong className="font-mono text-slate-900 dark:text-white">
                         €{clientRaaS.toLocaleString("en-US")}/mo
                       </strong>

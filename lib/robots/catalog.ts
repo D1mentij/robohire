@@ -10,13 +10,21 @@ import {
   type Scene,
 } from "@/types/contracts";
 import {
-  computeRobotRoiMetrics,
+  LATVIA_2026_LABOR_BENCHMARKS,
   ROBOTS_BY_ID,
+  shiftsFromHours,
   ROBOTS_CATALOG_LIST,
   type CommercialRobotSpec,
 } from "@/src/data/robots";
 import { detectBusiness, type BusinessKind } from "@/lib/ai/businessTemplates";
 import { finalizeSteps, shortLabel } from "@/lib/ai/labels";
+import {
+  combineFit,
+  computeRobotEconomics,
+  daysOpenFromHours,
+  economicFit,
+  operatingHoursPerDay,
+} from "@/lib/roi/economics";
 
 export * from "@/src/data/robots";
 
@@ -360,7 +368,7 @@ function evaluateSpatialFit(
             : isMallOrTerminal || isGym
               ? 83
               : 74,
-        why: "Most affordable unit in catalog (€132/mo RaaS): greets visitors, answers FAQs on its tilt tablet, guides guests, and connects live remote receptionists.",
+        why: `Most affordable unit in catalog (€${robot.rentEurMonth}/mo rent, estimate): greets visitors, answers FAQs on its tilt tablet, guides guests, and connects live remote receptionists.`,
         limits:
           "Zero physical payload capacity — strictly communication, wayfinding, and telepresence in ≥55 cm smooth indoor corridors.",
       };
@@ -488,7 +496,7 @@ function evaluateSpatialFit(
         score: 60,
         why: "Front & rear AI obstacle avoidance handles busy lobbies and showrooms reliably, even if total floor area is below its 5,000 m² peak capacity.",
         limits:
-          "Built for 5,000–8,000 m² facilities — smaller venues get faster ROI from LionsBot R3 Vac (€387/mo) or standard Pudu CC1 (€646/mo).",
+          `Built for 5,000–8,000 m² facilities — smaller venues get faster ROI from LionsBot R3 Vac (€${ROBOTS_BY_ID.lionsbot_r3_vac.rentEurMonth}/mo) or standard Pudu CC1 (€${ROBOTS_BY_ID.pudu_cc1.rentEurMonth}/mo).`,
       };
     }
 
@@ -500,16 +508,16 @@ function evaluateSpatialFit(
           score: 92,
           why: "Fully autonomous industrial scrubber cleans vast airport concourses, shopping malls, and distribution centers dynamically without manual route teaching.",
           limits:
-            "Requires ≥120 cm wide corridors, industrial water/drain bay, and ≥2 operating shifts (≥110 hrs/week) in Latvia to beat human scrubber operator payroll.",
+            "Requires ≥120 cm wide corridors, industrial water/drain bay, and very large floor areas on 2–3 shifts to pay back.",
         };
       }
       return {
         title: robot.defaultJobTitle,
         fit: "no",
         score: 14,
-        why: `Heavy industrial scrubber (€2,344/mo RaaS) is physically and economically oversized for ${businessType} (~${space.areaSqm} m²).`,
+        why: `Heavy industrial scrubber (€${robot.rentEurMonth.toLocaleString("en-US")}/mo rent) is physically and economically oversized for ${businessType} (~${space.areaSqm} m²).`,
         limits:
-          "Requires ≥120 cm industrial aisles, large open floor plates, and 2–3 shifts (≥110 operating hrs/week).",
+          "Requires ≥120 cm industrial aisles, large open floor plates, and 2–3 shifts on very large floors.",
       };
     }
 
@@ -521,14 +529,14 @@ function evaluateSpatialFit(
           score: 89,
           why: "Heavy-duty 75 cm scrub deck tackles tire marks, grease, and high-traffic grime across hypermarkets, airports, and massive logistics hubs.",
           limits:
-            "Requires ≥130 cm wide aisles, heavy-duty water dump station, and 2–3 shifts (≥110 hrs/week) in Latvia for positive monthly RaaS ROI.",
+            "Requires ≥130 cm wide aisles, heavy-duty water dump station, and very large floor areas on 2–3 shifts to pay back.",
         };
       }
       return {
         title: robot.defaultJobTitle,
         fit: "no",
         score: 12,
-        why: `Flagship heavy industrial scrubber (€2,799/mo RaaS) is far too large for ${businessType}.`,
+        why: `Flagship heavy industrial scrubber (€${robot.rentEurMonth.toLocaleString("en-US")}/mo rent) is far too large for ${businessType}.`,
         limits:
           "Built strictly for airports, hypermarkets, and massive warehouses running 2–3 shifts.",
       };
@@ -594,7 +602,7 @@ function evaluateSpatialFit(
         title: robot.defaultJobTitle,
         fit: "no",
         score: 14,
-        why: `Enterprise intralogistics AMR (€1,426/mo RaaS) is built for factories and distribution centers, not ${businessType}.`,
+        why: `Enterprise intralogistics AMR (€${robot.rentEurMonth.toLocaleString("en-US")}/mo rent) is built for factories and distribution centers, not ${businessType}.`,
         limits:
           "Requires 1,450 mm standard industrial corridors (850 mm min), ≤20 mm max threshold/gap tolerance, and top-module/cart integration.",
       };
@@ -605,8 +613,8 @@ function evaluateSpatialFit(
 /**
  * Evaluates ALL 15 commercial robots against the target space, business preset/type,
  * operating hours, and Latvia 2026 multi-shift employer labor costs.
- * Enforces strict economic & spatial honesty: any robot with `savingsPct <= 0`
- * is automatically marked `"Not Suitable"` (`fit = "no"`).
+ * Economics = hours freed per day (lib/roi/economics.ts), rent vs buy.
+ * Fit = worse of spatial fit and economic fit.
  */
 export function evaluateCatalogForSpace(opts: {
   scene: Scene;
@@ -636,11 +644,25 @@ export function evaluateCatalogForSpace(opts: {
       ? opts.hourlyCost / baselineHourly
       : 1;
 
+  const shiftsCount = opts.shiftsOverride ?? shiftsFromHours(hoursPerWeek);
+  const daysOpenPerWeek = daysOpenFromHours(hoursPerWeek);
+  const openingHoursPerDay = operatingHoursPerDay(hoursPerWeek, shiftsCount);
+  const ratio =
+    Number.isFinite(hourlyCostOverrideRatio) &&
+    hourlyCostOverrideRatio > 0 &&
+    Math.abs(hourlyCostOverrideRatio - 1) > 0.015
+      ? hourlyCostOverrideRatio
+      : 1;
+  const eur = (n: number) => `€${Math.round(n).toLocaleString("en-US")}`;
+  const h1 = (n: number) => (Math.round(n * 10) / 10).toString();
+
   const evaluated: Job[] = ROBOTS_CATALOG_LIST.map((robot) => {
-    const roi = computeRobotRoiMetrics(robot, {
-      hoursPerWeek,
-      shiftsOverride: opts.shiftsOverride,
-      hourlyCostOverrideRatio,
+    const econ = computeRobotEconomics(robot, opts.scene, {
+      shifts: shiftsCount,
+      daysOpenPerWeek,
+      openingHoursPerDay,
+      roleHourlyEur:
+        LATVIA_2026_LABOR_BENCHMARKS[robot.role].hourlyEmployerEur * ratio,
     });
 
     const spatial = evaluateSpatialFit(
@@ -650,31 +672,24 @@ export function evaluateCatalogForSpace(opts: {
       opts.businessType || "this venue",
     );
 
-    let fit: Fit = spatial.fit;
+    const econFit = economicFit(econ);
+    const fit: Fit = combineFit(spatial.fit, econFit);
     let score = spatial.score;
     let limits = spatial.limits;
+    const pbExp = econ.payback_months.expected;
+    const shiftWord = shiftsCount === 1 ? "1 shift" : `${shiftsCount} shifts`;
 
-    // HONESTY RULE 1: Negative or zero RaaS savings vs Latvia 2026 labor -> force "Not Suitable"
-    if (roi.savingsPct <= 0) {
-      fit = "no";
+    if (econFit === "no") {
       score = Math.min(score, 22);
-      const shiftWord = roi.shiftsCount === 1 ? "1 shift" : `${roi.shiftsCount} shifts`;
-      const econReason = `Not cost-effective on ${shiftWord} in Latvia (€${roi.humanMonthlyCostEur.toLocaleString("en-US")}/mo human vs €${robot.clientRaaSEur.toLocaleString("en-US")}/mo RaaS, ${roi.savingsPct.toFixed(1)}%); requires 2–3 shifts / large 24/7 venue.`;
+      const econReason = `Doesn't pay off on ${shiftWord}: frees ~${h1(econ.hours_freed_per_day.expected)} h/day of staff time (${eur(econ.savings_eur_month.expected)}/mo) vs ${eur(econ.rent_eur_month)}/mo rent; buying (${eur(econ.purchase_price_eur)}) ${pbExp === null ? "never pays back" : `pays back in ~${Math.round(pbExp)} months`}.`;
       limits = spatial.fit === "no" ? `${econReason} ${spatial.limits}` : econReason;
-    } else if (
-      robot.minViableShifts &&
-      roi.shiftsCount < robot.minViableShifts
-    ) {
-      // HONESTY RULE 2: Industrial scrubbers (Avidbots Neo 2, Gausium 75P) require >= 2 shifts in Latvia
-      fit = "no";
-      score = Math.min(score, 24);
-      limits = `Not cost-effective on ${roi.shiftsCount} shift in Latvia (€${roi.humanMonthlyCostEur.toLocaleString("en-US")}/mo human vs €${robot.clientRaaSEur.toLocaleString("en-US")}/mo RaaS); requires ${robot.minViableShifts}+ shifts (≥${robot.minViableHoursWeek ?? 110} operating hrs/week).`;
+    } else if (econFit === "partial" && pbExp !== null) {
+      score = Math.min(score, 70);
+      limits = `${spatial.limits} Slow buy payback (~${Math.round(pbExp)} months).`;
     }
 
-    const activeHoursWeek = Math.min(
-      168,
-      Math.max(14, Math.round(roi.shiftsCount * 42)),
-    );
+    const savingsExp = econ.savings_eur_month.expected;
+    const netRentExp = econ.net_rent_eur_month.expected;
 
     return {
       id: `job_${robot.id}`,
@@ -683,21 +698,28 @@ export function evaluateCatalogForSpace(opts: {
       score,
       why: spatial.why,
       limits,
-      hours_per_week: activeHoursWeek,
-      savings_eur_month: roi.monthlySavingsEur,
-      payback_months: fit === "no" ? null : roi.paybackMonths,
+      hours_per_week:
+        Math.round(econ.hours_freed_per_day.expected * daysOpenPerWeek * 10) / 10,
+      savings_eur_month: Math.round(savingsExp),
+      payback_months:
+        fit === "no" || pbExp === null ? null : Math.round(pbExp * 10) / 10,
       robot_type: robot.id,
       robot_name: robot.name,
       category: robot.category,
       role: robot.role,
       purchase_price_eur: robot.purchasePriceEur,
       base_raas_eur: robot.baseRaaSEur,
-      client_raas_eur: robot.clientRaaSEur,
+      client_raas_eur: robot.rentEurMonth,
       monthly_commission_eur: robot.monthlyCommissionEur,
       sale_commission_eur: robot.saleCommissionEur,
-      human_monthly_cost_eur: roi.humanMonthlyCostEur,
-      savings_pct: roi.savingsPct,
-      shifts_count: roi.shiftsCount,
+      // Value of the staff hours the robot frees (NOT a whole shift).
+      human_monthly_cost_eur: Math.round(savingsExp),
+      savings_pct:
+        savingsExp > 0
+          ? Math.round((netRentExp / savingsExp) * 1000) / 10
+          : -100,
+      shifts_count: shiftsCount,
+      economics: econ,
     };
   });
 

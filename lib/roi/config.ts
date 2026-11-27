@@ -13,11 +13,11 @@ export const COVERAGE: Record<Fit, number> = {
   no: 0,
 };
 
-/** Default benchmark commercial robot price in EUR (Keenon T8 compact entry unit: €6,384). */
+/** Default benchmark commercial robot price in EUR (Keenon T8, distributor quote). */
 export const ROBOT_PRICE_EUR = ROBOTS_BY_ID.keenon_t8.purchasePriceEur;
 
-/** Default monthly RaaS fee in EUR for Keenon T8 (€206/mo client RaaS). */
-export const RUNNING_COST_EUR_MONTH = ROBOTS_BY_ID.keenon_t8.clientRaaSEur;
+/** Default monthly rent in EUR for Keenon T8 (distributor quote, no markup). */
+export const RUNNING_COST_EUR_MONTH = ROBOTS_BY_ID.keenon_t8.rentEurMonth;
 
 /** Average weeks per month. */
 export const WEEKS_PER_MONTH = 4.33;

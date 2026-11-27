@@ -9,11 +9,13 @@ import type {
  * Single Source of Truth for RoboHire's 15-Robot Commercial Catalog,
  * B2B RaaS Brokerage Unit Economics, and Verified 2026 Latvia Labor Costs.
  *
- * Currency & Brokerage Formulas:
- * - Exchange rate: 1 EUR = 1.09644 USD
- * - Client Monthly RaaS = Base Supplier RaaS × 1.15 (+15% RoboHire recurring brokerage margin)
- * - Monthly Commission = Client RaaS − Base Supplier RaaS
- * - Direct Sale Commission = Purchase Price (EUR) × 0.07 (7% broker fee)
+ * Prices (verified 2026-11-26, reference data, not a quote):
+ * - Keenon T8: distributor quote (purchase + rent); Keenon W3/T10: Riga retail listing.
+ * - All others: US list price converted at 1 EUR = 1.096 USD.
+ * - Rent: distributor quote where we have one, else estimate = 2.8% of price / month.
+ * Client economics use rentEurMonth with NO markup. Broker/Partner view only:
+ * monthly commission = 15% of rent, sale commission = 7% of price
+ * (assumption: referral fee paid by distributor).
  */
 export const USD_PER_EUR = 1.09644;
 export const BROKER_RAAS_MARKUP = 0.15;
@@ -104,9 +106,21 @@ export interface CommercialRobotSpec {
   role: LaborRole;
   archetype: RobotArchetype;
   purchasePriceEur: number;
+  /** Where the purchase price comes from (shown on /report). */
+  priceSource: string;
+  /** Client-facing monthly rent from the distributor (NO RoboHire markup). */
+  rentEurMonth: number;
+  /** "quote" = real distributor quote; "estimate" = 2.8%-of-price/month model. */
+  rentSource: "quote" | "estimate";
+  /** Date the price/rent reference data was checked (ISO). */
+  verifiedOn: string;
+  /** Broker view only: rent the distributor charges (= client rent). */
   baseRaaSEur: number;
+  /** Client monthly price = rentEurMonth (no markup since 2026-11-27). */
   clientRaaSEur: number;
+  /** Broker view only — assumption: referral fee paid by distributor (15% of rent). */
   monthlyCommissionEur: number;
+  /** Broker view only — assumption: referral fee paid by distributor (7% of price). */
   saleCommissionEur: number;
   minAisleCm: number;
   payloadKg?: number;
@@ -123,7 +137,7 @@ export interface CommercialRobotSpec {
   badgeClass: string;
 }
 
-export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
+const RAW_ROBOTS: readonly RawRobotRow[] = [
   {
     id: "pudu_bellabot",
     order: 1,
@@ -133,10 +147,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "waiter",
     archetype: "tray_waiter",
     purchasePriceEur: 14501,
-    baseRaaSEur: 306,
-    clientRaaSEur: 351,
-    monthlyCommissionEur: 46,
-    saleCommissionEur: 1015,
     minAisleCm: 70,
     payloadKg: 40,
     traysOrCompartments: 4,
@@ -155,11 +165,10 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     category: "HoReCa Delivery",
     role: "waiter",
     archetype: "tray_waiter",
-    purchasePriceEur: 6384,
-    baseRaaSEur: 179,
-    clientRaaSEur: 206,
-    monthlyCommissionEur: 27,
-    saleCommissionEur: 447,
+    purchasePriceEur: 8900,
+    rentQuoteEurMonth: 370,
+    priceSource:
+      "Distributor quote, ex VAT (aparaturafiscala.ro): €8,900 purchase / €370 per month rent",
     minAisleCm: 55,
     payloadKg: 20,
     traysOrCompartments: 3,
@@ -178,11 +187,8 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     category: "HoReCa Delivery",
     role: "waiter",
     archetype: "tray_waiter",
-    purchasePriceEur: 16782,
-    baseRaaSEur: 473,
-    clientRaaSEur: 544,
-    monthlyCommissionEur: 71,
-    saleCommissionEur: 1175,
+    purchasePriceEur: 12000,
+    priceSource: "babystore.lv (Riga) listing — VAT status unconfirmed",
     minAisleCm: 75,
     payloadKg: 40,
     traysOrCompartments: 4,
@@ -202,10 +208,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "waiter",
     archetype: "tray_waiter",
     purchasePriceEur: 9111,
-    baseRaaSEur: 254,
-    clientRaaSEur: 293,
-    monthlyCommissionEur: 38,
-    saleCommissionEur: 638,
     minAisleCm: 65,
     payloadKg: 30,
     traysOrCompartments: 3,
@@ -225,10 +227,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "reception",
     archetype: "greeter_screen",
     purchasePriceEur: 12769,
-    baseRaaSEur: 358,
-    clientRaaSEur: 411,
-    monthlyCommissionEur: 54,
-    saleCommissionEur: 894,
     minAisleCm: 55,
     specsSummary:
       "Greeter & escort robot with front advertising screen, compact 55 cm passage.",
@@ -246,10 +244,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "hotel_courier",
     archetype: "enclosed_cabinet",
     purchasePriceEur: 18241,
-    baseRaaSEur: 510,
-    clientRaaSEur: 586,
-    monthlyCommissionEur: 76,
-    saleCommissionEur: 1277,
     minAisleCm: 70,
     traysOrCompartments: 2,
     requiresElevatorIntegration: true,
@@ -269,11 +263,8 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     category: "Hotel & Office Delivery",
     role: "hotel_courier",
     archetype: "enclosed_cabinet",
-    purchasePriceEur: 26996,
-    baseRaaSEur: 756,
-    clientRaaSEur: 869,
-    monthlyCommissionEur: 113,
-    saleCommissionEur: 1890,
+    purchasePriceEur: 16000,
+    priceSource: "babystore.lv (Riga) listing — VAT status unconfirmed",
     minAisleCm: 75,
     traysOrCompartments: 4,
     requiresElevatorIntegration: true,
@@ -294,10 +285,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "cleaner",
     archetype: "floor_scrubber",
     purchasePriceEur: 11857,
-    baseRaaSEur: 337,
-    clientRaaSEur: 387,
-    monthlyCommissionEur: 50,
-    saleCommissionEur: 830,
     minAisleCm: 60,
     maxThresholdMm: 15,
     specsSummary:
@@ -316,10 +303,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "cleaner",
     archetype: "floor_scrubber",
     purchasePriceEur: 20065,
-    baseRaaSEur: 562,
-    clientRaaSEur: 646,
-    monthlyCommissionEur: 84,
-    saleCommissionEur: 1405,
     minAisleCm: 70,
     maxThresholdMm: 15,
     specsSummary:
@@ -338,10 +321,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "scrubber_op",
     archetype: "floor_scrubber",
     purchasePriceEur: 21889,
-    baseRaaSEur: 610,
-    clientRaaSEur: 702,
-    monthlyCommissionEur: 92,
-    saleCommissionEur: 1532,
     minAisleCm: 75,
     maxThresholdMm: 15,
     specsSummary:
@@ -360,15 +339,11 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "scrubber_op",
     archetype: "floor_scrubber",
     purchasePriceEur: 72808,
-    baseRaaSEur: 2039,
-    clientRaaSEur: 2344,
-    monthlyCommissionEur: 306,
-    saleCommissionEur: 5097,
     minAisleCm: 120,
     minViableShifts: 2,
     minViableHoursWeek: 110,
     specsSummary:
-      "Fully autonomous industrial floor scrubber (no route training required) for large distribution centers, airports, and malls. Economically viable in Latvia ONLY on 2+ shifts (≥110 operating hrs/week).",
+      "Fully autonomous industrial floor scrubber (no route training required) for large distribution centers, airports, and malls. Needs very large floor areas and 2–3 shifts to have any chance of paying back in Latvia.",
     defaultJobTitle: "Heavy Autonomous Industrial Floor Scrubbing",
     accentHex: "#0284c7",
     badgeClass:
@@ -383,15 +358,11 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "scrubber_op",
     archetype: "floor_scrubber",
     purchasePriceEur: 87447,
-    baseRaaSEur: 2434,
-    clientRaaSEur: 2799,
-    monthlyCommissionEur: 365,
-    saleCommissionEur: 6121,
     minAisleCm: 130,
     minViableShifts: 2,
     minViableHoursWeek: 110,
     specsSummary:
-      "Heavy-duty industrial scrubber for hypermarkets, airports, and massive logistics hubs. Economically viable in Latvia ONLY on 2–3 shifts (≥110 operating hrs/week).",
+      "Heavy-duty industrial scrubber for hypermarkets, airports, and massive logistics hubs. Needs very large floor areas and 2–3 shifts to have any chance of paying back in Latvia.",
     defaultJobTitle: "24/7 Concourse & Logistics Hub Heavy Scrubbing",
     accentHex: "#2563eb",
     badgeClass:
@@ -406,10 +377,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "warehouse",
     archetype: "warehouse_amr",
     purchasePriceEur: 19153,
-    baseRaaSEur: 537,
-    clientRaaSEur: 618,
-    monthlyCommissionEur: 81,
-    saleCommissionEur: 1341,
     minAisleCm: 90,
     payloadKg: 300,
     maxThresholdMm: 20,
@@ -429,10 +396,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "warehouse",
     archetype: "warehouse_amr",
     purchasePriceEur: 44284,
-    baseRaaSEur: 1240,
-    clientRaaSEur: 1426,
-    monthlyCommissionEur: 186,
-    saleCommissionEur: 3100,
     minAisleCm: 85,
     payloadKg: 250,
     standardCorridorMm: 1450,
@@ -454,10 +417,6 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     role: "reception",
     archetype: "greeter_screen",
     purchasePriceEur: 4103,
-    baseRaaSEur: 115,
-    clientRaaSEur: 132,
-    monthlyCommissionEur: 17,
-    saleCommissionEur: 287,
     minAisleCm: 55,
     specsSummary:
       "Personal video-call assistant robot for guest greeting, telepresence, and wayfinding. Most affordable unit in catalog.",
@@ -466,7 +425,42 @@ export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = [
     badgeClass:
       "border-pink-500/50 bg-pink-500/15 text-pink-700 dark:text-pink-300",
   },
-] as const;
+];
+
+/** Monthly rent model when no distributor quote exists: 2.8% of purchase price. */
+export const RENT_ESTIMATE_RATE = 0.028;
+export const PRICE_VERIFIED_ON = "2026-11-26";
+export const US_LIST_PRICE_SOURCE = "US list price converted at 1 EUR = 1.096 USD";
+
+type RawRobotRow = Omit<
+  CommercialRobotSpec,
+  | "priceSource"
+  | "rentEurMonth"
+  | "rentSource"
+  | "verifiedOn"
+  | "baseRaaSEur"
+  | "clientRaaSEur"
+  | "monthlyCommissionEur"
+  | "saleCommissionEur"
+> & { priceSource?: string; rentQuoteEurMonth?: number };
+
+export const ROBOTS_CATALOG_LIST: readonly CommercialRobotSpec[] = RAW_ROBOTS.map(
+  ({ rentQuoteEurMonth, priceSource, ...r }) => {
+    const rent =
+      rentQuoteEurMonth ?? Math.round(r.purchasePriceEur * RENT_ESTIMATE_RATE);
+    return {
+      ...r,
+      priceSource: priceSource ?? US_LIST_PRICE_SOURCE,
+      rentEurMonth: rent,
+      rentSource: rentQuoteEurMonth !== undefined ? "quote" : "estimate",
+      verifiedOn: PRICE_VERIFIED_ON,
+      baseRaaSEur: rent,
+      clientRaaSEur: rent,
+      monthlyCommissionEur: Math.round(rent * BROKER_RAAS_MARKUP),
+      saleCommissionEur: Math.round(r.purchasePriceEur * BROKER_SALE_COMMISSION_RATE),
+    };
+  },
+);
 
 export const ROBOTS_BY_ID: Record<RobotType, CommercialRobotSpec> =
   Object.fromEntries(ROBOTS_CATALOG_LIST.map((r) => [r.id, r])) as Record<
@@ -484,74 +478,4 @@ export function shiftsFromHours(hoursPerWeek: number): 1 | 2 | 3 {
   if (!Number.isFinite(hoursPerWeek) || hoursPerWeek <= 60) return 1;
   if (hoursPerWeek < 120) return 2;
   return 3;
-}
-
-export interface RobotRoiMetrics {
-  shiftsCount: 1 | 2 | 3;
-  roleBenchmark: LatviaLaborBenchmark;
-  roleCostPerShiftEur: number;
-  humanMonthlyCostEur: number;
-  clientRaaSEur: number;
-  baseRaaSEur: number;
-  monthlyCommissionEur: number;
-  purchasePriceEur: number;
-  saleCommissionEur: number;
-  monthlySavingsEur: number;
-  savingsPct: number;
-  paybackMonths: number | null;
-}
-
-/**
- * Computes full monthly client RaaS vs Latvia 2026 employer cost (incl. 23.59% VSAOI)
- * across 1, 2, or 3 shifts, optionally scaling if the user manually overrides the hourly rate.
- */
-export function computeRobotRoiMetrics(
-  robot: CommercialRobotSpec,
-  opts: {
-    hoursPerWeek?: number;
-    shiftsOverride?: 1 | 2 | 3 | null;
-    hourlyCostOverrideRatio?: number | null;
-  } = {},
-): RobotRoiMetrics {
-  const shiftsCount =
-    opts.shiftsOverride ?? shiftsFromHours(opts.hoursPerWeek ?? 60);
-  const roleBenchmark = LATVIA_2026_LABOR_BENCHMARKS[robot.role];
-  const ratio =
-    opts.hourlyCostOverrideRatio &&
-    Number.isFinite(opts.hourlyCostOverrideRatio) &&
-    opts.hourlyCostOverrideRatio > 0 &&
-    Math.abs(opts.hourlyCostOverrideRatio - 1) > 0.015
-      ? opts.hourlyCostOverrideRatio
-      : 1;
-
-  const roleCostPerShiftEur = Math.round(
-    roleBenchmark.employerMonthlyEur * ratio,
-  );
-  const humanMonthlyCostEur = roleCostPerShiftEur * shiftsCount;
-  const monthlySavingsEur = humanMonthlyCostEur - robot.clientRaaSEur;
-  const rawPct =
-    humanMonthlyCostEur > 0
-      ? ((humanMonthlyCostEur - robot.clientRaaSEur) / humanMonthlyCostEur) *
-        100
-      : -100;
-  const savingsPct = Math.round(rawPct * 10) / 10;
-  const paybackMonths =
-    monthlySavingsEur > 0
-      ? Math.max(1, Math.round(robot.purchasePriceEur / monthlySavingsEur))
-      : null;
-
-  return {
-    shiftsCount,
-    roleBenchmark,
-    roleCostPerShiftEur,
-    humanMonthlyCostEur,
-    clientRaaSEur: robot.clientRaaSEur,
-    baseRaaSEur: robot.baseRaaSEur,
-    monthlyCommissionEur: robot.monthlyCommissionEur,
-    purchasePriceEur: robot.purchasePriceEur,
-    saleCommissionEur: robot.saleCommissionEur,
-    monthlySavingsEur,
-    savingsPct,
-    paybackMonths,
-  };
 }

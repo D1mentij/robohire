@@ -1,5 +1,6 @@
 import type { Fit, Job, RobotPlan } from "@/types/contracts";
 import { ROBOTS_BY_ID, shiftsFromHours } from "@/src/data/robots";
+import { sumEconomics } from "./economics";
 import {
   COVERAGE,
   DAYS_OPEN_PER_WEEK,
@@ -66,7 +67,7 @@ export function buildJob(
 /**
  * Builds a recommended commercial deployment summary (`RobotPlan`):
  * - When `jobs` contains commercial RaaS catalog entries (with `client_raas_eur` / `human_monthly_cost_eur`),
- *   recommends the #1 highest-scoring Suitable/Partial robot and reports its exact RaaS vs Latvia 2026 labor math.
+ *   recommends the #1 highest-scoring Suitable/Partial robot; totals come from sumEconomics (rent vs buy).
  * - When `jobs` contains task-level entries (e.g. unit tests or raw task lists), bundles suitable tasks up to capacity.
  */
 export function buildPlan(
@@ -102,34 +103,48 @@ export function buildPlan(
         robot_price_eur: ROBOT_PRICE_EUR,
         payback_months: null,
         assumptions: [
-          "Latvia 2026 full employer labor cost includes gross wage + 23.59% employer social tax (VSAOI)",
-          "Client RaaS includes supplier base RaaS + 15% RoboHire brokerage service margin",
-          `Evaluated at ${shifts} shift${shifts > 1 ? "s" : ""} (${cap} operating hrs/week); no robot yields positive monthly savings at these settings`,
+          "Savings = hours freed per day × Latvia 2026 role cost (gross wage + 23.59% employer VSAOI) × days open × 4.33",
+          "Rent = distributor rent with no RoboHire markup; Buy = price + 10%/yr upkeep",
+          `Evaluated at ${shifts} shift${shifts > 1 ? "s" : ""} (${cap} operating hrs/week); no robot pays off at these settings`,
         ],
       };
     }
 
     const spec = top.robot_type ? ROBOTS_BY_ID[top.robot_type] : undefined;
+    const chosen = [top];
+    const econs = chosen
+      .map((j) => j.economics)
+      .filter((e): e is NonNullable<Job["economics"]> => e !== undefined);
     const price = top.purchase_price_eur ?? spec?.purchasePriceEur ?? ROBOT_PRICE_EUR;
-    const raas = top.client_raas_eur ?? spec?.clientRaaSEur ?? RUNNING_COST_EUR_MONTH;
-    const humanCost = top.human_monthly_cost_eur ?? raas + top.savings_eur_month;
-    const net = humanCost - raas;
+    const rent = top.client_raas_eur ?? spec?.rentEurMonth ?? RUNNING_COST_EUR_MONTH;
+    const t = econs.length ? sumEconomics(econs) : null;
+    const savings = t ? t.savings.expected : top.savings_eur_month;
+    const net = t ? t.netRent.expected : savings - rent;
+    const payback = t ? t.payback.expected : null;
+    const r = (n: number) => Math.round(n);
+    const months = (n: number | null) => (n === null ? "never" : `${n.toFixed(1)} mo`);
 
     return {
-      job_ids: [top.id],
+      job_ids: chosen.map((j) => j.id),
       hours_per_week: top.hours_per_week,
       capacity_hours_per_week: cap,
-      gross_savings_eur_month: humanCost,
-      running_cost_eur_month: raas,
-      net_savings_eur_month: net,
-      robot_price_eur: price,
-      payback_months: net > 0 ? Math.max(1, Math.round(price / net)) : null,
-      assumptions: [
-        `Top match: ${spec?.name ?? top.title} — Client RaaS €${raas}/mo (Supplier €${top.base_raas_eur ?? spec?.baseRaaSEur ?? 0}/mo + 15% RoboHire margin) or €${price.toLocaleString("en-US")} purchase`,
-        `Latvia 2026 employer benchmark: €${humanCost.toLocaleString("en-US")}/mo across ${shifts} shift${shifts > 1 ? "s" : ""} (gross salary + 23.59% VSAOI)`,
-        `Monthly net RaaS savings: €${net.toLocaleString("en-US")}/mo (${top.savings_pct ?? Math.round((net / humanCost) * 1000) / 10}% cheaper than human shift labor)`,
-        "Currency conversion fixed at 1 EUR = 1.09644 USD; 7% RoboHire commission on direct hardware purchase",
-      ],
+      gross_savings_eur_month: r(savings),
+      running_cost_eur_month: r(t ? t.rent : rent),
+      net_savings_eur_month: r(net),
+      robot_price_eur: t ? t.purchase : price,
+      payback_months: payback === null ? null : Math.round(payback * 10) / 10,
+      assumptions: t
+        ? [
+            `Top match: ${spec?.name ?? top.title} — frees ${t.savings.low > 0 ? `€${r(t.savings.low)}–€${r(t.savings.high)}` : "€0"}/mo of staff time (expected €${r(t.savings.expected)}/mo)`,
+            `RENT: €${r(t.rent)}/mo → net €${r(t.netRent.low)} / €${r(t.netRent.expected)} / €${r(t.netRent.high)} per month (low / expected / high)`,
+            `BUY: €${t.purchase.toLocaleString("en-US")} ex VAT + €${r(t.upkeep)}/mo upkeep (10%/yr) → payback ${months(t.payback.high)} – ${months(t.payback.low)}`,
+            `Savings = hours freed per day × Latvia 2026 role cost (incl. 23.59% VSAOI) × days open × 4.33 (${shifts} shift${shifts > 1 ? "s" : ""})`,
+            "Prices verified 26.11.2026 — reference data, not a quote",
+          ]
+        : [
+            `Top match: ${spec?.name ?? top.title} — rent €${rent}/mo or €${price.toLocaleString("en-US")} purchase`,
+            "Prices verified 26.11.2026 — reference data, not a quote",
+          ],
     };
   }
 

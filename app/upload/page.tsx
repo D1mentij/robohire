@@ -197,7 +197,7 @@ export default function UploadPage() {
     "Reading frames",
     "Mapping zones & clearances",
     "Matching 15 commercial robots",
-    "Computing RaaS vs Latvia VSAOI",
+    "Computing hours freed, rent vs buy",
   ];
   const stage = analyzing
     ? elapsed < 6
@@ -845,12 +845,17 @@ export default function UploadPage() {
               {topRecommendedJob ? (
                 <>
                   Top match: <b>{topRecommendedJob.robot_name ?? topRecommendedJob.title}</b>{" "}
-                  (€{topRecommendedJob.client_raas_eur}/mo RaaS vs €
-                  {topRecommendedJob.human_monthly_cost_eur?.toLocaleString("en-US")}
-                  /mo Latvia labor) →{" "}
+                  (€{topRecommendedJob.client_raas_eur}/mo rent vs €
+                  {topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
+                  /mo of staff time freed) →{" "}
                   <b className="text-emerald-700 dark:text-emerald-400">
-                    +€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
-                    /month saved
+                    net €
+                    {Math.round(
+                      topRecommendedJob.economics?.net_rent_eur_month.expected ??
+                        topRecommendedJob.savings_eur_month -
+                          (topRecommendedJob.client_raas_eur ?? 0),
+                    ).toLocaleString("en-US")}
+                    /month on rent
                   </b>
                 </>
               ) : (

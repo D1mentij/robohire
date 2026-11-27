@@ -77,6 +77,32 @@ export const ROBOT_ARCHETYPES = [
 
 export type RobotArchetype = (typeof ROBOT_ARCHETYPES)[number];
 
+/** Scenario range: low = pessimistic, high = optimistic. */
+export interface EconRange {
+  low: number;
+  expected: number;
+  high: number;
+}
+
+/** Honest per-robot economics ("hours freed per day"), rent vs buy. */
+export interface JobEconomics {
+  hours_freed_per_day: EconRange;
+  days_per_month: number;
+  role_hourly_eur: number;
+  savings_eur_month: EconRange;
+  rent_eur_month: number;
+  rent_source: "quote" | "estimate";
+  net_rent_eur_month: EconRange;
+  purchase_price_eur: number;
+  price_source: string;
+  verified_on: string;
+  upkeep_eur_month: number;
+  net_buy_eur_month: EconRange;
+  /** Buy payback months per scenario (low = longest); null = never pays back. */
+  payback_months: { low: number | null; expected: number | null; high: number | null };
+  roi_3y: EconRange;
+}
+
 export interface Job {
   id: string;
   title: string;
@@ -100,6 +126,8 @@ export interface Job {
   human_monthly_cost_eur?: number;
   savings_pct?: number;
   shifts_count?: number;
+  /** Rent vs buy economics from lib/roi/economics.ts (optional, additive). */
+  economics?: JobEconomics;
 }
 
 export interface JobsResult {

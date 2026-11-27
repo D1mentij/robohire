@@ -330,10 +330,17 @@ function JobCard({
     job.savings_pct ??
     Math.round(((humanCost - clientRaaS) / Math.max(1, humanCost)) * 1000) / 10;
 
-  const isCheaper = savingsPct > 0;
+  const econ = job.economics;
+  const netRent = econ
+    ? Math.round(econ.net_rent_eur_month.expected)
+    : humanCost - clientRaaS;
+  const hoursFreed = econ
+    ? Math.round(econ.hours_freed_per_day.expected * 10) / 10
+    : null;
+  const isCheaper = econ ? netRent > 0 : savingsPct > 0;
   const pctBadgeText = isCheaper
-    ? `+${savingsPct.toFixed(1)}% Cheaper`
-    : `${Math.abs(savingsPct).toFixed(1)}% More Expensive`;
+    ? `Rent net +€${netRent.toLocaleString("en-US")}/mo`
+    : `Rent loses €${Math.abs(netRent).toLocaleString("en-US")}/mo`;
 
   const deploymentSubtitle = job.title.includes(" — ")
     ? job.title.split(" — ").slice(1).join(" — ")
@@ -435,13 +442,13 @@ function JobCard({
           />
         </div>
 
-        {/* Real Cost Comparison Banner: Robot RaaS vs Latvia Staff Cost + % Highlight Badge */}
+        {/* Cost banner: distributor rent vs value of staff hours freed (not a whole shift) */}
         <div className="rounded-xl border border-slate-200/90 bg-slate-50/90 p-4 dark:border-slate-800 dark:bg-slate-950/70">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
               <div>
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Robot RaaS:{" "}
+                  Rent:{" "}
                 </span>
                 <strong className="font-mono text-base font-extrabold text-sky-700 dark:text-sky-300">
                   €{clientRaaS.toLocaleString("en-US")}/mo
@@ -450,14 +457,15 @@ function JobCard({
               <span className="text-xs font-bold text-slate-400">vs</span>
               <div>
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Latvia Staff Cost:{" "}
+                  Staff time freed:{" "}
                 </span>
                 <strong className="font-mono text-base font-extrabold text-slate-900 dark:text-white">
                   €{humanCost.toLocaleString("en-US")}/mo
                 </strong>{" "}
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  ({shifts} {shifts === 1 ? "shift" : "shifts"}, incl. 23.59%
-                  VSAOI)
+                  {hoursFreed !== null
+                    ? `(~${hoursFreed} h/day, ${shifts} ${shifts === 1 ? "shift" : "shifts"}, incl. 23.59% VSAOI)`
+                    : `(${shifts} ${shifts === 1 ? "shift" : "shifts"}, incl. 23.59% VSAOI)`}
                 </span>
               </div>
             </div>
@@ -483,7 +491,7 @@ function JobCard({
           >
             <div>
               <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
-                Supplier Base RaaS
+                Distributor Rent
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-slate-900 dark:text-white">
                 €{baseRaaS.toLocaleString("en-US")}/mo
@@ -491,7 +499,7 @@ function JobCard({
             </div>
             <div>
               <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
-                RoboHire 15% Monthly Comm.
+                15% Referral Fee (assumption: paid by distributor)
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-300">
                 +€{monthlyComm.toLocaleString("en-US")}/mo
@@ -499,7 +507,7 @@ function JobCard({
             </div>
             <div>
               <div className="text-[11px] font-semibold text-indigo-800/80 dark:text-indigo-300">
-                Direct Sale 7% Commission
+                7% Sale Referral (assumption: paid by distributor)
               </div>
               <div className="mt-0.5 font-mono text-sm font-extrabold text-indigo-700 dark:text-indigo-200">
                 +€{saleComm.toLocaleString("en-US")} one-time
@@ -534,7 +542,7 @@ function JobCard({
       <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800/80">
         <div className="rounded-lg bg-slate-100/80 px-3 py-2 dark:bg-slate-950/60">
           <dt className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-            Monthly Savings
+            Staff Time Freed / mo
           </dt>
           <dd
             className={`mt-0.5 font-mono text-base font-bold ${
@@ -564,7 +572,7 @@ function JobCard({
           </dt>
           <dd className="mt-0.5 font-mono text-sm font-bold text-slate-900 dark:text-slate-100">
             {spec.minAisleCm} cm ·{" "}
-            {job.payback_months !== null ? `${job.payback_months} mo` : "RaaS N/A"}
+            {job.payback_months !== null ? `${job.payback_months} mo` : "no payback"}
           </dd>
         </div>
       </dl>
@@ -907,12 +915,12 @@ export default function JobsPage() {
               Step 2 of 3 • {snapshot.businessType}
             </span>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-              15-Robot Commercial Catalog &amp; RaaS ROI
+              15-Robot Commercial Catalog: Rent vs Buy
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Every robot&apos;s monthly RaaS rental compared directly against
-              verified 2026 Latvia full employer labor costs (gross wage +
-              23.59% employer VSAOI social tax).
+              Each robot frees a few staff hours per day — not a whole shift.
+              We value those hours at verified 2026 Latvia employer cost (gross
+              wage + 23.59% VSAOI) and compare with distributor rent or purchase.
             </p>
           </div>
 
@@ -950,8 +958,8 @@ export default function JobsPage() {
             </div>
             <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {viewMode === "broker"
-                ? "Showing +15% RaaS margin & 7% direct-sale commission"
-                : "Showing end-customer RaaS & Latvia payroll savings"}
+                ? "Showing referral fees (assumption: paid by distributor)"
+                : "Showing client rent (no markup) & staff hours freed"}
             </span>
           </div>
         </div>
@@ -965,15 +973,15 @@ export default function JobsPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-3 py-0.5 text-xs font-bold text-indigo-800 dark:text-indigo-200">
-                  RoboHire B2B Intermediary / RaaS Brokerage Model
+                  RoboHire Partner Model — assumption: referral fee paid by distributor
                 </div>
                 <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  +15% Recurring Monthly RaaS Margin • 7% Direct Sale Commission
+                  15% of Monthly Rent • 7% of Sale Price (referral)
                 </h2>
                 <p className="text-xs text-slate-700 dark:text-slate-300">
-                  Catalog converted at <code>1 EUR = 1.09644 USD</code>. Client
-                  RaaS = Supplier Base RaaS × 1.15. Each card below exposes our
-                  exact monthly recurring fee and 7% hardware sale fee.
+                  US list prices converted at <code>1 EUR = 1.096 USD</code>. The
+                  client pays the distributor&apos;s rent with no markup; the
+                  referral fee is an assumption, paid by the distributor.
                 </p>
               </div>
 
@@ -981,7 +989,7 @@ export default function JobsPage() {
                 <div className="flex flex-wrap gap-3">
                   <div className="rounded-xl border border-indigo-500/30 bg-white/90 px-4 py-2.5 dark:bg-slate-900/90">
                     <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      Top Deal ({topSpec.shortName}) RaaS Fee
+                      Top Deal ({topSpec.shortName}) Referral Fee
                     </div>
                     <div className="font-mono text-base font-extrabold text-emerald-700 dark:text-emerald-400">
                       +€{topSpec.monthlyCommissionEur}/mo recurring
@@ -1137,20 +1145,28 @@ export default function JobsPage() {
                   </span>
                 </div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  Recommended: {topSpec.name} — €{topSpec.clientRaaSEur}/mo RaaS
+                  Recommended: {topSpec.name} — €{topSpec.rentEurMonth}/mo rent
                 </h2>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Saves{" "}
+                  Frees{" "}
+                  {topRecommendedJob.economics
+                    ? `~${Math.round(topRecommendedJob.economics.hours_freed_per_day.expected * 10) / 10} h/day`
+                    : "staff hours"}{" "}
+                  (€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
+                  /mo of staff time) → rent net{" "}
                   <strong className="font-mono text-emerald-700 dark:text-emerald-400">
-                    +€{topRecommendedJob.savings_eur_month.toLocaleString("en-US")}
+                    €
+                    {Math.round(
+                      topRecommendedJob.economics?.net_rent_eur_month.expected ??
+                        topRecommendedJob.savings_eur_month -
+                          topSpec.rentEurMonth,
+                    ).toLocaleString("en-US")}
                     /mo
-                  </strong>{" "}
-                  ({topRecommendedJob.savings_pct?.toFixed(1)}% cheaper) vs €
-                  {topRecommendedJob.human_monthly_cost_eur?.toLocaleString(
-                    "en-US",
-                  )}
-                  /mo Latvia employer cost on {activeShifts}{" "}
-                  {activeShifts === 1 ? "shift" : "shifts"}.
+                  </strong>
+                  {topRecommendedJob.payback_months !== null
+                    ? `; buy payback ~${topRecommendedJob.payback_months} months`
+                    : ""}{" "}
+                  ({activeShifts} {activeShifts === 1 ? "shift" : "shifts"}).
                 </p>
               </div>
 

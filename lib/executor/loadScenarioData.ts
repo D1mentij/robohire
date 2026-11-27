@@ -48,8 +48,8 @@ function tryParseJson(raw: string | null): unknown {
 }
 
 /**
- * Reads handoff keys from `sessionStorage` first, then `localStorage`
- * (honoring `robohire:scene` and `robohire:scenario` in `localStorage` seamlessly).
+ * Reads handoff keys from `sessionStorage` only. localStorage is NOT read:
+ * it kept robohire:scene|scenario from a previous run (stale data).
  */
 function readStorageKey(keys: readonly string[]): unknown {
   if (typeof window === "undefined") return null;
@@ -57,14 +57,6 @@ function readStorageKey(keys: readonly string[]): unknown {
     try {
       const fromSession = tryParseJson(window.sessionStorage.getItem(key));
       if (fromSession !== null) return fromSession;
-    } catch {
-      // Ignore storage access errors
-    }
-  }
-  for (const key of keys) {
-    try {
-      const fromLocal = tryParseJson(window.localStorage.getItem(key));
-      if (fromLocal !== null) return fromLocal;
     } catch {
       // Ignore storage access errors
     }
@@ -259,7 +251,7 @@ function getClientSnapshot(): LoadedSimulationData {
       ...PLAN_STORAGE_KEYS,
       ANALYSIS_STORAGE_KEY,
     ]) {
-      key += `|${window.sessionStorage.getItem(k) ?? ""}|${window.localStorage.getItem(k) ?? ""}`;
+      key += `|${window.sessionStorage.getItem(k) ?? ""}`;
     }
   } catch {
     // Ignore storage access errors

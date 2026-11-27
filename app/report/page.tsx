@@ -11,10 +11,13 @@ import {
 } from "@/lib/ai/types";
 import { buildPlan } from "@/lib/roi/roi";
 import { getRobotSpec, inferRobotType } from "@/lib/robots/catalog";
+import { computeRobotEconomics, HOW_WE_CALCULATE } from "@/lib/roi/economics";
 import {
   isJobsResult,
   isRobotPlan,
   isScene,
+  type Job,
+  type JobEconomics,
   type JobsResult,
   type RobotPlan,
   type Scene,
@@ -96,6 +99,67 @@ const eur = (n: number) => {
   const abs = Math.abs(Math.round(n)).toLocaleString("en-US");
   return n < 0 ? `-€${abs}` : `€${abs}`;
 };
+const h1 = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+const months = (n: number | null) => (n === null ? "never" : h1(n));
+const verifiedDate = (iso: string) => {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+};
+/** Economics from the job, or recomputed for data stored before 2026-11-27. */
+function econOf(j: Job, scene: Scene): JobEconomics {
+  return j.economics ?? computeRobotEconomics(getRobotSpec(inferRobotType(j)), scene);
+}
+function paybackRange(e: JobEconomics): string {
+  const { low, high } = e.payback_months;
+  if (high === null) return "no payback";
+  if (low === null) return `from ${h1(high)} months (may never pay back)`;
+  return `${h1(high)}–${h1(low)} months`;
+}
+
+function RobotMoney({ j, scene }: { j: Job; scene: Scene }) {
+  const sp = getRobotSpec(inferRobotType(j));
+  const e = econOf(j, scene);
+  const hf = e.hours_freed_per_day;
+  return (
+    <div className="rounded border border-slate-300 p-3" data-testid={`report-robot-${sp.id}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="font-bold">
+          {sp.name}{" "}
+          <span className="font-normal text-slate-600">
+            · {FIT_LABEL[j.fit]} ({j.score})
+          </span>
+        </div>
+        <div className="text-xs text-slate-600">
+          Hours freed: {h1(hf.low)}–{h1(hf.high)} h/day (expected {h1(hf.expected)}) ≈{" "}
+          {eur(e.savings_eur_month.low)}–{eur(e.savings_eur_month.high)}/mo of staff time
+        </div>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="rounded bg-slate-50 p-2">
+          <span className="font-semibold">Rent:</span> {eur(e.rent_eur_month)}/mo → net{" "}
+          <b>{eur(e.net_rent_eur_month.expected)}/mo</b>{" "}
+          <span className="text-xs text-slate-600">
+            ({eur(e.net_rent_eur_month.low)} to {eur(e.net_rent_eur_month.high)})
+          </span>
+        </div>
+        <div className="rounded bg-slate-50 p-2">
+          <span className="font-semibold">Buy:</span> {eur(e.purchase_price_eur)} ex VAT →
+          payback <b>{paybackRange(e)}</b>
+          <span className="text-xs text-slate-600">
+            {" "}
+            (expected {months(e.payback_months.expected)}; 3-yr ROI{" "}
+            {Math.round(e.roi_3y.expected * 100)}%)
+          </span>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11px] text-slate-500">
+        Price: {e.price_source}. Rent: {e.rent_source === "quote" ? "distributor quote" : "estimate (2.8% of price / month)"}.
+        Verified {verifiedDate(e.verified_on)}, reference data, not a quote.
+      </p>
+    </div>
+  );
+}
+
 const FIT_LABEL = {
   good: "Suitable",
   partial: "Partial",
@@ -213,11 +277,11 @@ export default function ReportPage() {
       <article className="report-sheet mx-auto max-w-[210mm] space-y-6 bg-white p-8 text-sm leading-relaxed text-slate-900 shadow-lg">
         <header className="border-b-2 border-slate-900 pb-3">
           <h1 className="text-2xl font-extrabold">
-            Commercial RaaS Feasibility Report — {data.businessType}
+            Robot Rent vs Buy Feasibility Report — {data.businessType}
           </h1>
           <p className="text-slate-600">
-            {date} · RoboHire 15-Model Commercial Catalog vs Latvia 2026 VSAOI
-            Labor
+            {date} · RoboHire 15-model catalog · staff hours freed valued at
+            Latvia 2026 employer cost
             {data.demo && (
               <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
                 preset benchmark
@@ -233,33 +297,48 @@ export default function ReportPage() {
           </h2>
           {!topJob ? (
             <p>
-              None of the 15 commercial models yields positive monthly savings at
-              the current shift configuration.
+              None of the 15 commercial models pays off (rent or buy) at the
+              current shift configuration.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                ["Monthly Savings", `${eur(topJob.savings_eur_month)}/mo`],
-                [
-                  "Client RaaS",
-                  `${eur(topJob.client_raas_eur ?? topSpec?.clientRaaSEur ?? 0)}/mo`,
-                ],
-                [
-                  "Latvia Staff Cost",
-                  `${eur(topJob.human_monthly_cost_eur ?? 0)}/mo`,
-                ],
-                [
-                  "Purchase Price",
-                  eur(topJob.purchase_price_eur ?? topSpec?.purchasePriceEur ?? 0),
-                ],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded border border-slate-300 p-2">
-                  <div className="text-xs text-slate-600">{k}</div>
-                  <div className="font-bold">{v}</div>
-                </div>
-              ))}
+            <div className="space-y-2">
+              <RobotMoney j={topJob} scene={scene} />
+              {plan.net_savings_eur_month !== undefined && (
+                <p className="text-xs text-slate-600">
+                  Plan total: rent {eur(plan.running_cost_eur_month)}/mo → net{" "}
+                  {eur(plan.net_savings_eur_month)}/mo · or buy{" "}
+                  {eur(plan.robot_price_eur)} ex VAT → payback{" "}
+                  {plan.payback_months === null ? "never" : `${plan.payback_months} months`}{" "}
+                  (expected).
+                </p>
+              )}
             </div>
           )}
+        </section>
+
+        {jobs.jobs.filter((j) => j.fit !== "no" && j !== topJob).length > 0 && (
+          <section>
+            <h2 className="mb-2 text-lg font-bold">Other Suitable Robots: Rent vs Buy</h2>
+            <div className="space-y-2">
+              {jobs.jobs
+                .filter((j) => j.fit !== "no" && j !== topJob)
+                .map((j) => (
+                  <RobotMoney key={j.id} j={j} scene={scene} />
+                ))}
+            </div>
+          </section>
+        )}
+
+        <section
+          data-testid="how-we-calculate"
+          className="rounded border border-sky-300 bg-sky-50 p-3"
+        >
+          <h2 className="mb-1 text-base font-bold">How we calculate</h2>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs">
+            {HOW_WE_CALCULATE.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
         </section>
 
         <section>
@@ -272,14 +351,15 @@ export default function ReportPage() {
                 <th className={th}>Robot</th>
                 <th className={th}>Category</th>
                 <th className={th}>Fit</th>
-                <th className={th}>RaaS / mo</th>
-                <th className={th}>LV Staff / mo</th>
-                <th className={`${th} text-right`}>Savings / mo</th>
+                <th className={th}>Hours freed / day</th>
+                <th className={th}>Rent → net / mo</th>
+                <th className={`${th} text-right`}>Buy → payback</th>
               </tr>
             </thead>
             <tbody>
               {jobs.jobs.map((j) => {
                 const sp = getRobotSpec(inferRobotType(j));
+                const e = econOf(j, scene);
                 return (
                   <tr key={j.id}>
                     <td className={`${td} font-semibold`}>{sp.name}</td>
@@ -288,13 +368,14 @@ export default function ReportPage() {
                       {FIT_LABEL[j.fit]} ({j.score})
                     </td>
                     <td className={`${td} tabular-nums`}>
-                      {eur(j.client_raas_eur ?? sp.clientRaaSEur)}
+                      {h1(e.hours_freed_per_day.low)}–{h1(e.hours_freed_per_day.high)}
                     </td>
                     <td className={`${td} tabular-nums`}>
-                      {eur(j.human_monthly_cost_eur ?? 0)}
+                      {eur(e.rent_eur_month)} → {eur(e.net_rent_eur_month.expected)}
                     </td>
                     <td className={`${td} text-right tabular-nums font-semibold`}>
-                      {eur(j.savings_eur_month)}
+                      {eur(e.purchase_price_eur)} → {months(e.payback_months.expected)}
+                      {e.payback_months.expected !== null ? " mo" : ""}
                     </td>
                   </tr>
                 );
@@ -317,7 +398,7 @@ export default function ReportPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-bold">
-            Economic &amp; Brokerage Methodology
+            Assumptions
           </h2>
           <ul className="list-disc space-y-0.5 pl-5">
             {plan.assumptions.map((a) => (
@@ -332,6 +413,7 @@ export default function ReportPage() {
         <footer className="border-t border-slate-300 pt-2 text-xs text-slate-600">
           Verified Latvia 2026 wage benchmarks sourced from CSB Latvia Q2 2026,
           CV.lv, Algas.lv, and VisiDarbi.lv (gross wage + 23.59% employer VSAOI).
+          Robot prices and rents verified 26.11.2026 — reference data, not a quote.
         </footer>
       </article>
     </main>
